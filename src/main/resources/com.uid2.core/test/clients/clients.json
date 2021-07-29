@@ -1,0 +1,16 @@
+[
+    {
+        "key": "test-admin-key",
+        "name": "admin@uid2.com",
+        "contact": "admin@uid2.com",
+        "created": 1617149276,
+        "roles": [ "mapper", "generator" ]
+    },
+    {
+        "key": "test-mapper-key",
+        "name": "mapper@uid2.com",
+        "contact": "mapper@uid2.com",
+        "created": 1617149276,
+        "roles": [ "mapper", "generator" ]
+    }
+]
