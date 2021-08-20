@@ -80,10 +80,8 @@ public class Main {
     private final JsonObject config;
     private final ICloudStorage fsLocal = new LocalStorageMock();
     private final ICloudStorage fsOptOut;
-    private final ICloudStorage fsClientKeyConfig;
     private final ICloudStorage fsOperatorKeyConfig;
     private final ICloudStorage fsPartnerConfig;
-    private final RotatingClientKeyProvider clientKeyProvider;
     private final RotatingOperatorKeyProvider operatorKeyProvider;
     private final boolean observeOnly;
 
@@ -134,33 +132,28 @@ public class Main {
         }
 
         String coreAttestUrl = this.config.getString(Const.Config.CoreAttestUrlProp);
+        final ICloudStorage contentStorage;
         if (coreAttestUrl != null) {
             String coreApiToken = this.config.getString(Const.Config.CoreApiTokenProp);
-            this.fsClientKeyConfig = UidCoreClient.createNoAttest(coreAttestUrl, coreApiToken);
-            LOGGER.info("Client api-keys - Using uid2-core attestation endpoint: " + coreAttestUrl);
-
-            // need separate s3 creds - currently disabled
-            String optoutS3Bucket = this.config.getString(Const.Config.OptOutS3BucketProp);
-            this.fsOperatorKeyConfig = CloudUtils.createStorage(optoutS3Bucket, config);
-            LOGGER.info("Using CloudStorage for operator api-key config: s3://" + optoutS3Bucket);
+            UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreAttestUrl, coreApiToken);
+            if (useStorageMock) uidCoreClient.setAllowContentFromLocalFileSystem(true);
+            this.fsOperatorKeyConfig = uidCoreClient;
+            contentStorage = uidCoreClient.getContentStorage();
+            LOGGER.info("Operator api-keys - Using uid2-core attestation endpoint: " + coreAttestUrl);
         } else if (useStorageMock) {
-            this.fsClientKeyConfig = new EmbeddedResourceStorage(Main.class);
             this.fsOperatorKeyConfig = new EmbeddedResourceStorage(Main.class);
+            contentStorage = this.fsOperatorKeyConfig;
             LOGGER.info("Client api-keys - Using EmbeddedResourceStorage");
         } else {
-            String coreBucket = this.config.getString(Const.Config.CoreS3BucketProp);
-            this.fsClientKeyConfig = CloudUtils.createStorage(coreBucket, config);
             String optoutS3Bucket = this.config.getString(Const.Config.OptOutS3BucketProp);
             this.fsOperatorKeyConfig = CloudUtils.createStorage(optoutS3Bucket, config);
-            LOGGER.info("Using CloudStorage for client api-key at s3://" + coreBucket + ", and operator api-key at s3://" + optoutS3Bucket);
+            contentStorage = this.fsOperatorKeyConfig;
+            LOGGER.info("Using CloudStorage for operator api-key at s3://" + optoutS3Bucket);
         }
 
-        String clientsMdPath = this.config.getString(Const.Config.ClientsMetadataPathProp);
-        this.clientKeyProvider = new RotatingClientKeyProvider(this.fsClientKeyConfig, clientsMdPath);
         String operatorsMdPath = this.config.getString(Const.Config.OperatorsMetadataPathProp);
-        this.operatorKeyProvider = new RotatingOperatorKeyProvider(this.fsOperatorKeyConfig, this.fsOperatorKeyConfig, operatorsMdPath);
+        this.operatorKeyProvider = new RotatingOperatorKeyProvider(this.fsOperatorKeyConfig, contentStorage, operatorsMdPath);
         if (useStorageMock) {
-            this.clientKeyProvider.loadContent();
             this.operatorKeyProvider.loadContent(this.operatorKeyProvider.getMetadata());
         }
     }
@@ -258,9 +251,6 @@ public class Main {
         // deploy optout cloud sync verticle
         futs.add(this.deploySingleInstance(cloudSyncVerticle));
 
-        // deploy client key rotator
-        futs.add(this.createClientKeyRotator());
-
         // deploy operator key rotator
         futs.add(this.createOperatorKeyRotator());
 
@@ -281,8 +271,7 @@ public class Main {
         }
 
         Supplier<Verticle> svcSupplier = () -> {
-            MultisourceAuthProvider authProvider = new MultisourceAuthProvider(this.operatorKeyProvider, this.clientKeyProvider);
-            OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, authProvider, this.fsOptOut, this.config);
+            OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config);
             // configure where OptOutService receives the latest cloud paths
             cs.registerNewCloudPathsHandler(ps -> svc.setCloudPaths(ps));
             return svc;
@@ -369,11 +358,6 @@ public class Main {
         });
 
         return promise.future();
-    }
-
-    private Future<String> createClientKeyRotator() {
-        RotatingStoreVerticle rotatingStore = new RotatingStoreVerticle("clients", 10000, clientKeyProvider);
-        return this.deploySingleInstance(rotatingStore);
     }
 
     private Future<String> createOperatorKeyRotator() {
