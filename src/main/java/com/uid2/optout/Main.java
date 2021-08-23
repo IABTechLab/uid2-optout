@@ -26,6 +26,7 @@ package com.uid2.optout;
 import com.uid2.optout.vertx.OptOutLogProducer;
 import com.uid2.optout.vertx.OptOutServiceVerticle;
 import com.uid2.optout.vertx.PartnerConfigMonitor;
+import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.UidCoreClient;
 import com.uid2.shared.auth.MultisourceAuthProvider;
@@ -131,11 +132,14 @@ public class Main {
             LOGGER.info("Using CloudStorage for partners config: s3://" + optoutBucket);
         }
 
+        ApplicationVersion appVersion = ApplicationVersion.load("uid2-optout", "uid2-shared", "enclave-attestation-api");
+
         String coreAttestUrl = this.config.getString(Const.Config.CoreAttestUrlProp);
         final ICloudStorage contentStorage;
         if (coreAttestUrl != null) {
             String coreApiToken = this.config.getString(Const.Config.CoreApiTokenProp);
-            UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreAttestUrl, coreApiToken);
+            boolean enforceHttps = this.config.getBoolean("enforce_https", true);
+            UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreAttestUrl, coreApiToken, appVersion, enforceHttps);
             if (useStorageMock) uidCoreClient.setAllowContentFromLocalFileSystem(true);
             this.fsOperatorKeyConfig = uidCoreClient;
             contentStorage = uidCoreClient.getContentStorage();
