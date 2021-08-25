@@ -29,5 +29,6 @@
   "cloud_refresh_interval": 60,
   "clients_metadata_path": null,
   "operators_metadata_path": null,
+  "partners_metadata_path": null,
   "partners_config_path": "partners/config.json"
 }

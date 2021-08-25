@@ -26,6 +26,7 @@ package com.uid2.optout;
 import com.uid2.optout.vertx.OptOutLogProducer;
 import com.uid2.optout.vertx.OptOutServiceVerticle;
 import com.uid2.optout.vertx.PartnerConfigMonitor;
+import com.uid2.optout.vertx.PartnerConfigMonitorV2;
 import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.UidCoreClient;
@@ -368,10 +369,29 @@ public class Main {
     }
 
     private Future<String> createPartnerConfigMonitor(String eventCloudSyncDownloaded) {
+        if (config.getString(Const.Config.PartnersMetadataPathProp) != null) {
+            return createPartnerConfigMonitorV2(eventCloudSyncDownloaded);
+        }
+
         String partnerConfigPath = config.getString(Const.Config.PartnersConfigPathProp);
         if (partnerConfigPath == null || partnerConfigPath.length() == 0)
             return Future.succeededFuture();
         PartnerConfigMonitor configMon = new PartnerConfigMonitor(vertx, config, fsPartnerConfig, eventCloudSyncDownloaded);
+        RotatingStoreVerticle rotatingStore = new RotatingStoreVerticle("partners", 10000, configMon);
+        return this.deploySingleInstance(rotatingStore);
+    }
+
+    private Future<String> createPartnerConfigMonitorV2(String eventCloudSyncDownloaded) {
+        final ICloudStorage fsMetadata, fsContent;
+        if (this.fsOperatorKeyConfig instanceof UidCoreClient) {
+            fsMetadata = this.fsOperatorKeyConfig;
+            fsContent = ((UidCoreClient)this.fsOperatorKeyConfig).getContentStorage();
+        } else {
+            fsMetadata = this.fsOperatorKeyConfig;
+            fsContent = this.fsOperatorKeyConfig;
+        }
+
+        PartnerConfigMonitorV2 configMon = new PartnerConfigMonitorV2(vertx, config, fsMetadata, fsContent, eventCloudSyncDownloaded);
         RotatingStoreVerticle rotatingStore = new RotatingStoreVerticle("partners", 10000, configMon);
         return this.deploySingleInstance(rotatingStore);
     }

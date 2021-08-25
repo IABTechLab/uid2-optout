@@ -26,9 +26,12 @@ package com.uid2.optout.partner;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.uid2.shared.Const;
+import com.uid2.shared.auth.ClientKey;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.InvalidPropertiesFormatException;
 import java.util.List;
@@ -116,6 +119,14 @@ public class EndpointConfig {
 
     public String toJsonString() throws JsonProcessingException {
         return EndpointConfig.mapper.writeValueAsString(this);
+    }
+
+    public static EndpointConfig valueOf(JsonObject json) {
+        try {
+            return EndpointConfig.fromJsonString(json.encode());
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     @Override

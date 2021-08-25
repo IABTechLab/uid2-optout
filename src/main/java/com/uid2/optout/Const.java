@@ -39,6 +39,7 @@ public class Const extends com.uid2.shared.Const {
         public static final String OptOutSenderReplicaIdProp = "optout_sender_replica_id";
         public static final String OptOutDeleteExpiredProp = "optout_delete_expired";
         public static final String PartnersConfigPathProp = "partners_config_path";
+        public static final String PartnersMetadataPathProp = "partners_metadata_path";
     }
 
     public static class Event {
