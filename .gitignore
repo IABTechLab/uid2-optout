@@ -1,0 +1,8 @@
+target/
+.idea/
+dependencies/
+conf/*.json
+sync/
+out/
+generated/
+uid2-optout.iml

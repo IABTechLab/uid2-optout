@@ -164,7 +164,9 @@ public class OptOutLogProducer extends AbstractVerticle {
     }
 
     public String getLastDelta() {
-        Optional<String> last = Arrays.stream((new File(this.deltaProducerDir)).list())
+        String[] deltaList = (new File(this.deltaProducerDir)).list();
+        if (deltaList == null) return null;
+        Optional<String> last = Arrays.stream(deltaList)
             .sorted(OptOutUtils.DeltaFilenameComparatorDescending)
             .findFirst();
         if (last.isPresent()) return Paths.get(this.deltaProducerDir, last.get()).toString();

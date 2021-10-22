@@ -7,7 +7,7 @@
   "optout_internal_api_token": "test-optout-internal-key",
   "optout_replica_uris": "http://localhost:8081/optout/write,http://localhost:8081/optout/write,http://localhost:8081/optout/write",
   "partners_config_path": "/com.uid2.core/test/partners/config.json",
-  "clients_metadata_path": "http://localhost:8088/clients/refresh",
-  "core_attest_url": "http://localhost:8088/attest/get_token",
-  "core_api_token": "test-partner-key"
+  "operators_metadata_path": "http://localhost:8088/operators/refresh",
+  "core_attest_url": "http://localhost:8088/attest",
+  "core_api_token": "trusted-partner-key"
 }
