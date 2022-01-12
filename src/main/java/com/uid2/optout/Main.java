@@ -29,8 +29,6 @@ import com.uid2.optout.vertx.PartnerConfigMonitor;
 import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.UidCoreClient;
-import com.uid2.shared.auth.MultisourceAuthProvider;
-import com.uid2.shared.auth.RotatingClientKeyProvider;
 import com.uid2.shared.auth.RotatingOperatorKeyProvider;
 import com.uid2.shared.cloud.*;
 import com.uid2.shared.health.HealthManager;
