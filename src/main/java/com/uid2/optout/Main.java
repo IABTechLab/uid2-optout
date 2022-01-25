@@ -29,8 +29,6 @@ import com.uid2.optout.vertx.PartnerConfigMonitor;
 import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.UidCoreClient;
-import com.uid2.shared.auth.MultisourceAuthProvider;
-import com.uid2.shared.auth.RotatingClientKeyProvider;
 import com.uid2.shared.auth.RotatingOperatorKeyProvider;
 import com.uid2.shared.cloud.*;
 import com.uid2.shared.health.HealthManager;
@@ -167,7 +165,7 @@ public class Main {
         if (vertxConfigPath != null) {
             System.out.format("Running CUSTOM CONFIG mode, config: %s\n", vertxConfigPath);
         }
-        else if (!Utils.isProductionEnvionment()) {
+        else if (!Utils.isProductionEnvironment()) {
             System.out.format("Running LOCAL DEBUG mode, config: %s\n", Const.Config.LOCAL_CONFIG_PATH);
             System.setProperty(Const.Config.VERTX_CONFIG_PATH_PROP, Const.Config.LOCAL_CONFIG_PATH);
         } else {
@@ -197,7 +195,7 @@ public class Main {
             .setEnabled(true);
         setupMetrics(metricOptions);
 
-        final int threadBlockedCheckInterval = Utils.isProductionEnvionment()
+        final int threadBlockedCheckInterval = Utils.isProductionEnvironment()
             ? 60 * 1000
             : 3600 * 1000;
 

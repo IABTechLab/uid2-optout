@@ -74,7 +74,7 @@ public class OptOutLogTool {
         if (vertxConfigPath != null) {
             System.out.format("Running CUSTOM CONFIG mode, config: %s\n", vertxConfigPath);
         }
-        else if (!Utils.isProductionEnvionment()) {
+        else if (!Utils.isProductionEnvironment()) {
             System.out.format("Running LOCAL DEBUG mode, config: %s\n", Const.Config.LOCAL_CONFIG_PATH);
             System.setProperty(Const.Config.VERTX_CONFIG_PATH_PROP, Const.Config.LOCAL_CONFIG_PATH);
         } else {

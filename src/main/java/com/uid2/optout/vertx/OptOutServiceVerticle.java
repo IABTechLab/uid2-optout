@@ -28,7 +28,8 @@ import com.uid2.optout.web.QuorumWebClient;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationTokenService;
 import com.uid2.shared.attest.IAttestationTokenService;
-import com.uid2.shared.auth.IAuthProvider;
+import com.uid2.shared.auth.IAuthorizableProvider;
+import com.uid2.shared.auth.OperatorKey;
 import com.uid2.shared.auth.Role;
 import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.health.HealthComponent;
@@ -82,7 +83,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final boolean enableOptOutPartnerMock;
     private final String internalApiKey;
 
-    public OptOutServiceVerticle(Vertx vertx, IAuthProvider clientKeyProvider, ICloudStorage cloudStorage, JsonObject jsonConfig) {
+    public OptOutServiceVerticle(Vertx vertx, IAuthorizableProvider clientKeyProvider, ICloudStorage cloudStorage, JsonObject jsonConfig) {
         this.healthComponent.setHealthStatus(false, "not started");
 
         this.cloudStorage = cloudStorage;
@@ -111,7 +112,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.defaultDeliveryOptions.setSendTimeout(addEntryTimeoutMs);
 
         this.internalApiKey = jsonConfig.getString(Const.Config.OptOutInternalApiTokenProp);
-        this.auth.setInternalClientKey(this.internalApiKey);
+        this.auth.setInternalClientKey(new OperatorKey(this.internalApiKey, "internal", "internal", "internal", 0, false));
         this.enableOptOutPartnerMock = jsonConfig.getBoolean(Const.Config.OptOutPartnerEndpointMockProp);
     }
 
@@ -188,7 +189,8 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             .handler(this::handleHealthCheck);
 
         if (this.enableOptOutPartnerMock) {
-            router.route(OPTOUT_PARTNER_MOCK_METHOD).handler(auth.loopbackOnly(this::handleOptOutPartnerMock));
+            final OperatorKey loopbackClient = new OperatorKey("no-key", "loopback", "loopback", "loopback", 0, false);
+            router.route(OPTOUT_PARTNER_MOCK_METHOD).handler(auth.loopbackOnly(this::handleOptOutPartnerMock, loopbackClient));
         }
 
         //// if enabled, this would add handler for exposing prometheus metrics
