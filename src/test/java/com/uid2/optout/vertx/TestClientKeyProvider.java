@@ -33,7 +33,7 @@ import java.util.Collection;
 
 public class TestClientKeyProvider implements IClientKeyProvider {
     public static final TestClientKeyProvider INSTANCE = new TestClientKeyProvider();
-    private static final ClientKey TEST_OPERATOR_KEY = new ClientKey("test-operator-key")
+    private static final ClientKey TEST_OPERATOR_KEY = new ClientKey("test-operator-key", "test-operator-secret")
         .withNameAndContact("test-operator")
         .withRoles(Role.OPERATOR);
     private static final Collection<ClientKey> ALL_KEYS = new ArrayList<>();
