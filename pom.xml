@@ -6,7 +6,7 @@
 
   <groupId>com.uid2</groupId>
   <artifactId>uid2-optout</artifactId>
-  <version>1.0.0</version>
+  <version>1.1.0</version>
 
   <name>uid2-optout</name>
   <!-- FIXME change it to the project's website -->
@@ -29,7 +29,7 @@
     <dependency>
       <groupId>com.uid2</groupId>
       <artifactId>uid2-shared</artifactId>
-      <version>1.1.0</version>
+      <version>1.1.1</version>
     </dependency>
     <dependency>
       <groupId>io.vertx</groupId>
