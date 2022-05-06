@@ -330,9 +330,7 @@ public class OptOutLogProducer extends AbstractVerticle {
                 long timestamp = Long.valueOf(parts[2]);
                 assert identityHash != null && advertisingId != null;
 
-                buffer.put(identityHash);
-                buffer.put(advertisingId);
-                buffer.putLong(timestamp);
+                OptOutEntry.writeTo(buffer, identityHash, advertisingId, timestamp);
             }
             buffer.flip();
             this.fileChannel.write(buffer);
