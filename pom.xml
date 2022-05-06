@@ -6,7 +6,7 @@
 
   <groupId>com.uid2</groupId>
   <artifactId>uid2-optout</artifactId>
-  <version>1.2.0</version>
+  <version>1.2.1</version>
 
   <name>uid2-optout</name>
   <!-- FIXME change it to the project's website -->
@@ -17,6 +17,7 @@
     <vertx.version>3.9.4</vertx.version>
     <!-- check micrometer.version vertx-micrometer-metrics consumes before bumping up -->
     <micrometer.version>1.1.0</micrometer.version>
+    <uid2-shared.version>1.2.1</uid2-shared.version>
     <image.version>${project.version}</image.version>
   </properties>
 
@@ -29,7 +30,7 @@
     <dependency>
       <groupId>com.uid2</groupId>
       <artifactId>uid2-shared</artifactId>
-      <version>1.2.0</version>
+      <version>${uid2-shared.version}</version>
     </dependency>
     <dependency>
       <groupId>io.vertx</groupId>
@@ -78,7 +79,7 @@
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
-      <version>4.11</version>
+      <version>4.13.1</version>
       <scope>test</scope>
     </dependency>
     <dependency>
