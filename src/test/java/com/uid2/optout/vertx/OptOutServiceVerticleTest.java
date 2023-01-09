@@ -127,8 +127,12 @@ public class OptOutServiceVerticleTest {
 
     // optout/add forwards request to remote optout/write api endpoints
     @Test
+    public void replicateWithoutOptoutRole_expect401(TestContext context) {
+        verifyStatus(context, replicateQuery(234), 401);
+    }
+    @Test
     public void replicate_expect200(TestContext context) {
-        verifyStatus(context, replicateQuery(234), 200);
+        verifyStatus(context, replicateQuery(234), 200, "Bearer test-optout-operator-key");
     }
 
     @Test
@@ -216,8 +220,11 @@ public class OptOutServiceVerticleTest {
             OptOutServiceVerticle.ADVERTISING_ID,
             advertisingIdB64);
     }
-
     private Future<Void> verifyStatus(TestContext context, String pq, int status) {
+        return verifyStatus(context, pq, status, internalTestBearerToken);
+    }
+
+    private Future<Void> verifyStatus(TestContext context, String pq, int status, String token) {
         Promise<Void> promise = Promise.promise();
         Async async = context.async();
         int port = Const.Port.ServicePortForOptOut;
@@ -228,7 +235,7 @@ public class OptOutServiceVerticleTest {
                 promise.complete();
             });
         req.headers()
-            .add("Authorization", internalTestBearerToken);
+            .add("Authorization", token);
         req.end();
         return promise.future();
     }

@@ -159,7 +159,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         router.route(WRITE_METHOD)
             .handler(auth.internalOnly(this::handleWrite));
         router.route(REPLICATE_METHOD)
-            .handler(auth.handle(this::handleReplicate, Role.OPERATOR));
+            .handler(auth.handle(this::handleReplicate, Role.OPTOUT));
         router.route(REFRESH_METHOD)
             .handler(auth.handle(attest.handle(this::handleRefresh), Role.OPERATOR));
         router.get(HEALTHCHECK_METHOD)
