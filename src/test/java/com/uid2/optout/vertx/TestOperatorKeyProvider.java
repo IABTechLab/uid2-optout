@@ -12,10 +12,10 @@ import java.util.HashSet;
 
 public class TestOperatorKeyProvider implements IOperatorKeyProvider {
     public static final TestOperatorKeyProvider INSTANCE = new TestOperatorKeyProvider();
-    private static final OperatorKey TEST_OPERATOR_KEY = new OperatorKey("test-operator-key", "test_operator", "test_operator", "trusted", 0,
+    public static final OperatorKey TEST_OPERATOR_KEY = new OperatorKey("test-operator-key", "test_operator", "test_operator", "trusted", 0,
         false, 5, new HashSet<>(Arrays.asList(Role.OPERATOR)));
 
-    private static final OperatorKey TEST_OPTOUT_KEY = new OperatorKey("test-optout-operator-key", "test_optout_operator", "test_optout_operator", "trusted", 0,
+    public static final OperatorKey TEST_OPTOUT_KEY = new OperatorKey("test-optout-operator-key", "test_optout_operator", "test_optout_operator", "trusted", 0,
             false, 5, new HashSet<>(Arrays.asList(Role.OPERATOR, Role.OPTOUT)));
 
     private static final Collection<OperatorKey> ALL_KEYS = new ArrayList<>();
