@@ -4,13 +4,23 @@
     "name": "partner@uid2.com",
     "contact": "partner@uid2.com",
     "created": 1617149276,
-    "protocol": "aws-nitro"
+    "protocol": "aws-nitro",
+    "disabled" : false,
+    "site_id": 123,
+    "roles" : [
+      "OPERATOR"
+    ]
   },
   {
     "key": "trusted-partner-key",
     "name": "partner@uid2.com",
     "contact": "partner@uid2.com",
     "created": 1617149276,
-    "protocol": "trusted"
+    "protocol": "trusted",
+    "site_id": 123,
+    "roles" : [
+      "OPERATOR",
+      "OPTOUT"
+    ]
   }
 ]

@@ -23,10 +23,12 @@ import org.junit.runner.RunWith;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.uid2.optout.vertx.TestOperatorKeyProvider.TEST_OPERATOR_KEY;
+import static com.uid2.optout.vertx.TestOperatorKeyProvider.TEST_OPTOUT_KEY;
+
 @RunWith(VertxUnitRunner.class)
 public class OptOutServiceVerticleTest {
-    private static String internalTestKey = "test-operator-key";
-    private static String internalTestBearerToken = "Bearer test-operator-key";
+    private static String internalTestKey = TEST_OPERATOR_KEY.getKey();
     private static Vertx vertx;
 
     @BeforeClass
@@ -56,7 +58,7 @@ public class OptOutServiceVerticleTest {
         // set data_dir option to use tmpDir during test
         config
             .put(Const.Config.OptOutDataDirProp, OptOutUtils.tmpDir)
-            .put(Const.Config.OptOutInternalApiTokenProp, internalTestKey)
+            .put(Const.Config.OptOutInternalApiTokenProp, TEST_OPERATOR_KEY.getKey())
             .put(Const.Config.OptOutReplicaUris, "http://127.0.0.1:8081/optout/write,http://127.0.0.1:8081/optout/write,http://127.0.0.1:8081/optout/write");
 
         OptOutLogProducer producer = TestUtils.createOptOutLogProducer(vertx, config);
@@ -127,8 +129,12 @@ public class OptOutServiceVerticleTest {
 
     // optout/add forwards request to remote optout/write api endpoints
     @Test
+    public void replicateWithoutOptoutRole_expect401(TestContext context) {
+        verifyStatus(context, replicateQuery(234), 401);
+    }
+    @Test
     public void replicate_expect200(TestContext context) {
-        verifyStatus(context, replicateQuery(234), 200);
+        verifyStatus(context, replicateQuery(234), 200, TEST_OPTOUT_KEY.getKey());
     }
 
     @Test
@@ -216,8 +222,11 @@ public class OptOutServiceVerticleTest {
             OptOutServiceVerticle.ADVERTISING_ID,
             advertisingIdB64);
     }
-
     private Future<Void> verifyStatus(TestContext context, String pq, int status) {
+        return verifyStatus(context, pq, status, internalTestKey);
+    }
+
+    private Future<Void> verifyStatus(TestContext context, String pq, int status, String token) {
         Promise<Void> promise = Promise.promise();
         Async async = context.async();
         int port = Const.Port.ServicePortForOptOut;
@@ -228,7 +237,7 @@ public class OptOutServiceVerticleTest {
                 promise.complete();
             });
         req.headers()
-            .add("Authorization", internalTestBearerToken);
+            .add("Authorization", "Bearer " + token);
         req.end();
         return promise.future();
     }
@@ -247,7 +256,7 @@ public class OptOutServiceVerticleTest {
                 });
             });
         req.headers()
-            .add("Authorization", internalTestBearerToken);
+            .add("Authorization", "Bearer " + internalTestKey);
         req.end();
         return promise.future();
     }
