@@ -134,7 +134,7 @@ public class OptOutServiceVerticleTest {
     }
     @Test
     public void replicate_expect200(TestContext context) {
-        verifyStatus(context, replicateQuery(234), 200, TEST_OPTOUT_KEY.getKey() );
+        verifyStatus(context, replicateQuery(234), 200, TEST_OPTOUT_KEY.getKey());
     }
 
     @Test

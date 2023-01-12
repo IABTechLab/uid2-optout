@@ -24,7 +24,7 @@ public class TestUtils {
     }
 
     public static OptOutServiceVerticle createOptOutService(Vertx vertx, JsonObject config) throws Exception {
-        return new OptOutServiceVerticle(vertx, TestOperatorKeyProvider.INSTANCE, null, config);
+        return new OptOutServiceVerticle(vertx, new TestOperatorKeyProvider(), null, config);
     }
 
     public static OptOutEntry[] toEntries(long... ids) {

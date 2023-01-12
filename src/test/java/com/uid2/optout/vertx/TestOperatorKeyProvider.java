@@ -11,7 +11,6 @@ import java.util.Collection;
 import java.util.HashSet;
 
 public class TestOperatorKeyProvider implements IOperatorKeyProvider {
-    public static final TestOperatorKeyProvider INSTANCE = new TestOperatorKeyProvider();
     public static final OperatorKey TEST_OPERATOR_KEY = new OperatorKey("test-operator-key", "test_operator", "test_operator", "trusted", 0,
         false, 5, new HashSet<>(Arrays.asList(Role.OPERATOR)));
 
@@ -27,8 +26,8 @@ public class TestOperatorKeyProvider implements IOperatorKeyProvider {
 
     @Override
     public OperatorKey getOperatorKey(String token) {
-        return ALL_KEYS.stream().filter(t -> t.getKey().equals(token)).
-                findAny().orElse(TEST_OPERATOR_KEY);
+        return ALL_KEYS.stream().filter(t -> t.getKey().equals(token))
+                .findAny().orElse(TEST_OPERATOR_KEY);
     }
 
     @Override
