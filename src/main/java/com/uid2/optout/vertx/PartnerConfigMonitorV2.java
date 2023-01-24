@@ -6,7 +6,7 @@ import com.uid2.optout.partner.PartnersConfig;
 import com.uid2.shared.Utils;
 import com.uid2.shared.auth.ClientKey;
 import com.uid2.shared.cloud.ICloudStorage;
-import com.uid2.shared.store.IMetadataVersionedStore;
+import com.uid2.shared.store.reader.IMetadataVersionedStore;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
