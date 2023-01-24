@@ -13,6 +13,8 @@ import com.uid2.shared.health.HealthManager;
 import com.uid2.shared.jmx.AdminApi;
 import com.uid2.shared.optout.OptOutCloudSync;
 import com.uid2.shared.optout.OptOutUtils;
+import com.uid2.shared.store.CloudPath;
+import com.uid2.shared.store.scope.GlobalScope;
 import com.uid2.shared.vertx.CloudSyncVerticle;
 import com.uid2.shared.vertx.RotatingStoreVerticle;
 import com.uid2.shared.vertx.VertxUtils;
@@ -132,7 +134,10 @@ public class Main {
         }
 
         String operatorsMdPath = this.config.getString(Const.Config.OperatorsMetadataPathProp);
-        this.operatorKeyProvider = new RotatingOperatorKeyProvider(this.fsOperatorKeyConfig, contentStorage, operatorsMdPath);
+        this.operatorKeyProvider = new RotatingOperatorKeyProvider(
+                this.fsOperatorKeyConfig,
+                contentStorage,
+                new GlobalScope(new CloudPath(operatorsMdPath)));
         if (useStorageMock) {
             this.operatorKeyProvider.loadContent(this.operatorKeyProvider.getMetadata());
         }
