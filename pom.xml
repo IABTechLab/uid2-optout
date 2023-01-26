@@ -6,7 +6,7 @@
 
   <groupId>com.uid2</groupId>
   <artifactId>uid2-optout</artifactId>
-  <version>1.2.2</version>
+  <version>1.2.3</version>
 
   <name>uid2-optout</name>
   <url>https://github.com/IABTechLab/uid2-optout</url>
@@ -16,7 +16,7 @@
     <vertx.version>3.9.4</vertx.version>
     <!-- check micrometer.version vertx-micrometer-metrics consumes before bumping up -->
     <micrometer.version>1.1.0</micrometer.version>
-    <uid2-shared.version>1.18.0</uid2-shared.version>
+    <uid2-shared.version>1.19.0</uid2-shared.version>
     <image.version>${project.version}</image.version>
   </properties>
 
