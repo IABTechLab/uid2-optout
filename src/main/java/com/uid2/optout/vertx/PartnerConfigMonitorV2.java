@@ -5,6 +5,7 @@ import com.uid2.optout.partner.EndpointConfig;
 import com.uid2.optout.partner.PartnersConfig;
 import com.uid2.shared.Utils;
 import com.uid2.shared.auth.ClientKey;
+import com.uid2.shared.cloud.DownloadCloudStorage;
 import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.store.reader.IMetadataVersionedStore;
 import io.vertx.core.CompositeFuture;
@@ -29,14 +30,14 @@ public class PartnerConfigMonitorV2 implements IMetadataVersionedStore {
 
     private final Vertx vertx;
     private final JsonObject globalConfig;
-    private final ICloudStorage metadataStorage;
-    private final ICloudStorage contentStorage;
+    private final DownloadCloudStorage metadataStorage;
+    private final DownloadCloudStorage contentStorage;
     private final String partnersMetadataPath;
     private final String eventCloudDownloaded;
     private final AtomicReference<Map<String, String>> senderDeploymentIds = new AtomicReference<>();
 
-    public PartnerConfigMonitorV2(Vertx vertx, JsonObject globalConfig, ICloudStorage metadataStorage,
-                                  ICloudStorage contentStorage, String eventCloudDownloaded) {
+    public PartnerConfigMonitorV2(Vertx vertx, JsonObject globalConfig, DownloadCloudStorage metadataStorage,
+                                  DownloadCloudStorage contentStorage, String eventCloudDownloaded) {
         this.vertx = vertx;
         this.globalConfig = globalConfig;
         this.metadataStorage = metadataStorage;
