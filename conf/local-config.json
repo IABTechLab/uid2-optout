@@ -11,5 +11,6 @@
   "partners_config_path": "/com.uid2.core/test/partners/config.json",
   "partners_metadata_path": "/com.uid2.core/test/partners/metadata.json",
   "clients_metadata_path": "/com.uid2.core/test/clients/metadata.json",
-  "operators_metadata_path": "/com.uid2.core/test/operators/metadata.json"
+  "operators_metadata_path": "/com.uid2.core/test/operators/metadata.json",
+  "optout_observe_only": false
 }
