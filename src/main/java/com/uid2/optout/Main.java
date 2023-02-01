@@ -59,7 +59,7 @@ public class Main {
     private final JsonObject config;
     private final ICloudStorage fsLocal = new LocalStorageMock();
     private final ICloudStorage fsOptOut;
-    private final ICloudStorage fsOperatorKeyConfig;
+    private final DownloadCloudStorage fsOperatorKeyConfig;
     private final ICloudStorage fsPartnerConfig;
     private final RotatingOperatorKeyProvider operatorKeyProvider;
     private final boolean observeOnly;
@@ -113,7 +113,7 @@ public class Main {
         ApplicationVersion appVersion = ApplicationVersion.load("uid2-optout", "uid2-shared", "enclave-attestation-api");
 
         String coreAttestUrl = this.config.getString(Const.Config.CoreAttestUrlProp);
-        final ICloudStorage contentStorage;
+        final DownloadCloudStorage contentStorage;
         if (coreAttestUrl != null) {
             String coreApiToken = this.config.getString(Const.Config.CoreApiTokenProp);
             boolean enforceHttps = this.config.getBoolean("enforce_https", true);
@@ -364,7 +364,7 @@ public class Main {
     }
 
     private Future<String> createPartnerConfigMonitorV2(String eventCloudSyncDownloaded) {
-        final ICloudStorage fsMetadata, fsContent;
+        final DownloadCloudStorage fsMetadata, fsContent;
         if (this.fsOperatorKeyConfig instanceof UidCoreClient) {
             fsMetadata = this.fsOperatorKeyConfig;
             fsContent = ((UidCoreClient)this.fsOperatorKeyConfig).getContentStorage();
