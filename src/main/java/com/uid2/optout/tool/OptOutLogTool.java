@@ -600,8 +600,9 @@ public class OptOutLogTool {
         String cloudOptOutFolder = config.getString(Const.Config.OptOutS3FolderProp);
         Instant now = Instant.now();
         for (String f : cloudStorage.list(cloudOptOutFolder)) {
-            if (!OptOutUtils.isDeltaFile(f) && !OptOutUtils.isPartitionFile(f)) {
-                LOGGER.info("Ignoring non-optout-log files: " + f);
+            if (!OptOutUtils.isDeltaFile(f)) {
+                //Only delete Delta files
+                LOGGER.info("Ignoring non-delta-file:" + f);
                 continue;
             }
             if (utils.isDeltaOrPartitionExpired(now, f)) {
