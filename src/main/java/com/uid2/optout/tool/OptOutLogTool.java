@@ -597,7 +597,7 @@ public class OptOutLogTool {
         FileUtils utils = new FileUtils(config);
 
         List<String> expiredLogs = new ArrayList<>();
-        String cloudOptOutFolder = config.getString(Const.Config.OptOutS3FolderProp);
+        String cloudOptOutFolder = config.getString(Const.Config.OptOutS3FolderProp) + "delta/";
         Instant now = Instant.now();
         for (String f : cloudStorage.list(cloudOptOutFolder)) {
             if (!OptOutUtils.isDeltaFile(f)) {
