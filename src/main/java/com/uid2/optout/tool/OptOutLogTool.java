@@ -593,6 +593,7 @@ public class OptOutLogTool {
         if (!deleteExpiredEnabled) return;
 
         String bucket = config.getString(Const.Config.OptOutS3BucketProp);
+        LOGGER.info("Listing Objects in bucket: " + bucket);
         ICloudStorage cloudStorage = wrapCloudStorageForOptOut(CloudUtils.createStorage(bucket, config));
         FileUtils utils = new FileUtils(config);
 
