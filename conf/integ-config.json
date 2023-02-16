@@ -4,6 +4,7 @@
   "enforce_https": false,
   "att_token_enc_key": "<key-for-attestation-token>",
   "att_token_enc_salt": "<salt-for-attestation-token>",
+  "optout_s3_folder": "optout/",
   "optout_internal_api_token": "test-optout-internal-key",
   "optout_replica_uris": "http://localhost:8081/optout/write,http://localhost:8081/optout/write,http://localhost:8081/optout/write",
   "partners_config_path": "/com.uid2.core/test/partners/config.json",
