@@ -593,15 +593,18 @@ public class OptOutLogTool {
         if (!deleteExpiredEnabled) return;
 
         String bucket = config.getString(Const.Config.OptOutS3BucketProp);
+        LOGGER.info("Listing Objects in bucket: " + bucket);
         ICloudStorage cloudStorage = wrapCloudStorageForOptOut(CloudUtils.createStorage(bucket, config));
         FileUtils utils = new FileUtils(config);
 
         List<String> expiredLogs = new ArrayList<>();
-        String cloudOptOutFolder = config.getString(Const.Config.OptOutS3FolderProp);
+        String cloudOptOutFolder = config.getString(Const.Config.OptOutS3FolderProp) + "delta/";
         Instant now = Instant.now();
+        LOGGER.info("Listing Objects in folder: " + cloudOptOutFolder);
         for (String f : cloudStorage.list(cloudOptOutFolder)) {
-            if (!OptOutUtils.isDeltaFile(f) && !OptOutUtils.isPartitionFile(f)) {
-                LOGGER.info("Ignoring non-optout-log files: " + f);
+            if (!OptOutUtils.isDeltaFile(f)) {
+                //Only delete Delta files
+                LOGGER.info("Ignoring non-delta-file:" + f);
                 continue;
             }
             if (utils.isDeltaOrPartitionExpired(now, f)) {
