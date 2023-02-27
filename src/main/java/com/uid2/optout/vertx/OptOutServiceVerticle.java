@@ -105,21 +105,21 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         try {
             LOGGER.info("starting service on http.port: " + listenPort);
             vertx.createHttpServer()
-                .requestHandler(createRouter())
-                .listen(listenPort, result -> handleListenResult(startPromise, result));
+                    .requestHandler(createRouter())
+                    .listen(listenPort, result -> handleListenResult(startPromise, result));
         } catch (Exception ex) {
             LOGGER.error(ex.getMessage(), ex);
             startPromise.fail(new Throwable(ex));
         }
 
         startPromise.future()
-            .onSuccess(v -> {
-                LOGGER.info("started OptOutService");
-            })
-            .onFailure(e -> {
-                LOGGER.error("failed starting OptOutService", e);
-                this.healthComponent.setHealthStatus(false, e.getMessage());
-            });
+                .onSuccess(v -> {
+                    LOGGER.info("started OptOutService");
+                })
+                .onFailure(e -> {
+                    LOGGER.error("failed starting OptOutService", e);
+                    this.healthComponent.setHealthStatus(false, e.getMessage());
+                });
     }
 
     @Override
@@ -146,24 +146,25 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         Router router = Router.router(vertx);
         router.route().handler(BodyHandler.create());
         router.route().handler(new RequestCapturingHandler());
-        router.route().handler(CorsHandler.create(".*.")
-            .allowedMethod(io.vertx.core.http.HttpMethod.GET)
-            .allowedMethod(io.vertx.core.http.HttpMethod.POST)
-            .allowedMethod(io.vertx.core.http.HttpMethod.OPTIONS)
-            .allowedHeader("Access-Control-Request-Method")
-            .allowedHeader("Access-Control-Allow-Credentials")
-            .allowedHeader("Access-Control-Allow-Origin")
-            .allowedHeader("Access-Control-Allow-Headers")
-            .allowedHeader("Content-Type"));
+        router.route().handler(CorsHandler.create()
+                .addRelativeOrigin(".*.")
+                .allowedMethod(io.vertx.core.http.HttpMethod.GET)
+                .allowedMethod(io.vertx.core.http.HttpMethod.POST)
+                .allowedMethod(io.vertx.core.http.HttpMethod.OPTIONS)
+                .allowedHeader("Access-Control-Request-Method")
+                .allowedHeader("Access-Control-Allow-Credentials")
+                .allowedHeader("Access-Control-Allow-Origin")
+                .allowedHeader("Access-Control-Allow-Headers")
+                .allowedHeader("Content-Type"));
 
         router.route(WRITE_METHOD)
-            .handler(auth.internalOnly(this::handleWrite));
+                .handler(auth.internalOnly(this::handleWrite));
         router.route(REPLICATE_METHOD)
-            .handler(auth.handle(this::handleReplicate, Role.OPTOUT));
+                .handler(auth.handle(this::handleReplicate, Role.OPTOUT));
         router.route(REFRESH_METHOD)
-            .handler(auth.handle(attest.handle(this::handleRefresh), Role.OPERATOR));
+                .handler(auth.handle(attest.handle(this::handleRefresh), Role.OPERATOR));
         router.get(HEALTHCHECK_METHOD)
-            .handler(this::handleHealthCheck);
+                .handler(this::handleHealthCheck);
 
         if (this.enableOptOutPartnerMock) {
             final OperatorKey loopbackClient = new OperatorKey("no-key", "loopback", "loopback", "loopback", 0, false);
@@ -186,20 +187,20 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
         // remove files not relevant for optout client
         Instant lastSnap = OptOutUtils.lastPartitionTimestamp(pathsToSign)
-            .minusSeconds(this.deltaRotateInterval * 3);
+                .minusSeconds(this.deltaRotateInterval * 3);
         pathsToSign = pathsToSign.stream()
-            .filter(f -> OptOutUtils.isPartitionFile(f) || !OptOutUtils.isDeltaBeforePartition(lastSnap, f))
-            .collect(Collectors.toList());
+                .filter(f -> OptOutUtils.isPartitionFile(f) || !OptOutUtils.isDeltaBeforePartition(lastSnap, f))
+                .collect(Collectors.toList());
 
         try {
             OptOutMetadata metadata = new OptOutMetadata();
 
             String lastFilePath = pathsToSign.stream()
-                .sorted(OptOutUtils.DeltaFilenameComparator)
-                .reduce((a, b) -> b).orElse(null);
+                    .sorted(OptOutUtils.DeltaFilenameComparator)
+                    .reduce((a, b) -> b).orElse(null);
 
             metadata.version = lastFilePath == null ?
-                Instant.now().getEpochSecond() : OptOutUtils.getFileEpochSeconds(lastFilePath);
+                    Instant.now().getEpochSecond() : OptOutUtils.getFileEpochSeconds(lastFilePath);
 
             metadata.generated = metadata.version;
             metadata.optoutLogs = new ArrayList<>();
@@ -238,7 +239,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         MultiMap params = req.params();
         String identityHash = req.getParam(IDENTITY_HASH);
         String advertisingId = req.getParam(ADVERTISING_ID);
-        JsonObject body = routingContext.getBodyAsJson();
+        JsonObject body = routingContext.body().asJsonObject();
 
         HttpServerResponse resp = routingContext.response();
         if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
@@ -284,9 +285,8 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                         } else {
                             LOGGER.info("sent optout/write to remote endpoints - identity_hash: " + maskedId1 + ", advertising_id: " + maskedId1);
                             resp.setStatusCode(200)
-                                .setChunked(true)
-                                .write(timestamp)
-                                .end();
+                                    .setChunked(true)
+                                    .write(timestamp);
                         }
                     }
                 });
@@ -302,7 +302,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         MultiMap params = req.params();
         String identityHash = req.getParam(IDENTITY_HASH);
         String advertisingId = req.getParam(ADVERTISING_ID);
-        JsonObject body = routingContext.getBodyAsJson();
+        JsonObject body = routingContext.body().asJsonObject();
 
         HttpServerResponse resp = routingContext.response();
         if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
@@ -331,7 +331,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             long optoutEpoch = OptOutUtils.nowEpochSeconds();
             String msg = identityHash + "," + advertisingId + "," + String.valueOf(optoutEpoch);
             vertx.eventBus().request(Const.Event.EntryAdd, msg, this.defaultDeliveryOptions,
-                ar -> this.handleEntryAdded(ar, resp, optoutEpoch));
+                    ar -> this.handleEntryAdded(ar, resp, optoutEpoch));
         }
     }
 
@@ -342,9 +342,9 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             this.sendInternalServerError(resp, "Unexpected msg reply: " + res.result().body());
         } else {
             resp.setStatusCode(200)
-                .setChunked(true)
-                .write(String.valueOf(optoutEpoch))
-                .end();
+                    .setChunked(true)
+                    .write(String.valueOf(optoutEpoch));
+            resp.end();
         }
     }
 

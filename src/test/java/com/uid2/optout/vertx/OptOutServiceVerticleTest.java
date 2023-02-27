@@ -11,6 +11,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpClientRequest;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
@@ -36,14 +37,14 @@ public class OptOutServiceVerticleTest {
         vertx = Vertx.vertx();
         JsonObject config = VertxUtils.getJsonConfig(vertx);
         deployLogProducer(context, config)
-            .compose(v -> {
-                try {
-                    return deployService(context, config);
-                } catch (Exception e) {
-                    return Future.failedFuture(e);
-                }
-            })
-            .onComplete(context.asyncAssertSuccess());
+                .compose(v -> {
+                    try {
+                        return deployService(context, config);
+                    } catch (Exception e) {
+                        return Future.failedFuture(e);
+                    }
+                })
+                .onComplete(context.asyncAssertSuccess());
     }
 
     @AfterClass
@@ -57,9 +58,9 @@ public class OptOutServiceVerticleTest {
 
         // set data_dir option to use tmpDir during test
         config
-            .put(Const.Config.OptOutDataDirProp, OptOutUtils.tmpDir)
-            .put(Const.Config.OptOutInternalApiTokenProp, TEST_OPERATOR_KEY.getKey())
-            .put(Const.Config.OptOutReplicaUris, "http://127.0.0.1:8081/optout/write,http://127.0.0.1:8081/optout/write,http://127.0.0.1:8081/optout/write");
+                .put(Const.Config.OptOutDataDirProp, OptOutUtils.tmpDir)
+                .put(Const.Config.OptOutInternalApiTokenProp, TEST_OPERATOR_KEY.getKey())
+                .put(Const.Config.OptOutReplicaUris, "http://127.0.0.1:8081/optout/write,http://127.0.0.1:8081/optout/write,http://127.0.0.1:8081/optout/write");
 
         OptOutLogProducer producer = TestUtils.createOptOutLogProducer(vertx, config);
         vertx.deployVerticle(producer, ar -> promise.handle(ar));
@@ -199,28 +200,28 @@ public class OptOutServiceVerticleTest {
 
     private String writeQuery(byte[] identityHash, byte[] advertisingId) {
         return this.writeQuery(OptOutUtils.byteArrayToBase64String(identityHash),
-            OptOutUtils.byteArrayToBase64String(advertisingId));
+                OptOutUtils.byteArrayToBase64String(advertisingId));
     }
 
     private String writeQuery(String identityHashB64, String advertisingIdB64) {
         return String.format("%s?%s=%s&%s=%s", OptOutServiceVerticle.WRITE_METHOD,
-            OptOutServiceVerticle.IDENTITY_HASH,
-            identityHashB64,
-            OptOutServiceVerticle.ADVERTISING_ID,
-            advertisingIdB64);
+                OptOutServiceVerticle.IDENTITY_HASH,
+                identityHashB64,
+                OptOutServiceVerticle.ADVERTISING_ID,
+                advertisingIdB64);
     }
 
     private String replicateQuery(long id) {
         return this.replicateQuery(OptOutEntry.idHashB64FromLong(id),
-            OptOutEntry.idHashB64FromLong(id));
+                OptOutEntry.idHashB64FromLong(id));
     }
 
     private String replicateQuery(String identityHashB64, String advertisingIdB64) {
         return String.format("%s?%s=%s&%s=%s", OptOutServiceVerticle.REPLICATE_METHOD,
-            OptOutServiceVerticle.IDENTITY_HASH,
-            identityHashB64,
-            OptOutServiceVerticle.ADVERTISING_ID,
-            advertisingIdB64);
+                OptOutServiceVerticle.IDENTITY_HASH,
+                identityHashB64,
+                OptOutServiceVerticle.ADVERTISING_ID,
+                advertisingIdB64);
     }
     private Future<Void> verifyStatus(TestContext context, String pq, int status) {
         return verifyStatus(context, pq, status, internalTestKey);
@@ -230,15 +231,16 @@ public class OptOutServiceVerticleTest {
         Promise<Void> promise = Promise.promise();
         Async async = context.async();
         int port = Const.Port.ServicePortForOptOut;
-        HttpClientRequest req = vertx.createHttpClient()
-            .get(port, "127.0.0.1", pq, resp -> {
-                context.assertEquals(status, resp.statusCode());
-                async.complete();
-                promise.complete();
-            });
-        req.headers()
-            .add("Authorization", "Bearer " + token);
-        req.end();
+        vertx.createHttpClient()
+                .request(HttpMethod.GET, port, "127.0.0.1", pq)
+                .compose(req -> req.putHeader("Authorization", "Bearer " + token)
+                        .send()
+                        .compose(resp -> {
+                            context.assertEquals(status, resp.statusCode());
+                            async.complete();
+                            promise.complete();
+                            return resp.body();
+                        }));
         return promise.future();
     }
 
@@ -246,18 +248,19 @@ public class OptOutServiceVerticleTest {
         Promise<Void> promise = Promise.promise();
         Async async = context.async();
         int port = Const.Port.ServicePortForOptOut;
-        HttpClientRequest req = vertx.createHttpClient()
-            .get(port, "127.0.0.1", pq, resp -> {
-                context.assertEquals(status, resp.statusCode());
-                resp.handler(respBody -> {
-                    context.assertEquals(body, respBody.toString());
-                    async.complete();
-                    promise.complete();
-                });
-            });
-        req.headers()
-            .add("Authorization", "Bearer " + internalTestKey);
-        req.end();
+        vertx.createHttpClient()
+                .request(HttpMethod.GET, port, "127.0.0.1", pq)
+                .compose(req -> req.putHeader("Authorization", "Bearer " + internalTestKey)
+                        .send()
+                        .compose(resp -> {
+                            context.assertEquals(status, resp.statusCode());
+                            resp.handler(respBody -> {
+                                context.assertEquals(body, respBody.toString());
+                                async.complete();
+                                promise.complete();
+                            });
+                            return resp.body();
+                        }));
         return promise.future();
     }
 }
