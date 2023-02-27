@@ -5,8 +5,8 @@ import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
@@ -78,7 +78,7 @@ public class RetryingWebClient {
                     promise.fail("retry count exceeded for sending to " + this.uri);
                 }
             } catch (Exception ex) {
-                LOGGER.fatal("unexpected exception: " + ex.getMessage(), ex);
+                LOGGER.error("unexpected exception: " + ex.getMessage(), ex);
                 promise.fail(new Throwable(ex));
             }
         });
