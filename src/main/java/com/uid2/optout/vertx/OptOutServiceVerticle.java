@@ -23,8 +23,8 @@ import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.http.*;
 import io.vertx.core.json.JsonObject;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
@@ -108,7 +108,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .requestHandler(createRouter())
                 .listen(listenPort, result -> handleListenResult(startPromise, result));
         } catch (Exception ex) {
-            LOGGER.fatal(ex.getMessage(), ex);
+            LOGGER.error(ex.getMessage(), ex);
             startPromise.fail(new Throwable(ex));
         }
 
@@ -117,7 +117,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 LOGGER.info("started OptOutService");
             })
             .onFailure(e -> {
-                LOGGER.fatal("failed starting OptOutService", e);
+                LOGGER.error("failed starting OptOutService", e);
                 this.healthComponent.setHealthStatus(false, e.getMessage());
             });
     }
@@ -137,7 +137,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         if (result.succeeded()) {
             startPromise.complete();
         } else {
-            LOGGER.fatal("listen failed: " + result.cause());
+            LOGGER.error("listen failed: " + result.cause());
             startPromise.fail(new Throwable(result.cause()));
         }
     }

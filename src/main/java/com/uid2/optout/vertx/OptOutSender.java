@@ -14,8 +14,8 @@ import io.vertx.core.*;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.json.JsonObject;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -121,7 +121,7 @@ public class OptOutSender extends AbstractVerticle {
                 startPromise.complete();
             }
         } catch (Exception ex) {
-            LOGGER.fatal(ex.getMessage(), ex);
+            LOGGER.error(ex.getMessage(), ex);
             startPromise.fail(new Throwable(ex));
         }
 
@@ -131,7 +131,7 @@ public class OptOutSender extends AbstractVerticle {
                 this.healthComponent.setHealthStatus(true);
             })
             .onFailure(e -> {
-                LOGGER.fatal("failed starting OptOutSender", e);
+                LOGGER.error("failed starting OptOutSender", e);
                 this.healthComponent.setHealthStatus(false, e.getMessage());
             });
     }
@@ -150,7 +150,7 @@ public class OptOutSender extends AbstractVerticle {
 
         stopPromise.future()
             .onSuccess(v -> LOGGER.info("stopped OptOutSender"))
-            .onFailure(e -> LOGGER.fatal("failed stopping OptOutSender", e));
+            .onFailure(e -> LOGGER.error("failed stopping OptOutSender", e));
     }
 
     // returning name of the file that stores timestamp
@@ -231,7 +231,7 @@ public class OptOutSender extends AbstractVerticle {
 
             this.processPendingFilesToConsolidate(Instant.now());
         } catch (Exception ex) {
-            LOGGER.fatal("handleLogReplay failed unexpectedly: " + ex.getMessage(), ex);
+            LOGGER.error("handleLogReplay failed unexpectedly: " + ex.getMessage(), ex);
         }
     }
 
@@ -295,7 +295,7 @@ public class OptOutSender extends AbstractVerticle {
         vertx.<Void>executeBlocking(promise -> deltaReplayWithConsolidation(promise, deltasToConsolidate),
             ar -> {
                 if (ar.failed()) {
-                    LOGGER.fatal("delta consolidation failed", new Exception(ar.cause()));
+                    LOGGER.error("delta consolidation failed", new Exception(ar.cause()));
                 } else {
                     updateProcessedDeltas(nextTimestamp, deltasToConsolidate);
                     // once complete, check if we could start the next round
@@ -327,7 +327,7 @@ public class OptOutSender extends AbstractVerticle {
             return OptOutUtils.appendLinesToFile(vertx, this.processedDeltasFile, deltasConsolidated);
         }).onFailure(v -> {
             String filenames = String.join(",", deltasConsolidated);
-            LOGGER.fatal("unable to persistent last delta timestamp and/or processed delta filenames: " + nextTimestamp + ": " + filenames);
+            LOGGER.error("unable to persistent last delta timestamp and/or processed delta filenames: " + nextTimestamp + ": " + filenames);
         });
 
         for (String deltaFile : deltasConsolidated) {
@@ -362,7 +362,7 @@ public class OptOutSender extends AbstractVerticle {
             OptOutPartition consolidatedDelta = heap.toPartition(true);
             deltaReplay(promise, consolidatedDelta, deltasToConsolidate);
         } catch (Exception ex) {
-            LOGGER.fatal("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
+            LOGGER.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
             // this error is a code logic error and needs to be fixed
             promise.fail(new Throwable(ex));
         }
@@ -387,7 +387,7 @@ public class OptOutSender extends AbstractVerticle {
 
             lastOp.onComplete(ar -> {
                 if (ar.failed()) {
-                    LOGGER.fatal("deltaReplay failed sending delta " + filenames + " to remote: " + this.remotePartner.name(), ar.cause());
+                    LOGGER.error("deltaReplay failed sending delta " + filenames + " to remote: " + this.remotePartner.name(), ar.cause());
                     LOGGER.error("deltaReplay has " + this.pendingFilesCount.get() + " pending file");
                     LOGGER.error("deltaReplay will restart in 3600s");
                     vertx.setTimer(1000 * 3600, i -> this.pendingAsyncOp.completeExceptionally(new Exception(ar.cause())));
@@ -405,13 +405,13 @@ public class OptOutSender extends AbstractVerticle {
                 this.pendingAsyncOp.get();
                 promise.complete();
             } catch (Exception ex) {
-                LOGGER.fatal(ex);
+                LOGGER.error(ex);
                 promise.fail(ex);
             } finally {
                 this.pendingAsyncOp = null;
             }
         } catch (Exception ex) {
-            LOGGER.fatal("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
+            LOGGER.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
             // this error is a code logic error and needs to be fixed
             promise.fail(new Throwable(ex));
         }

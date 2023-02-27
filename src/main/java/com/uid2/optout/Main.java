@@ -26,8 +26,8 @@ import io.vertx.config.ConfigRetriever;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonObject;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.vertx.micrometer.Label;
 import io.vertx.micrometer.MicrometerMetricsOptions;
 import io.vertx.micrometer.VertxPrometheusOptions;
@@ -191,14 +191,14 @@ public class Main {
         ConfigRetriever retriever = VertxUtils.createConfigRetriever(vertx);
         retriever.getConfig(ar -> {
             if (ar.failed()) {
-                LOGGER.fatal("Unable to read config: " + ar.cause().getMessage(), ar.cause());
+                LOGGER.error("Unable to read config: " + ar.cause().getMessage(), ar.cause());
                 return;
             }
             try {
                 Main app = new Main(vertx, ar.result());
                 app.run(args);
             } catch (Exception e) {
-                LOGGER.fatal("Unable to create/run application: " + e.getMessage(), e);
+                LOGGER.error("Unable to create/run application: " + e.getMessage(), e);
                 vertx.close();
                 System.exit(1);
             }
@@ -277,8 +277,8 @@ public class Main {
                 LOGGER.info("OptOut service fully started...");
             })
             .onFailure(t -> {
-                LOGGER.fatal("Unable to bootstrap OptOutSerivce and its dependencies");
-                LOGGER.fatal(t.getMessage(), new Exception(t));
+                LOGGER.error("Unable to bootstrap OptOutSerivce and its dependencies");
+                LOGGER.error(t.getMessage(), new Exception(t));
                 vertx.close();
                 System.exit(1);
             });
@@ -294,7 +294,7 @@ public class Main {
                 return Future.succeededFuture();
             }
         } catch (Exception ex) {
-            LOGGER.fatal("uploadLastDelta error: " + ex.getMessage(), ex);
+            LOGGER.error("uploadLastDelta error: " + ex.getMessage(), ex);
             return Future.failedFuture(ex);
         }
 
@@ -315,7 +315,7 @@ public class Main {
                 promise.complete();
             } catch (Exception ex) {
                 final String msg = "unable handle last delta upload: " + ex.getMessage();
-                LOGGER.fatal(msg, ex);
+                LOGGER.error(msg, ex);
                 promise.fail(new Exception(msg, ex));
             }
         }));
@@ -332,7 +332,7 @@ public class Main {
 
             int count = counter.incrementAndGet();
             if (count >= 10) {
-                LOGGER.fatal("Unable to refresh from cloud storage and upload last delta...");
+                LOGGER.error("Unable to refresh from cloud storage and upload last delta...");
                 vertx.close();
                 System.exit(1);
                 return;

@@ -14,8 +14,8 @@ import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.file.FileSystem;
 import io.vertx.core.json.JsonObject;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -115,7 +115,7 @@ public class OptOutLogProducer extends AbstractVerticle {
             this.deltaRotate(false).onComplete(
                 ar -> startPromise.handle(ar));
         } catch (Exception ex) {
-            LOGGER.fatal(ex.getMessage(), ex);
+            LOGGER.error(ex.getMessage(), ex);
             startPromise.fail(new Throwable(ex));
         }
 
@@ -125,7 +125,7 @@ public class OptOutLogProducer extends AbstractVerticle {
                 this.healthComponent.setHealthStatus(true);
             })
             .onFailure(e -> {
-                LOGGER.fatal("failed starting OptOutLogProducer", e);
+                LOGGER.error("failed starting OptOutLogProducer", e);
                 this.healthComponent.setHealthStatus(false, e.getMessage());
             });
     }
@@ -137,7 +137,7 @@ public class OptOutLogProducer extends AbstractVerticle {
             ar -> stopPromise.handle(ar));
         stopPromise.future()
             .onSuccess(v -> LOGGER.info("stopped OptOutLogProducer"))
-            .onFailure(e -> LOGGER.fatal("failed stopping OptOutLogProducer", e));
+            .onFailure(e -> LOGGER.error("failed stopping OptOutLogProducer", e));
     }
 
     public String getLastDelta() {
@@ -160,7 +160,7 @@ public class OptOutLogProducer extends AbstractVerticle {
                     ;
                     blockingPromise.complete();
                 } catch (Exception ex) {
-                    LOGGER.fatal(ex.getMessage(), ex);
+                    LOGGER.error(ex.getMessage(), ex);
                     blockingPromise.fail(new Throwable(ex));
                 }
             },
@@ -190,7 +190,7 @@ public class OptOutLogProducer extends AbstractVerticle {
 
         String body = entryMsg.body();
         if (!body.contains(",")) {
-            LOGGER.fatal("unexpected optout entry format: " + body);
+            LOGGER.error("unexpected optout entry format: " + body);
             // fast fail if the message doesn't contain a comma (identity_hash,advertising_id)
             entryMsg.reply(false);
             return;
@@ -198,7 +198,7 @@ public class OptOutLogProducer extends AbstractVerticle {
 
         String[] parts = body.split(",");
         if (parts.length != 3) {
-            LOGGER.fatal("unexpected optout entry format: " + body);
+            LOGGER.error("unexpected optout entry format: " + body);
             // fast fail if the message doesn't contain a comma (identity_hash,advertising_id)
             entryMsg.reply(false);
             return;
@@ -206,7 +206,7 @@ public class OptOutLogProducer extends AbstractVerticle {
 
         byte[] identityHash = OptOutUtils.base64StringTobyteArray(parts[0]);
         if (identityHash == null) {
-            LOGGER.fatal("unexpected optout identity_hash: " + parts[0]);
+            LOGGER.error("unexpected optout identity_hash: " + parts[0]);
             // fast fail if the message doesn't contain a valid identity_hash
             entryMsg.reply(false);
             return;
@@ -214,7 +214,7 @@ public class OptOutLogProducer extends AbstractVerticle {
 
         byte[] advertisingId = OptOutUtils.base64StringTobyteArray(parts[1]);
         if (advertisingId == null) {
-            LOGGER.fatal("unexpected optout identity_hash: " + parts[1]);
+            LOGGER.error("unexpected optout identity_hash: " + parts[1]);
             // fast fail if the message doesn't contain a valid advertising_id
             entryMsg.reply(false);
             return;
@@ -224,7 +224,7 @@ public class OptOutLogProducer extends AbstractVerticle {
         try {
             timestampEpoch = Long.valueOf(parts[2]);
         } catch (NumberFormatException e) {
-            LOGGER.fatal("unexpected optout timestamp: " + parts[2]);
+            LOGGER.error("unexpected optout timestamp: " + parts[2]);
             // fast fail if the message doesn't contain a valid unix epoch timestamp for optout entry
             entryMsg.reply(false);
             return;
@@ -312,7 +312,7 @@ public class OptOutLogProducer extends AbstractVerticle {
             buffer.flip();
             this.fileChannel.write(buffer);
         } catch (Exception ex) {
-            LOGGER.fatal("write delta failed: " + ex.getMessage(), ex);
+            LOGGER.error("write delta failed: " + ex.getMessage(), ex);
             // report unhealthy status
             ++this.writeErrorsSinceDeltaOpen;
 
@@ -361,7 +361,7 @@ public class OptOutLogProducer extends AbstractVerticle {
             } catch (Exception ex) {
                 // report unhealthy status
                 ++this.writeErrorsSinceDeltaOpen;
-                LOGGER.fatal("write last entry to delta failed: " + ex.getMessage(), ex);
+                LOGGER.error("write last entry to delta failed: " + ex.getMessage(), ex);
                 assert false;
             } finally {
                 buffer.clear();
@@ -374,7 +374,7 @@ public class OptOutLogProducer extends AbstractVerticle {
             } catch (Exception ex) {
                 // report unhealthy status
                 ++this.writeErrorsSinceDeltaOpen;
-                LOGGER.fatal("close delta file failed: " + ex.getMessage(), ex);
+                LOGGER.error("close delta file failed: " + ex.getMessage(), ex);
                 assert false;
             }
         }
@@ -389,7 +389,7 @@ public class OptOutLogProducer extends AbstractVerticle {
             } catch (Exception ex) {
                 // report unhealthy status
                 ++this.writeErrorsSinceDeltaOpen;
-                LOGGER.fatal("open delta file failed" + ex.getMessage(), ex);
+                LOGGER.error("open delta file failed" + ex.getMessage(), ex);
                 assert false;
             }
 
@@ -406,7 +406,7 @@ public class OptOutLogProducer extends AbstractVerticle {
             } catch (Exception ex) {
                 // report unhealthy status
                 ++this.writeErrorsSinceDeltaOpen;
-                LOGGER.fatal("write first entry to delta failed: " + ex.getMessage(), ex);
+                LOGGER.error("write first entry to delta failed: " + ex.getMessage(), ex);
                 assert false;
             } finally {
                 buffer.clear();

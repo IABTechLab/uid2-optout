@@ -14,8 +14,8 @@ import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -109,7 +109,7 @@ public class PartnerConfigMonitorV2 implements IMetadataVersionedStore {
                     if (dr.succeeded()) {
                         newDeployIdMap.put(ef.name(), dr.result());
                     } else {
-                        LOGGER.fatal("Failed to deploy OptOutSender: " + ef.name());
+                        LOGGER.error("Failed to deploy OptOutSender: " + ef.name());
                     }
                 });
             }

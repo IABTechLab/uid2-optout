@@ -5,8 +5,8 @@ import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
@@ -47,13 +47,13 @@ public class QuorumWebClient {
                     resps[iterations] = resp;
 
                     if (resp.statusCode() != 200) {
-                        LOGGER.fatal("remote optout/write request " + uri + " returned " + resp.statusCode());
+                        LOGGER.error("remote optout/write request " + uri + " returned " + resp.statusCode());
                     } else if (succeeded.incrementAndGet() == quorum) {
                         promise.complete(resps);
                         return;
                     }
                 } else {
-                    LOGGER.fatal("Failed sending request to " + uri, ar.cause());
+                    LOGGER.error("Failed sending request to " + uri, ar.cause());
                 }
 
                 if (completed.incrementAndGet() == this.uris.length) {
