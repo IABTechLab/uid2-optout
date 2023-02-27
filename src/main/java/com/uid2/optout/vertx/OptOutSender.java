@@ -405,7 +405,7 @@ public class OptOutSender extends AbstractVerticle {
                 this.pendingAsyncOp.get();
                 promise.complete();
             } catch (Exception ex) {
-                LOGGER.error(ex.getMessage(), ex);
+                LOGGER.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
                 promise.fail(ex);
             } finally {
                 this.pendingAsyncOp = null;
