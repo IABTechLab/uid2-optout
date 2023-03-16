@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -261,8 +262,8 @@ public class OptOutLogTool {
                     .collect(Collectors.toList());
                 for (String d : sortedDownload) {
                     String l = cloudSync.toLocalPath(d);
-                    try {
-                        Files.copy(cloudStorage.download(d), Paths.get(l), StandardCopyOption.REPLACE_EXISTING);
+                    try (InputStream inputStream = cloudStorage.download(d)) {
+                        Files.copy(inputStream, Paths.get(l), StandardCopyOption.REPLACE_EXISTING);
                         LOGGER.trace("Saved " + d + " to " + l);
                     } catch (Exception e) {
                         System.err.println("Unable to download " + d + ": " + e.getMessage());

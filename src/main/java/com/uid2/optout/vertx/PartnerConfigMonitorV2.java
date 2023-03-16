@@ -48,8 +48,9 @@ public class PartnerConfigMonitorV2 implements IMetadataVersionedStore {
 
     @Override
     public JsonObject getMetadata() throws Exception {
-        InputStream s = this.metadataStorage.download(this.partnersMetadataPath);
-        return Utils.toJsonObject(s);
+        try (InputStream s = this.metadataStorage.download(this.partnersMetadataPath)) {
+            return Utils.toJsonObject(s);
+        }
     }
 
     @Override
@@ -61,8 +62,10 @@ public class PartnerConfigMonitorV2 implements IMetadataVersionedStore {
     public long loadContent(JsonObject metadata) throws Exception {
         final JsonObject partnersMetadata = metadata.getJsonObject("partners");
         final String path = partnersMetadata.getString("location");
-        final InputStream inputStream = this.contentStorage.download(path);
-        JsonArray endpointsSpec = Utils.toJsonArray(inputStream);
+        JsonArray endpointsSpec;
+        try (InputStream inputStream = this.contentStorage.download(path)) {
+            endpointsSpec = Utils.toJsonArray(inputStream);
+        }
         List<EndpointConfig> remoteEndpoints = new ArrayList<>();
         for (int i = 0; i < endpointsSpec.size(); ++i) {
             JsonObject endpointSpec = endpointsSpec.getJsonObject(i);
