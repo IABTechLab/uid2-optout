@@ -42,8 +42,9 @@ public class PartnerConfigMonitor implements IMetadataVersionedStore {
 
     @Override
     public JsonObject getMetadata() throws Exception {
-        InputStream s = this.cloudStorage.download(this.partnersConfigPath);
-        return Utils.toJsonObject(s);
+        try (InputStream s = this.cloudStorage.download(this.partnersConfigPath)) {
+            return Utils.toJsonObject(s);
+        }
     }
 
     @Override
