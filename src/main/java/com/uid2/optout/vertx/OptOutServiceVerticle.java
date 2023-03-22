@@ -60,7 +60,10 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final boolean enableOptOutPartnerMock;
     private final String internalApiKey;
 
-    public OptOutServiceVerticle(Vertx vertx, IAuthorizableProvider clientKeyProvider, ICloudStorage cloudStorage, JsonObject jsonConfig) {
+    public OptOutServiceVerticle(Vertx vertx,
+                                 IAuthorizableProvider clientKeyProvider,
+                                 ICloudStorage cloudStorage,
+                                 JsonObject jsonConfig) {
         this.healthComponent.setHealthStatus(false, "not started");
 
         this.cloudStorage = cloudStorage;
@@ -98,12 +101,10 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     }
 
     @Override
-    public void start(Promise<Void> startPromise) throws Exception {
-        LOGGER.info("starting OptOutService");
+    public void start(Promise<Void> startPromise) {
         this.healthComponent.setHealthStatus(false, "still starting");
 
         try {
-            LOGGER.info("starting service on http.port: " + listenPort);
             vertx.createHttpServer()
                     .requestHandler(createRouter())
                     .listen(listenPort, result -> handleListenResult(startPromise, result));
@@ -113,18 +114,16 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         }
 
         startPromise.future()
-                .onSuccess(v -> {
-                    LOGGER.info("started OptOutService");
-                })
+                .onSuccess(v -> LOGGER.info("OptOutServiceVerticle started on HTTP port: {}", listenPort))
                 .onFailure(e -> {
-                    LOGGER.error("failed starting OptOutService", e);
+                    LOGGER.error("OptOutServiceVerticle failed to start", e);
                     this.healthComponent.setHealthStatus(false, e.getMessage());
                 });
     }
 
     @Override
-    public void stop() throws Exception {
-        LOGGER.info("Shutting down OptOutService.");
+    public void stop() {
+        LOGGER.info("Shutting down OptOutServiceVerticle");
     }
 
     public void setCloudPaths(Collection<String> paths) {
@@ -287,6 +286,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                             resp.setStatusCode(200)
                                     .setChunked(true)
                                     .write(timestamp);
+                            resp.end();
                         }
                     }
                 });
