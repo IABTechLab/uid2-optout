@@ -110,7 +110,7 @@ public class Main {
             LOGGER.info("Using CloudStorage for partners config: s3://" + optoutBucket);
         }
 
-        ApplicationVersion appVersion = ApplicationVersion.load("uid2-optout", "uid2-shared", "enclave-attestation-api");
+        ApplicationVersion appVersion = ApplicationVersion.load("uid2-optout", "uid2-shared", "uid2-attestation-api");
 
         String coreAttestUrl = this.config.getString(Const.Config.CoreAttestUrlProp);
         final DownloadCloudStorage contentStorage;
