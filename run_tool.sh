@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 LOGBACK_CONF=${LOGBACK_CONF:-./conf/logback.xml}
 
