@@ -17,7 +17,7 @@ COPY ./run_tool.sh /app
 COPY ./conf/default-config.json /app/conf/
 COPY ./conf/*.xml /app/conf/
 
-RUN adduser -D uid2-optout && mkdir -p /app && chmod 705 -R /app && mkdir -p /app/file-uploads && chmod 777 -R /app/file-uploads
+RUN adduser -D uid2-optout && mkdir -p /opt/uid2 && chmod 777 -R /opt/uid2 && mkdir -p /app && chmod 705 -R /app && mkdir -p /app/file-uploads && chmod 777 -R /app/file-uploads
 USER uid2-optout
 
 CMD java \
