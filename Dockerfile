@@ -17,7 +17,7 @@ COPY ./run_tool.sh /app
 COPY ./conf/default-config.json /app/conf/
 COPY ./conf/*.xml /app/conf/
 
-RUN addgroup --gid 1100 uidUsers && adduser -D --gid 1100 --uid 1100 uid2-optout && mkdir -p /opt/uid2 && chmod 777 -R /opt/uid2 && mkdir -p /app && chmod 705 -R /app && mkdir -p /app/file-uploads && chmod 777 -R /app/file-uploads
+RUN addgroup --gid 1100 uidusers && adduser -D -G uidusers --uid 1100 uid2-optout && mkdir -p /opt/uid2 && chmod 777 -R /opt/uid2 && mkdir -p /app && chmod 705 -R /app && mkdir -p /app/file-uploads && chmod 777 -R /app/file-uploads
 USER uid2-optout
 
 CMD java \
