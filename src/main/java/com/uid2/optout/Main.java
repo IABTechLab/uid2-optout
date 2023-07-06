@@ -28,6 +28,7 @@ import io.vertx.core.*;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.impl.HttpUtils;
 import io.vertx.core.json.JsonObject;
+import io.vertx.micrometer.MetricsDomain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.vertx.micrometer.Label;
@@ -41,10 +42,7 @@ import java.lang.management.ManagementFactory;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -225,6 +223,10 @@ public class Main {
                             return actualPath;
                         }
                     }))
+                // Don't record metrics for 404s.
+                .meterFilter(MeterFilter.deny(id ->
+                    id.getName().startsWith(MetricsDomain.HTTP_SERVER.getPrefix()) &&
+                    Objects.equals(id.getTag(Label.HTTP_CODE.toString()), "404")))
                 // adding common labels
                 .commonTags("application", "uid2-optout");
 
