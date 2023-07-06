@@ -28,7 +28,6 @@ import io.vertx.core.*;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.impl.HttpUtils;
 import io.vertx.core.json.JsonObject;
-import io.vertx.micrometer.MetricsDomain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.vertx.micrometer.Label;
@@ -42,7 +41,10 @@ import java.lang.management.ManagementFactory;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -55,165 +57,154 @@ import java.util.function.Supplier;
 public class Main {
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
 
-    private Vertx vertx;
-    private JsonObject config;
-    private ICloudStorage fsLocal = new LocalStorageMock();
-    private ICloudStorage fsOptOut;
-    private DownloadCloudStorage fsOperatorKeyConfig;
-    private ICloudStorage fsPartnerConfig;
-    private RotatingOperatorKeyProvider operatorKeyProvider;
-    private boolean observeOnly;
+    private final Vertx vertx;
+    private final JsonObject config;
+    private final ICloudStorage fsLocal = new LocalStorageMock();
+    private final ICloudStorage fsOptOut;
+    private final DownloadCloudStorage fsOperatorKeyConfig;
+    private final ICloudStorage fsPartnerConfig;
+    private final RotatingOperatorKeyProvider operatorKeyProvider;
+    private final boolean observeOnly;
 
     public Main(Vertx vertx, JsonObject config) throws Exception {
-        try {
-            this.vertx = vertx;
-            this.config = config;
-            this.observeOnly = config.getBoolean(Const.Config.OptOutObserveOnlyProp);
-            if (this.observeOnly) {
-                LOGGER.warn("Running Observe ONLY mode: no producer, no sender");
-            }
+        this.vertx = vertx;
+        this.config = config;
+        this.observeOnly = config.getBoolean(Const.Config.OptOutObserveOnlyProp);
+        if (this.observeOnly) {
+            LOGGER.warn("Running Observe ONLY mode: no producer, no sender");
+        }
 
-            boolean useStorageMock = config.getBoolean(Const.Config.StorageMockProp, false);
-            if (useStorageMock) {
-                Path cloudMockPath = Paths.get(config.getString(Const.Config.OptOutDataDirProp), "cloud_mock");
-                Utils.ensureDirectoryExists(cloudMockPath);
-                this.fsOptOut = new LocalStorageMock(cloudMockPath.toString());
-                LOGGER.info("Using LocalStorageMock for optout: " + cloudMockPath.toString());
+        boolean useStorageMock = config.getBoolean(Const.Config.StorageMockProp, false);
+        if (useStorageMock) {
+            Path cloudMockPath = Paths.get(config.getString(Const.Config.OptOutDataDirProp), "cloud_mock");
+            Utils.ensureDirectoryExists(cloudMockPath);
+            this.fsOptOut = new LocalStorageMock(cloudMockPath.toString());
+            LOGGER.info("Using LocalStorageMock for optout: " + cloudMockPath.toString());
 
-                this.fsPartnerConfig = new EmbeddedResourceStorage(Main.class);
-                LOGGER.info("Partners config - Using EmbeddedResourceStorage");
+            this.fsPartnerConfig = new EmbeddedResourceStorage(Main.class);
+            LOGGER.info("Partners config - Using EmbeddedResourceStorage");
+        } else {
+            String optoutBucket = this.config.getString(Const.Config.OptOutS3BucketProp);
+            ICloudStorage cs = CloudUtils.createStorage(optoutBucket, config);
+            if (config.getBoolean(Const.Config.OptOutS3PathCompatProp)) {
+                LOGGER.warn("Using S3 Path Compatibility Conversion: log -> delta, snapshot -> partition");
+                this.fsOptOut = new PathConversionWrapper(
+                    cs,
+                    in -> {
+                        String out = in.replace("log", "delta")
+                            .replace("snapshot", "partition");
+                        LOGGER.trace("S3 path forward convert: " + in + " -> " + out);
+                        return out;
+                    },
+                    in -> {
+                        String out = in.replace("delta", "log")
+                            .replace("partition", "snapshot");
+                        LOGGER.trace("S3 path backward convert: " + in + " -> " + out);
+                        return out;
+                    }
+                );
             } else {
-                String optoutBucket = this.config.getString(Const.Config.OptOutS3BucketProp);
-                ICloudStorage cs = CloudUtils.createStorage(optoutBucket, config);
-                if (config.getBoolean(Const.Config.OptOutS3PathCompatProp)) {
-                    LOGGER.warn("Using S3 Path Compatibility Conversion: log -> delta, snapshot -> partition");
-                    this.fsOptOut = new PathConversionWrapper(
-                            cs,
-                            in -> {
-                                String out = in.replace("log", "delta")
-                                        .replace("snapshot", "partition");
-                                LOGGER.trace("S3 path forward convert: " + in + " -> " + out);
-                                return out;
-                            },
-                            in -> {
-                                String out = in.replace("delta", "log")
-                                        .replace("partition", "snapshot");
-                                LOGGER.trace("S3 path backward convert: " + in + " -> " + out);
-                                return out;
-                            }
-                    );
-                } else {
-                    this.fsOptOut = cs;
-                }
-                LOGGER.info("Using CloudStorage for optout: s3://" + optoutBucket);
-
-                this.fsPartnerConfig = CloudUtils.createStorage(optoutBucket, config);
-                ;
-                LOGGER.info("Using CloudStorage for partners config: s3://" + optoutBucket);
+                this.fsOptOut = cs;
             }
+            LOGGER.info("Using CloudStorage for optout: s3://" + optoutBucket);
 
-            ApplicationVersion appVersion = ApplicationVersion.load("uid2-optout", "uid2-shared", "uid2-attestation-api");
+            this.fsPartnerConfig = CloudUtils.createStorage(optoutBucket, config);;
+            LOGGER.info("Using CloudStorage for partners config: s3://" + optoutBucket);
+        }
 
-            String coreAttestUrl = this.config.getString(Const.Config.CoreAttestUrlProp);
-            final DownloadCloudStorage contentStorage;
-            if (coreAttestUrl != null) {
-                String coreApiToken = this.config.getString(Const.Config.CoreApiTokenProp);
-                boolean enforceHttps = this.config.getBoolean("enforce_https", true);
-                UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreAttestUrl, coreApiToken, appVersion, enforceHttps);
-                if (useStorageMock) uidCoreClient.setAllowContentFromLocalFileSystem(true);
-                this.fsOperatorKeyConfig = uidCoreClient;
-                contentStorage = uidCoreClient.getContentStorage();
-                LOGGER.info("Operator api-keys - Using uid2-core attestation endpoint: " + coreAttestUrl);
-            } else if (useStorageMock) {
-                this.fsOperatorKeyConfig = new EmbeddedResourceStorage(Main.class);
-                contentStorage = this.fsOperatorKeyConfig;
-                LOGGER.info("Client api-keys - Using EmbeddedResourceStorage");
-            } else {
-                String optoutS3Bucket = this.config.getString(Const.Config.OptOutS3BucketProp);
-                this.fsOperatorKeyConfig = CloudUtils.createStorage(optoutS3Bucket, config);
-                contentStorage = this.fsOperatorKeyConfig;
-                LOGGER.info("Using CloudStorage for operator api-key at s3://" + optoutS3Bucket);
-            }
+        ApplicationVersion appVersion = ApplicationVersion.load("uid2-optout", "uid2-shared", "uid2-attestation-api");
 
-            String operatorsMdPath = this.config.getString(Const.Config.OperatorsMetadataPathProp);
-            this.operatorKeyProvider = new RotatingOperatorKeyProvider(
-                    this.fsOperatorKeyConfig,
-                    contentStorage,
-                    new GlobalScope(new CloudPath(operatorsMdPath)));
-            if (useStorageMock) {
-                this.operatorKeyProvider.loadContent(this.operatorKeyProvider.getMetadata());
-            }
-        } catch (Throwable t) {
-            System.out.println(t);
+        String coreAttestUrl = this.config.getString(Const.Config.CoreAttestUrlProp);
+        final DownloadCloudStorage contentStorage;
+        if (coreAttestUrl != null) {
+            String coreApiToken = this.config.getString(Const.Config.CoreApiTokenProp);
+            boolean enforceHttps = this.config.getBoolean("enforce_https", true);
+            UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreAttestUrl, coreApiToken, appVersion, enforceHttps);
+            if (useStorageMock) uidCoreClient.setAllowContentFromLocalFileSystem(true);
+            this.fsOperatorKeyConfig = uidCoreClient;
+            contentStorage = uidCoreClient.getContentStorage();
+            LOGGER.info("Operator api-keys - Using uid2-core attestation endpoint: " + coreAttestUrl);
+        } else if (useStorageMock) {
+            this.fsOperatorKeyConfig = new EmbeddedResourceStorage(Main.class);
+            contentStorage = this.fsOperatorKeyConfig;
+            LOGGER.info("Client api-keys - Using EmbeddedResourceStorage");
+        } else {
+            String optoutS3Bucket = this.config.getString(Const.Config.OptOutS3BucketProp);
+            this.fsOperatorKeyConfig = CloudUtils.createStorage(optoutS3Bucket, config);
+            contentStorage = this.fsOperatorKeyConfig;
+            LOGGER.info("Using CloudStorage for operator api-key at s3://" + optoutS3Bucket);
+        }
+
+        String operatorsMdPath = this.config.getString(Const.Config.OperatorsMetadataPathProp);
+        this.operatorKeyProvider = new RotatingOperatorKeyProvider(
+                this.fsOperatorKeyConfig,
+                contentStorage,
+                new GlobalScope(new CloudPath(operatorsMdPath)));
+        if (useStorageMock) {
+            this.operatorKeyProvider.loadContent(this.operatorKeyProvider.getMetadata());
         }
     }
 
     public static void main(String[] args) {
-        try {
-            final String vertxConfigPath = System.getProperty(Const.Config.VERTX_CONFIG_PATH_PROP);
-            if (vertxConfigPath != null) {
-                System.out.format("Running CUSTOM CONFIG mode, config: %s\n", vertxConfigPath);
-            } else if (!Utils.isProductionEnvironment()) {
-                System.out.format("Running LOCAL DEBUG mode, config: %s\n", Const.Config.LOCAL_CONFIG_PATH);
-                System.setProperty(Const.Config.VERTX_CONFIG_PATH_PROP, Const.Config.LOCAL_CONFIG_PATH);
-            } else {
-                System.out.format("Running PRODUCTION mode, config: %s\n", Const.Config.OVERRIDE_CONFIG_PATH);
-            }
-
-            // create AdminApi instance
-            try {
-                ObjectName objectName = new ObjectName("uid2.optout:type=jmx,name=AdminApi");
-                MBeanServer server = ManagementFactory.getPlatformMBeanServer();
-                server.registerMBean(AdminApi.instance, objectName);
-            } catch (InstanceAlreadyExistsException | MBeanRegistrationException | NotCompliantMBeanException |
-                     MalformedObjectNameException e) {
-                System.err.format("%s", e.getMessage());
-                System.exit(-1);
-            }
-
-            final int portOffset = Utils.getPortOffset();
-            VertxPrometheusOptions prometheusOptions = new VertxPrometheusOptions()
-                    .setStartEmbeddedServer(true)
-                    .setEmbeddedServerOptions(new HttpServerOptions().setPort(Const.Port.PrometheusPortForOptOut + portOffset))
-                    .setEnabled(true);
-
-            MicrometerMetricsOptions metricOptions = new MicrometerMetricsOptions()
-                    .setPrometheusOptions(prometheusOptions)
-                    .setLabels(EnumSet.of(Label.HTTP_METHOD, Label.HTTP_CODE, Label.HTTP_PATH))
-                    .setJvmMetricsEnabled(true)
-                    .setEnabled(true);
-            setupMetrics(metricOptions);
-
-            final int threadBlockedCheckInterval = Utils.isProductionEnvironment()
-                    ? 60 * 1000
-                    : 3600 * 1000;
-
-            VertxOptions vertxOptions = new VertxOptions()
-                    .setMetricsOptions(metricOptions)
-                    .setBlockedThreadCheckInterval(threadBlockedCheckInterval);
-
-            Vertx vertx = Vertx.vertx(vertxOptions);
-
-            ConfigRetriever retriever = VertxUtils.createConfigRetriever(vertx);
-            retriever.getConfig(ar -> {
-                if (ar.failed()) {
-                    LOGGER.error("Unable to read config: " + ar.cause().getMessage(), ar.cause());
-                    return;
-                }
-                try {
-                    Main app = new Main(vertx, ar.result());
-                    app.run(args);
-                } catch (Exception e) {
-                    LOGGER.error("Unable to create/run application: " + e.getMessage(), e);
-                    vertx.close();
-                    System.exit(1);
-                }
-            });
-        } catch (Throwable t)
-        {
-            System.out.println(t);
+        final String vertxConfigPath = System.getProperty(Const.Config.VERTX_CONFIG_PATH_PROP);
+        if (vertxConfigPath != null) {
+            System.out.format("Running CUSTOM CONFIG mode, config: %s\n", vertxConfigPath);
+        }
+        else if (!Utils.isProductionEnvironment()) {
+            System.out.format("Running LOCAL DEBUG mode, config: %s\n", Const.Config.LOCAL_CONFIG_PATH);
+            System.setProperty(Const.Config.VERTX_CONFIG_PATH_PROP, Const.Config.LOCAL_CONFIG_PATH);
+        } else {
+            System.out.format("Running PRODUCTION mode, config: %s\n", Const.Config.OVERRIDE_CONFIG_PATH);
         }
 
+        // create AdminApi instance
+        try {
+            ObjectName objectName = new ObjectName("uid2.optout:type=jmx,name=AdminApi");
+            MBeanServer server = ManagementFactory.getPlatformMBeanServer();
+            server.registerMBean(AdminApi.instance, objectName);
+        } catch (InstanceAlreadyExistsException | MBeanRegistrationException | NotCompliantMBeanException | MalformedObjectNameException e) {
+            System.err.format("%s", e.getMessage());
+            System.exit(-1);
+        }
+
+        final int portOffset = Utils.getPortOffset();
+        VertxPrometheusOptions prometheusOptions = new VertxPrometheusOptions()
+            .setStartEmbeddedServer(true)
+            .setEmbeddedServerOptions(new HttpServerOptions().setPort(Const.Port.PrometheusPortForOptOut + portOffset))
+            .setEnabled(true);
+
+        MicrometerMetricsOptions metricOptions = new MicrometerMetricsOptions()
+            .setPrometheusOptions(prometheusOptions)
+            .setLabels(EnumSet.of(Label.HTTP_METHOD, Label.HTTP_CODE, Label.HTTP_PATH))
+            .setJvmMetricsEnabled(true)
+            .setEnabled(true);
+        setupMetrics(metricOptions);
+
+        final int threadBlockedCheckInterval = Utils.isProductionEnvironment()
+            ? 60 * 1000
+            : 3600 * 1000;
+
+        VertxOptions vertxOptions = new VertxOptions()
+            .setMetricsOptions(metricOptions)
+            .setBlockedThreadCheckInterval(threadBlockedCheckInterval);
+
+        Vertx vertx = Vertx.vertx(vertxOptions);
+
+        ConfigRetriever retriever = VertxUtils.createConfigRetriever(vertx);
+        retriever.getConfig(ar -> {
+            if (ar.failed()) {
+                LOGGER.error("Unable to read config: " + ar.cause().getMessage(), ar.cause());
+                return;
+            }
+            try {
+                Main app = new Main(vertx, ar.result());
+                app.run(args);
+            } catch (Exception e) {
+                LOGGER.error("Unable to create/run application: " + e.getMessage(), e);
+                vertx.close();
+                System.exit(1);
+            }
+        });
     }
 
     private static void setupMetrics(MicrometerMetricsOptions metricOptions) {
@@ -234,10 +225,6 @@ public class Main {
                             return actualPath;
                         }
                     }))
-                // Don't record metrics for 404s.
-                .meterFilter(MeterFilter.deny(id ->
-                    id.getName().startsWith(MetricsDomain.HTTP_SERVER.getPrefix()) &&
-                    Objects.equals(id.getTag(Label.HTTP_CODE.toString()), "404")))
                 // adding common labels
                 .commonTags("application", "uid2-optout");
 
@@ -247,67 +234,63 @@ public class Main {
     }
 
     public void run(String[] args) throws IOException {
-        try {
-            this.createAppStatusMetric();
+        this.createAppStatusMetric();
 
-            List<Future> futs = new ArrayList<>();
+        List<Future> futs = new ArrayList<>();
 
-            // create optout cloud sync verticle
-            OptOutCloudSync cs = new OptOutCloudSync(this.config, true);
-            CloudSyncVerticle cloudSyncVerticle = new CloudSyncVerticle("optout", this.fsOptOut, this.fsLocal, cs, this.config);
+        // create optout cloud sync verticle
+        OptOutCloudSync cs = new OptOutCloudSync(this.config, true);
+        CloudSyncVerticle cloudSyncVerticle = new CloudSyncVerticle("optout", this.fsOptOut, this.fsLocal, cs, this.config);
 
-            // deploy optout cloud sync verticle
-            futs.add(this.deploySingleInstance(cloudSyncVerticle));
+        // deploy optout cloud sync verticle
+        futs.add(this.deploySingleInstance(cloudSyncVerticle));
 
-            // deploy operator key rotator
-            futs.add(this.createOperatorKeyRotator());
+        // deploy operator key rotator
+        futs.add(this.createOperatorKeyRotator());
 
-            if (!this.observeOnly) {
-                // enable partition producing
-                cs.enableDeltaMerging(vertx, Const.Event.PartitionProduce);
+        if (!this.observeOnly) {
+            // enable partition producing
+            cs.enableDeltaMerging(vertx, Const.Event.PartitionProduce);
 
-                // create partners config monitor
-                futs.add(this.createPartnerConfigMonitor(cloudSyncVerticle.eventDownloaded()));
+            // create partners config monitor
+            futs.add(this.createPartnerConfigMonitor(cloudSyncVerticle.eventDownloaded()));
 
-                // create & deploy log producer verticle
-                String eventUpload = cloudSyncVerticle.eventUpload();
-                OptOutLogProducer logProducer = new OptOutLogProducer(this.config, eventUpload, eventUpload);
-                futs.add(this.deploySingleInstance(logProducer));
+            // create & deploy log producer verticle
+            String eventUpload = cloudSyncVerticle.eventUpload();
+            OptOutLogProducer logProducer = new OptOutLogProducer(this.config, eventUpload, eventUpload);
+            futs.add(this.deploySingleInstance(logProducer));
 
-                // upload last delta produced and potentially not uploaded yet
-                futs.add((this.uploadLastDelta(cs, logProducer, cloudSyncVerticle.eventUpload(), cloudSyncVerticle.eventRefresh())));
-            }
-
-            Supplier<Verticle> svcSupplier = () -> {
-                OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config);
-                // configure where OptOutService receives the latest cloud paths
-                cs.registerNewCloudPathsHandler(ps -> svc.setCloudPaths(ps));
-                return svc;
-            };
-
-            LOGGER.info("Deploying config stores...");
-            int svcInstances = this.config.getInteger(Const.Config.ServiceInstancesProp);
-            CompositeFuture.all(futs)
-                    .compose(v -> {
-                        LOGGER.info("Config stores deployed, deploying service instances...");
-                        return this.deploy(svcSupplier, svcInstances);
-                    })
-                    .compose(v -> {
-                        LOGGER.info("Service instances deployed, setting up timers...");
-                        return setupTimerEvents(cloudSyncVerticle.eventRefresh());
-                    })
-                    .onSuccess(v -> {
-                        LOGGER.info("OptOut service fully started...");
-                    })
-                    .onFailure(t -> {
-                        LOGGER.error("Unable to bootstrap OptOutSerivce and its dependencies");
-                        LOGGER.error(t.getMessage(), new Exception(t));
-                        vertx.close();
-                        System.exit(1);
-                    });
-        } catch (Throwable t) {
-            System.out.println(t);
+            // upload last delta produced and potentially not uploaded yet
+            futs.add((this.uploadLastDelta(cs, logProducer, cloudSyncVerticle.eventUpload(), cloudSyncVerticle.eventRefresh())));
         }
+
+        Supplier<Verticle> svcSupplier = () -> {
+            OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config);
+            // configure where OptOutService receives the latest cloud paths
+            cs.registerNewCloudPathsHandler(ps -> svc.setCloudPaths(ps));
+            return svc;
+        };
+
+        LOGGER.info("Deploying config stores...");
+        int svcInstances = this.config.getInteger(Const.Config.ServiceInstancesProp);
+        CompositeFuture.all(futs)
+            .compose(v -> {
+                LOGGER.info("Config stores deployed, deploying service instances...");
+                return this.deploy(svcSupplier, svcInstances);
+            })
+            .compose(v -> {
+                LOGGER.info("Service instances deployed, setting up timers...");
+                return setupTimerEvents(cloudSyncVerticle.eventRefresh());
+            })
+            .onSuccess(v -> {
+                LOGGER.info("OptOut service fully started...");
+            })
+            .onFailure(t -> {
+                LOGGER.error("Unable to bootstrap OptOutSerivce and its dependencies");
+                LOGGER.error(t.getMessage(), new Exception(t));
+                vertx.close();
+                System.exit(1);
+            });
     }
 
     private Future uploadLastDelta(OptOutCloudSync cs, OptOutLogProducer logProducer, String eventUpload, String eventRefresh) {
