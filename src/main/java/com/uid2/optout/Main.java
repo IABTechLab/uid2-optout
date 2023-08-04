@@ -6,6 +6,8 @@ import com.uid2.optout.vertx.PartnerConfigMonitor;
 import com.uid2.optout.vertx.PartnerConfigMonitorV2;
 import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
+import com.uid2.shared.attest.AttestationTokenRetriever;
+import com.uid2.shared.attest.NoAttestationProvider;
 import com.uid2.shared.attest.UidCoreClient;
 import com.uid2.shared.auth.RotatingOperatorKeyProvider;
 import com.uid2.shared.cloud.*;
@@ -117,7 +119,8 @@ public class Main {
         if (coreAttestUrl != null) {
             String coreApiToken = this.config.getString(Const.Config.CoreApiTokenProp);
             boolean enforceHttps = this.config.getBoolean("enforce_https", true);
-            UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreAttestUrl, coreApiToken, appVersion, enforceHttps);
+            var tokenRetriever = new AttestationTokenRetriever(vertx, coreAttestUrl, coreApiToken, appVersion, new NoAttestationProvider(), null);
+            UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreApiToken, enforceHttps, tokenRetriever);
             if (useStorageMock) uidCoreClient.setAllowContentFromLocalFileSystem(true);
             this.fsOperatorKeyConfig = uidCoreClient;
             contentStorage = uidCoreClient.getContentStorage();
