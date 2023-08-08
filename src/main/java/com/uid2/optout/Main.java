@@ -73,11 +73,12 @@ public class Main {
         }
 
         boolean useStorageMock = config.getBoolean(Const.Config.StorageMockProp, false);
+
         if (useStorageMock) {
             Path cloudMockPath = Paths.get(config.getString(Const.Config.OptOutDataDirProp), "cloud_mock");
             Utils.ensureDirectoryExists(cloudMockPath);
             this.fsOptOut = new LocalStorageMock(cloudMockPath.toString());
-            LOGGER.info("Using LocalStorageMock for optout: " + cloudMockPath.toString());
+            LOGGER.info("Using LocalStorageMock for optout: " + cloudMockPath);
 
             this.fsPartnerConfig = new EmbeddedResourceStorage(Main.class);
             LOGGER.info("Partners config - Using EmbeddedResourceStorage");
@@ -112,25 +113,22 @@ public class Main {
 
         ApplicationVersion appVersion = ApplicationVersion.load("uid2-optout", "uid2-shared", "uid2-attestation-api");
 
-        String coreAttestUrl = this.config.getString(Const.Config.CoreAttestUrlProp);
-        final DownloadCloudStorage contentStorage;
-        if (coreAttestUrl != null) {
-            String coreApiToken = this.config.getString(Const.Config.CoreApiTokenProp);
-            boolean enforceHttps = this.config.getBoolean("enforce_https", true);
-            UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreAttestUrl, coreApiToken, appVersion, enforceHttps);
-            if (useStorageMock) uidCoreClient.setAllowContentFromLocalFileSystem(true);
-            this.fsOperatorKeyConfig = uidCoreClient;
-            contentStorage = uidCoreClient.getContentStorage();
-            LOGGER.info("Operator api-keys - Using uid2-core attestation endpoint: " + coreAttestUrl);
-        } else if (useStorageMock) {
+        DownloadCloudStorage contentStorage;
+        if (useStorageMock) {
+            LOGGER.info("Client api-keys - Using EmbeddedResourceStorage");
             this.fsOperatorKeyConfig = new EmbeddedResourceStorage(Main.class);
             contentStorage = this.fsOperatorKeyConfig;
-            LOGGER.info("Client api-keys - Using EmbeddedResourceStorage");
         } else {
-            String optoutS3Bucket = this.config.getString(Const.Config.OptOutS3BucketProp);
-            this.fsOperatorKeyConfig = CloudUtils.createStorage(optoutS3Bucket, config);
-            contentStorage = this.fsOperatorKeyConfig;
-            LOGGER.info("Using CloudStorage for operator api-key at s3://" + optoutS3Bucket);
+            String coreAttestUrl = this.config.getString(Const.Config.CoreAttestUrlProp);
+            if (coreAttestUrl == null) {
+                throw new Exception("Missing configuration: " + Const.Config.CoreAttestUrlProp);
+            }
+            String coreApiToken = this.config.getString(Const.Config.CoreApiTokenProp);
+            boolean enforceHttps = this.config.getBoolean("enforce_https", true);
+            UidCoreClient coreClient = UidCoreClient.createNoAttest(coreAttestUrl, coreApiToken, appVersion, enforceHttps);
+            this.fsOperatorKeyConfig = coreClient;
+            contentStorage = coreClient.getContentStorage();
+            LOGGER.info("Operator api-keys - Using uid2-core attestation endpoint: " + coreAttestUrl);
         }
 
         String operatorsMdPath = this.config.getString(Const.Config.OperatorsMetadataPathProp);
