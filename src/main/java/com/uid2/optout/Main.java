@@ -118,6 +118,9 @@ public class Main {
         final DownloadCloudStorage contentStorage;
         if (coreAttestUrl != null) {
             String coreApiToken = this.config.getString(Const.Config.CoreApiTokenProp);
+            if (coreApiToken == null || coreApiToken.isBlank()) {
+                LOGGER.warn("Core Attest URL set, but the API Token is not set");
+            }
             boolean enforceHttps = this.config.getBoolean("enforce_https", true);
             var tokenRetriever = new AttestationTokenRetriever(vertx, coreAttestUrl, coreApiToken, appVersion, new NoAttestationProvider(), null);
             UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreApiToken, enforceHttps, tokenRetriever);
