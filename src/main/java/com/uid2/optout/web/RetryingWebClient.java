@@ -50,18 +50,15 @@ public class RetryingWebClient {
         requestCreator.apply(req).send(ar -> {
             try {
                 if (ar.failed()) {
-                    // log cause() if failed
-                    LOGGER.error("failed sending to " + uri, ar.cause());
+                    throw ar.cause();
                 }
 
-                // responseValidator returns a tri-state boolean
-                // - TRUE: result looks good
-                // - FALSE: retry-able error code returned
-                // - NULL: failed and should not retry
                 Boolean responseOK = responseValidator.apply(ar.result());
                 if (responseOK == null) {
-                    promise.fail("non-retry-able error happened for sending to " + this.uri + ", stop retrying and fail");
-                } else if (ar.succeeded() && responseOK) {
+                    throw new RuntimeException("Response validator returned null");
+                }
+
+                if (ar.succeeded() && responseOK) {
                     promise.complete();
                 } else if (currentRetries < this.retryCount) {
                     LOGGER.error("failed sending to " + uri + ", currentRetries: " + currentRetries + ", backing off before retrying");
@@ -75,11 +72,12 @@ public class RetryingWebClient {
                             .onComplete(ar2 -> promise.handle(ar2));
                     }
                 } else {
-                    promise.fail("retry count exceeded for sending to " + this.uri);
+                    LOGGER.error("retry count exceeded for sending to " + this.uri);
+                    throw new TooManyRetriesException(currentRetries);
                 }
-            } catch (Exception ex) {
-                LOGGER.error("unexpected exception: " + ex.getMessage(), ex);
-                promise.fail(new Throwable(ex));
+            }
+            catch (Throwable ex) {
+                promise.fail(ex);
             }
         });
         return promise.future();

@@ -89,7 +89,7 @@ public class RetryingWebClientTest {
             ctx.assertEquals(404, resp.statusCode());
             // returning false for retry
             return false;
-        }).onComplete(ctx.asyncAssertFailure());
+        }).onComplete(ctx.asyncAssertFailure(v -> ctx.assertTrue(v instanceof TooManyRetriesException)));
     }
 
     @Test
@@ -112,7 +112,10 @@ public class RetryingWebClientTest {
             ctx.assertEquals(404, resp.statusCode());
             // returning false for retry
             return false;
-        }).onComplete(ctx.asyncAssertFailure(v -> ctx.assertEquals(4, (int) totalAttempts.get())));
+        }).onComplete(ctx.asyncAssertFailure(v -> {
+            ctx.assertEquals(4, (int) totalAttempts.get());
+            ctx.assertTrue(v instanceof TooManyRetriesException);
+        }));
     }
 
     @Test
@@ -162,10 +165,11 @@ public class RetryingWebClientTest {
                 totalAttempts.incrementAndGet();
                 if (resp.statusCode() == 200) return true;
                 else if (resp.statusCode() == 500) return false;
-                else return null;
+                else throw new UnexpectedStatusCodeException(resp.statusCode());
             }).onComplete(ctx.asyncAssertFailure(v -> {
                 // check that it only attempted once and failed
                 ctx.assertEquals(1, totalAttempts.get());
+                ctx.assertTrue(v instanceof UnexpectedStatusCodeException);
             }));
         }
     }
