@@ -19,7 +19,8 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
     public static final String QUOTEDVREF_ADVERTISING_ID = Pattern.quote(OptOutPartnerEndpoint.VALUEREF_ADVERTISING_ID);
     public static final String QUOTEDVEF_OPTOUT_EPOCH = Pattern.quote(OptOutPartnerEndpoint.VALUEREF_OPTOUT_EPOCH);
 
-    private static final Set<Integer> RETRYABLE_STATUS_CODES = Set.of(500, 502, 503, 504);
+    private static final Set<Integer> SUCCESS_STATUS_CODES = Set.of(200, 204);
+    private static final Set<Integer> RETRYABLE_STATUS_CODES = Set.of(429, 500, 502, 503, 504);
     private static final Logger LOGGER = LoggerFactory.getLogger(OptOutPartnerEndpoint.class);
 
     private final EndpointConfig config;
@@ -62,16 +63,15 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
             resp -> {
                 if (resp == null) throw new RuntimeException("response is null");
 
-                if (resp.statusCode() == 200) {
+                if (SUCCESS_STATUS_CODES.contains(resp.statusCode())) {
                     return true;
-                } else {
-                    LOGGER.info("received non-200 response: " + resp.statusCode() + "-" + resp.bodyAsString() + " for optout " + config.url() + " - advertising_id: " + Utils.maskPii(entry.advertisingId) + ", epoch: " + entry.timestamp);
+                }
 
-                    if (RETRYABLE_STATUS_CODES.contains(resp.statusCode())) {
-                        return false;
-                    } else {
-                        throw new UnexpectedStatusCodeException(resp.statusCode());
-                    }
+                LOGGER.info("received non-200 response: " + resp.statusCode() + "-" + resp.bodyAsString() + " for optout " + config.url() + " - advertising_id: " + Utils.maskPii(entry.advertisingId) + ", epoch: " + entry.timestamp);
+                if (RETRYABLE_STATUS_CODES.contains(resp.statusCode())) {
+                    return false;
+                } else {
+                    throw new UnexpectedStatusCodeException(resp.statusCode());
                 }
             }
         );
