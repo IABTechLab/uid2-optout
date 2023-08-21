@@ -5,6 +5,7 @@ import com.uid2.optout.web.QuorumWebClient;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationTokenService;
 import com.uid2.shared.attest.IAttestationTokenService;
+import com.uid2.shared.attest.JwtService;
 import com.uid2.shared.auth.IAuthorizableProvider;
 import com.uid2.shared.auth.OperatorKey;
 import com.uid2.shared.auth.Role;
@@ -71,8 +72,17 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
         final String attestEncKey = jsonConfig.getString(Const.Config.AttestationEncryptionKeyName);
         final String attestEncSalt = jsonConfig.getString(Const.Config.AttestationEncryptionSaltName);
+        final String jwtAudience = jsonConfig.getString(Const.Config.OptOutUrlProp);
+        final String jwtIssuer = jsonConfig.getString(Const.Config.CorePublicUrlProp);
+        Boolean enforceJwt = jsonConfig.getBoolean(Const.Config.EnforceJwtProp, true);
+        if (enforceJwt == null) {
+            enforceJwt = true;
+        }
+
+        final JwtService jwtService = new JwtService(jsonConfig);
+
         final IAttestationTokenService tokenService = new AttestationTokenService(attestEncKey, attestEncSalt);
-        this.attest = new AttestationMiddleware(tokenService);
+        this.attest = new AttestationMiddleware(tokenService, jwtService, jwtAudience, jwtIssuer, enforceJwt);
 
         this.listenPort = Const.Port.ServicePortForOptOut + Utils.getPortOffset();
         this.deltaRotateInterval = jsonConfig.getInteger(Const.Config.OptOutDeltaRotateIntervalProp);
@@ -161,7 +171,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         router.route(REPLICATE_METHOD)
                 .handler(auth.handle(this::handleReplicate, Role.OPTOUT));
         router.route(REFRESH_METHOD)
-                .handler(auth.handle(attest.handle(this::handleRefresh), Role.OPERATOR));
+                .handler(auth.handle(attest.handle(this::handleRefresh, Role.OPERATOR), Role.OPERATOR));
         router.get(HEALTHCHECK_METHOD)
                 .handler(this::handleHealthCheck);
 
