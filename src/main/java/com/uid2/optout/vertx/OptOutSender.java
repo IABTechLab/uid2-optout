@@ -402,8 +402,6 @@ public class OptOutSender extends AbstractVerticle {
         try {
             // generate comma separated filename list for logging
             String filenames = String.join(",", fileList);
-            this.pendingAsyncOp = new CompletableFuture();
-            CountDownLatch latch = new CountDownLatch(1);
 
             // sequentially send each entry
             Future<Void> lastOp = Future.succeededFuture();
@@ -435,28 +433,16 @@ public class OptOutSender extends AbstractVerticle {
                     this.logger.error("deltaReplay failed sending delta " + filenames + " to remote: " + this.remotePartner.name(), ar.cause());
                     this.logger.error("deltaReplay has " + this.pendingFilesCount.get() + " pending file");
                     this.logger.error("deltaReplay will restart in 3600s");
-                    vertx.setTimer(1000 * 3600, i -> {latch.countDown();this.pendingAsyncOp.completeExceptionally(new Exception(ar.cause()));});
+                    vertx.setTimer(1000 * 3600, i -> promise.fail(ar.cause()));
                 } else {
                     this.logger.info("finished delta replay for file: " + filenames);
-                    latch.countDown();
-                    this.pendingAsyncOp.complete(null);
 
                     String completeMsg = this.remotePartner.name() + "," + filenames;
                     vertx.eventBus().send(Const.Event.DeltaSentRemote, completeMsg);
+                    promise.complete();
                 }
             });
-
-            // this causes it to block on the worker thread (this function should be called on a worker thread)
-            try {
-                latch.await();
-                this.pendingAsyncOp.get();
-                promise.complete();
-            } catch (Exception ex) {
-                this.logger.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
-                promise.fail(ex);
-            } finally {
-                this.pendingAsyncOp = null;
-            }
+            
         } catch (Exception ex) {
             this.logger.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
             // this error is a code logic error and needs to be fixed
