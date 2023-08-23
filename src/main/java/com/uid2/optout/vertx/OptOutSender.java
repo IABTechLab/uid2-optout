@@ -245,7 +245,10 @@ public class OptOutSender extends AbstractVerticle {
             OptOutUtils.addSorted(this.pendingFiles, filename, OptOutUtils.DeltaFilenameComparator);
 
             // if it is still replaying the last one, return
-            if (this.isReplaying) return;
+            if (this.isReplaying)  {
+                this.logger.info("still replaying the last delta, will not start replaying this one");
+                return;
+            }
 
             this.processPendingFilesToConsolidate(Instant.now());
         } catch (Exception ex) {

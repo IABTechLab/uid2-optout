@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uid2.shared.Const;
 import com.uid2.shared.auth.ClientKey;
-import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 
 import java.time.Instant;
@@ -24,7 +23,7 @@ public class EndpointConfig {
     private String url;
 
     @JsonProperty("method")
-    private HttpMethod method;
+    private String method;
 
     @JsonProperty("query_params")
     private List<String> queryParams = new ArrayList<>();
@@ -74,7 +73,7 @@ public class EndpointConfig {
         return this.url;
     }
 
-    public HttpMethod method() {
+    public String method() {
         return this.method;
     }
 
