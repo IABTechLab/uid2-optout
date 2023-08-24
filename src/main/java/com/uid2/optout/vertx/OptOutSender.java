@@ -30,6 +30,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -75,7 +76,7 @@ public class OptOutSender extends AbstractVerticle {
     private final AtomicInteger pendingFilesCount = new AtomicInteger(0);
     private final AtomicLong lastEntrySent = new AtomicLong(0);
     private LinkedList<String> pendingFiles = new LinkedList<>();
-    private boolean isReplaying = false;
+    private AtomicBoolean isReplaying = new AtomicBoolean(false);
     private CompletableFuture pendingAsyncOp = null;
     // name of the file that stores timestamp
     private Path timestampFile = null;
@@ -159,7 +160,7 @@ public class OptOutSender extends AbstractVerticle {
 
         AtomicInteger shutdownTryCounter = new AtomicInteger(0);
         vertx.setPeriodic(500, i -> {
-            if (this.isReplaying == false || shutdownTryCounter.incrementAndGet() > 120) {
+            if (this.isReplaying.get() == false || shutdownTryCounter.incrementAndGet() > 120) {
                 // wait for at most 60s (120 * 500ms) for current replaying to complete
                 stopPromise.complete();
             }
@@ -246,7 +247,7 @@ public class OptOutSender extends AbstractVerticle {
             OptOutUtils.addSorted(this.pendingFiles, filename, OptOutUtils.DeltaFilenameComparator);
 
             // if it is still replaying the last one, return
-            if (this.isReplaying)  {
+            if (this.isReplaying.get())  {
                 this.logger.info("still replaying the last delta, will not start replaying this one");
                 return;
             }
@@ -308,7 +309,7 @@ public class OptOutSender extends AbstractVerticle {
 
             // if received deltas is the same or greater than the total replicas in the current consolidating window
             // or if the consolidating time window (last, last + deltaRotateInterval) is already in the past
-            this.isReplaying = true;
+            this.isReplaying.set(true);
             this.kickOffDeltaReplayWithConsolidation(nextTimestamp, deltasToConsolidate);
         }
     }
@@ -325,7 +326,7 @@ public class OptOutSender extends AbstractVerticle {
                 }
 
                 // call process again
-                this.isReplaying = false;
+                this.isReplaying.set(false);
                 this.processPendingFilesToConsolidate(Instant.now());
             }
         );
@@ -442,7 +443,7 @@ public class OptOutSender extends AbstractVerticle {
                     promise.complete();
                 }
             });
-            
+
         } catch (Exception ex) {
             this.logger.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
             // this error is a code logic error and needs to be fixed
