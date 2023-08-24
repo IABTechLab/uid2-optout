@@ -41,9 +41,8 @@ public class RetryingWebClient {
     public Future<Void> send(BiFunction<URI, HttpMethod, HttpRequest> requestCreator, Function<HttpResponse, Boolean> responseValidator, int currentRetries) {
         Promise<Void> promise = Promise.promise();
 
-        HttpRequest hr = requestCreator.apply(this.uri, this.method);
-
-        CompletableFuture<HttpResponse<String>> asyncResponse = this.httpClient.sendAsync(hr, HttpResponse.BodyHandlers.ofString());
+        HttpRequest request = requestCreator.apply(this.uri, this.method);
+        CompletableFuture<HttpResponse<String>> asyncResponse = this.httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
 
         asyncResponse.thenAccept(response -> {
             try {

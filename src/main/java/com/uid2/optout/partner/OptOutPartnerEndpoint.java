@@ -42,26 +42,25 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
     @Override
     public Future<Void> send(OptOutEntry entry) {
         return this.retryingClient.send(
-                (URI uri, HttpMethod method) -> {
+            (URI uri, HttpMethod method) -> {
+                StringBuilder query = new StringBuilder();
+                for (String queryParam : config.queryParams()) {
+                    int indexOfEqualSign = queryParam.indexOf('=');
+                    String paramName = queryParam.substring(0, indexOfEqualSign);
+                    String paramValue = queryParam.substring(indexOfEqualSign + 1);
+                    String replacedValue = replaceValueReferences(entry, paramValue);
 
-                    StringBuilder query = new StringBuilder();
-                    for (String queryParam : config.queryParams()) {
-                        int indexOfEqualSign = queryParam.indexOf('=');
-                        String paramName = queryParam.substring(0, indexOfEqualSign);
-                        String paramValue = queryParam.substring(indexOfEqualSign + 1);
-                        String replacedValue = replaceValueReferences(entry, paramValue); // Assume replaceValueReferences is defined elsewhere
-
-                        if (query.length() > 0) {
-                            query.append("&");
-                        }
-                        query.append(paramName).append("=").append(replacedValue);
+                    if (query.length() > 0) {
+                        query.append("&");
                     }
+                    query.append(paramName).append("=").append(replacedValue);
+                }
 
-                    URI uriWithParams = URI.create(uri.toString() + "?" + query);
+                URI uriWithParams = URI.create(uri.toString() + "?" + query);
 
-                    HttpRequest.Builder builder = HttpRequest.newBuilder()
-                            .uri(uriWithParams)
-                            .method(method.toString(), HttpRequest.BodyPublishers.noBody());
+                HttpRequest.Builder builder = HttpRequest.newBuilder()
+                        .uri(uriWithParams)
+                        .method(method.toString(), HttpRequest.BodyPublishers.noBody());
 
                 for (String additionalHeader : this.config.additionalHeaders()) {
                     int indexOfColonSign = additionalHeader.indexOf(':');
@@ -76,7 +75,9 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
                 return builder.build();
             },
             resp -> {
-                if (resp == null) throw new RuntimeException("response is null");
+                if (resp == null) {
+                    throw new RuntimeException("response is null");
+                }
 
                 if (SUCCESS_STATUS_CODES.contains(resp.statusCode())) {
                     return true;
