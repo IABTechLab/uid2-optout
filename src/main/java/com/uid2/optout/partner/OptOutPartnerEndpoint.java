@@ -1,5 +1,6 @@
 package com.uid2.optout.partner;
 
+import com.uid2.optout.util.HttpMethod;
 import com.uid2.optout.web.RetryingWebClient;
 import com.uid2.optout.web.UnexpectedStatusCodeException;
 import com.uid2.shared.Utils;
@@ -41,7 +42,7 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
     @Override
     public Future<Void> send(OptOutEntry entry) {
         return this.retryingClient.send(
-                (URI uri, String method) -> {
+                (URI uri, HttpMethod method) -> {
 
                     StringBuilder query = new StringBuilder();
                     for (String queryParam : config.queryParams()) {
@@ -60,7 +61,7 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
 
                     HttpRequest.Builder builder = HttpRequest.newBuilder()
                             .uri(uriWithParams)
-                            .method(method, HttpRequest.BodyPublishers.noBody());
+                            .method(method.toString(), HttpRequest.BodyPublishers.noBody());
 
                 for (String additionalHeader : this.config.additionalHeaders()) {
                     int indexOfColonSign = additionalHeader.indexOf(':');

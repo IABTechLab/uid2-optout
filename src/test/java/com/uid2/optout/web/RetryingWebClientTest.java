@@ -1,7 +1,7 @@
 package com.uid2.optout.web;
 
+import com.uid2.optout.util.HttpMethod;
 import io.vertx.core.Vertx;
-import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.After;
@@ -53,18 +53,18 @@ public class RetryingWebClientTest {
 
     @Test
     public void get_expectSuccess(TestContext ctx) {
-        expectSuccess(ctx, "POST");
+        expectSuccess(ctx, HttpMethod.POST);
     }
 
     @Test
     public void post_expectSuccess(TestContext ctx) {
-        expectSuccess(ctx, "POST");
+        expectSuccess(ctx, HttpMethod.POST);
     }
 
-    private void expectSuccess(TestContext ctx, String method) {
-        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/200", method, 0, 0);
-        c.send((URI uri, String method2) -> {
-            return HttpRequest.newBuilder().uri(uri).method(method2, HttpRequest.BodyPublishers.noBody()).build();
+    private void expectSuccess(TestContext ctx, HttpMethod testMethod) {
+        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/200", testMethod, 0, 0);
+        c.send((URI uri, HttpMethod method) -> {
+            return HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build();
         }, resp -> {
             ctx.assertEquals(200, resp.statusCode());
             return 200 == resp.statusCode();
@@ -73,19 +73,19 @@ public class RetryingWebClientTest {
 
     @Test
     public void get_expectRetryFailure_zeroBackoff(TestContext ctx) {
-        expectRetryFailure_zeroBackoff(ctx, "GET");
+        expectRetryFailure_zeroBackoff(ctx, HttpMethod.GET);
     }
 
     @Test
     public void post_expectRetryFailure_zeroBackoff(TestContext ctx) {
-        expectRetryFailure_zeroBackoff(ctx, "POST");
+        expectRetryFailure_zeroBackoff(ctx, HttpMethod.POST);
     }
 
-    private void expectRetryFailure_zeroBackoff(TestContext ctx, String method) {
+    private void expectRetryFailure_zeroBackoff(TestContext ctx, HttpMethod testMethod) {
         AtomicInteger totalAttempts = new AtomicInteger(0);
-        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", method, 3, 0);
-        c.send((URI uri, String method2) -> {
-            return HttpRequest.newBuilder().uri(uri).method(method2, HttpRequest.BodyPublishers.noBody()).build();
+        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", testMethod, 3, 0);
+        c.send((URI uri, HttpMethod method) -> {
+            return HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build();
         }, resp -> {
             totalAttempts.incrementAndGet();
             ctx.assertEquals(404, resp.statusCode());
@@ -96,19 +96,19 @@ public class RetryingWebClientTest {
 
     @Test
     public void get_expectRetryFailure_withBackoff(TestContext ctx) {
-        expectRetryFailure_withBackoff(ctx, "GET");
+        expectRetryFailure_withBackoff(ctx, HttpMethod.GET);
     }
 
     @Test
     public void post_expectRetryFailure_withBackoff(TestContext ctx) {
-        expectRetryFailure_withBackoff(ctx, "POST");
+        expectRetryFailure_withBackoff(ctx, HttpMethod.POST);
     }
 
-    private void expectRetryFailure_withBackoff(TestContext ctx, String method) {
+    private void expectRetryFailure_withBackoff(TestContext ctx, HttpMethod testMethod) {
         AtomicInteger totalAttempts = new AtomicInteger(0);
-        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", method, 3, 1);
-        c.send((URI uri, String method2) -> {
-            return HttpRequest.newBuilder().uri(uri).method(method2, HttpRequest.BodyPublishers.noBody()).build();
+        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", testMethod, 3, 1);
+        c.send((URI uri, HttpMethod method) -> {
+            return HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build();
         }, resp -> {
             totalAttempts.incrementAndGet();
             ctx.assertEquals(404, resp.statusCode());
@@ -122,21 +122,21 @@ public class RetryingWebClientTest {
 
     @Test
     public void get_expectSuccess_withRandomFailures(TestContext ctx) {
-        expectSuccess_withRandomFailures(ctx, "GET");
+        expectSuccess_withRandomFailures(ctx, HttpMethod.GET);
     }
 
     @Test
     public void post_expectSuccess_withRandomFailures(TestContext ctx) {
-        expectSuccess_withRandomFailures(ctx, "POST");
+        expectSuccess_withRandomFailures(ctx, HttpMethod.POST);
     }
 
-    private void expectSuccess_withRandomFailures(TestContext ctx, String method) {
+    private void expectSuccess_withRandomFailures(TestContext ctx, HttpMethod testMethod) {
         for (int i = 0; i < 10; ++i) {
             AtomicInteger totalAttempts = new AtomicInteger(0);
             RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/random/500_500_500_200",
-                method, 100, 1);
-            c.send((URI uri, String method2) -> {
-                return HttpRequest.newBuilder().uri(uri).method(method2, HttpRequest.BodyPublishers.noBody()).build();
+                testMethod, 100, 1);
+            c.send((URI uri, HttpMethod method) -> {
+                return HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build();
             }, resp -> {
                 totalAttempts.incrementAndGet();
                 return resp.statusCode() == 200;
@@ -149,20 +149,20 @@ public class RetryingWebClientTest {
 
     @Test
     public void get_expectImmediateFailure_withNonRetryErrors(TestContext ctx) {
-        expectImmediateFailure_withNonRetryErrors(ctx, "GET");
+        expectImmediateFailure_withNonRetryErrors(ctx, HttpMethod.GET);
     }
 
     @Test
     public void post_expectImmediateFailure_withNonRetryErrors(TestContext ctx) {
-        expectImmediateFailure_withNonRetryErrors(ctx, "POST");
+        expectImmediateFailure_withNonRetryErrors(ctx, HttpMethod.POST);
     }
 
-    private void expectImmediateFailure_withNonRetryErrors(TestContext ctx, String method) {
+    private void expectImmediateFailure_withNonRetryErrors(TestContext ctx, HttpMethod testMethod) {
         for (int i = 0; i < 10; ++i) {
             AtomicInteger totalAttempts = new AtomicInteger(0);
-            RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", method, 100, 1);
-            c.send((URI uri, String method2) -> {
-                return HttpRequest.newBuilder().uri(uri).method(method2, HttpRequest.BodyPublishers.noBody()).build();
+            RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", testMethod, 100, 1);
+            c.send((URI uri, HttpMethod method) -> {
+                return HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build();
             }, resp -> {
                 totalAttempts.incrementAndGet();
                 if (resp.statusCode() == 200) return true;

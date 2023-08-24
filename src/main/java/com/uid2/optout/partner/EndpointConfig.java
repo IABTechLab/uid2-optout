@@ -3,6 +3,7 @@ package com.uid2.optout.partner;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.uid2.optout.util.HttpMethod;
 import com.uid2.shared.Const;
 import com.uid2.shared.auth.ClientKey;
 import io.vertx.core.json.JsonObject;
@@ -23,7 +24,7 @@ public class EndpointConfig {
     private String url;
 
     @JsonProperty("method")
-    private String method;
+    private HttpMethod method;
 
     @JsonProperty("query_params")
     private List<String> queryParams = new ArrayList<>();
@@ -73,7 +74,7 @@ public class EndpointConfig {
         return this.url;
     }
 
-    public String method() {
+    public HttpMethod method() {
         return this.method;
     }
 

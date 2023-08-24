@@ -1,5 +1,6 @@
 package com.uid2.optout.web;
 
+import com.uid2.optout.util.HttpMethod;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -17,38 +18,34 @@ import java.util.function.BiFunction;
 public class RetryingWebClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(RetryingWebClient.class);
     private final URI uri;
-    private final String method;
+    private final HttpMethod method;
     private final int retryCount;
     private final int retryBackoffMs;
+    private final HttpClient httpClient;
     private Vertx vertx;
 
-    public RetryingWebClient(Vertx vertx, String uri, String method, int retryCount, int retryBackoffMs) {
+    public RetryingWebClient(Vertx vertx, String uri, HttpMethod method, int retryCount, int retryBackoffMs) {
         this.vertx = vertx;
         this.uri = URI.create(uri);
         this.method = method;
-
-
-        // Disabling Temporary Measure to skip https validation
-        // options.setVerifyHost(false);
-
+        this.httpClient = HttpClient.newHttpClient();
 
         this.retryCount = retryCount;
         this.retryBackoffMs = retryBackoffMs;
     }
 
-    public Future<Void> send(BiFunction<URI, String, HttpRequest> requestCreator, Function<HttpResponse, Boolean> responseValidator) {
+    public Future<Void> send(BiFunction<URI, HttpMethod, HttpRequest> requestCreator, Function<HttpResponse, Boolean> responseValidator) {
         return this.send(requestCreator, responseValidator, 0);
     }
 
-    public Future<Void> send(BiFunction<URI, String, HttpRequest> requestCreator, Function<HttpResponse, Boolean> responseValidator, int currentRetries) {
+    public Future<Void> send(BiFunction<URI, HttpMethod, HttpRequest> requestCreator, Function<HttpResponse, Boolean> responseValidator, int currentRetries) {
         Promise<Void> promise = Promise.promise();
 
         HttpRequest hr = requestCreator.apply(this.uri, this.method);
 
-        HttpClient client = HttpClient.newHttpClient();
-        CompletableFuture<HttpResponse<String>> fut = client.sendAsync(hr, HttpResponse.BodyHandlers.ofString());
+        CompletableFuture<HttpResponse<String>> asyncResponse = this.httpClient.sendAsync(hr, HttpResponse.BodyHandlers.ofString());
 
-        fut.thenAccept(response -> {
+        asyncResponse.thenAccept(response -> {
             try {
                 Boolean responseOK = responseValidator.apply(response);
                 if (responseOK == null) {
@@ -78,7 +75,7 @@ public class RetryingWebClient {
             }
         });
 
-        fut.exceptionally(ex -> {
+        asyncResponse.exceptionally(ex -> {
             promise.fail(ex);
             return null;
         });
