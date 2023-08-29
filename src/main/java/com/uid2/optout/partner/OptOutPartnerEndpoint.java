@@ -1,17 +1,19 @@
 package com.uid2.optout.partner;
 
-import com.uid2.optout.util.HttpMethod;
 import com.uid2.optout.web.RetryingWebClient;
 import com.uid2.optout.web.UnexpectedStatusCodeException;
 import com.uid2.shared.Utils;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
+import io.netty.handler.codec.http.HttpMethod;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import org.apache.http.client.utils.URIBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpRequest;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -43,20 +45,23 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
     public Future<Void> send(OptOutEntry entry) {
         return this.retryingClient.send(
             (URI uri, HttpMethod method) -> {
-                StringBuilder query = new StringBuilder();
+                URIBuilder uriBuilder = new URIBuilder(uri);
+
                 for (String queryParam : config.queryParams()) {
                     int indexOfEqualSign = queryParam.indexOf('=');
                     String paramName = queryParam.substring(0, indexOfEqualSign);
                     String paramValue = queryParam.substring(indexOfEqualSign + 1);
                     String replacedValue = replaceValueReferences(entry, paramValue);
 
-                    if (query.length() > 0) {
-                        query.append("&");
-                    }
-                    query.append(paramName).append("=").append(replacedValue);
+                    uriBuilder.addParameter(paramName, replacedValue);
                 }
 
-                URI uriWithParams = URI.create(uri.toString() + "?" + query);
+                URI uriWithParams;
+                try {
+                    uriWithParams = uriBuilder.build();
+                } catch (URISyntaxException e) {
+                    throw new RuntimeException(e);
+                }
 
                 HttpRequest.Builder builder = HttpRequest.newBuilder()
                         .uri(uriWithParams)

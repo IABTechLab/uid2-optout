@@ -1,6 +1,6 @@
 package com.uid2.optout.web;
 
-import com.uid2.optout.util.HttpMethod;
+import io.netty.handler.codec.http.HttpMethod;
 import io.vertx.core.Vertx;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;

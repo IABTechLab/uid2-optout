@@ -3,9 +3,9 @@ package com.uid2.optout.partner;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.uid2.optout.util.HttpMethod;
 import com.uid2.shared.Const;
 import com.uid2.shared.auth.ClientKey;
+import io.netty.handler.codec.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 
 import java.time.Instant;
