@@ -5,7 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uid2.shared.Const;
 import com.uid2.shared.auth.ClientKey;
-import io.vertx.core.http.HttpMethod;
+import io.netty.handler.codec.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 
 import java.time.Instant;

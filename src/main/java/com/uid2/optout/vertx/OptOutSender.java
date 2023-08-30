@@ -4,6 +4,9 @@ import com.uid2.optout.Const;
 import com.uid2.optout.partner.EndpointConfig;
 import com.uid2.optout.partner.IOptOutPartnerEndpoint;
 import com.uid2.optout.partner.OptOutPartnerEndpoint;
+import com.uid2.optout.util.Tuple;
+import com.uid2.optout.web.TooManyRetriesException;
+import com.uid2.optout.web.UnexpectedStatusCodeException;
 import com.uid2.shared.health.HealthComponent;
 import com.uid2.shared.health.HealthManager;
 import com.uid2.shared.optout.*;
@@ -26,6 +29,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -41,7 +45,24 @@ import java.util.concurrent.atomic.AtomicLong;
 // take entries save in the delta file, and send to partner optout endpoints.
 //
 public class OptOutSender extends AbstractVerticle {
-    private static final Logger LOGGER = LoggerFactory.getLogger(OptOutSender.class);
+    private static class OptOutSenderLogger {
+        private final Logger logger = LoggerFactory.getLogger(OptOutSender.class);
+        private final String partnerName;
+
+        public OptOutSenderLogger(String partnerName) {
+            this.partnerName = partnerName;
+        }
+
+        public void info(String message, Object... args) {
+            logger.info("[" + this.partnerName + "] " + message, args);
+        }
+
+        public void error(String message, Object... args) {
+            logger.error("[" + this.partnerName + "] " + message, args);
+        }
+    }
+
+    private final OptOutSenderLogger logger;
     private final HealthComponent healthComponent;
     private final String deltaConsumerDir;
     private final int deltaRotateInterval;
@@ -49,12 +70,12 @@ public class OptOutSender extends AbstractVerticle {
     private final int senderReplicaId;
     private final int totalReplicas;
     private final IOptOutPartnerEndpoint remotePartner;
-    private final Counter counterTotalEntriesSent;
     private final String eventCloudSyncDownloaded;
+    private final Map<Tuple.Tuple2<String, String>, Counter> entryReplayStatusCounters = new HashMap<>();
     private final AtomicInteger pendingFilesCount = new AtomicInteger(0);
-    private final AtomicLong lastEndtrySent = new AtomicLong(Instant.EPOCH.getEpochSecond());
+    private final AtomicLong lastEntrySent = new AtomicLong(0);
     private LinkedList<String> pendingFiles = new LinkedList<>();
-    private boolean isReplaying = false;
+    private AtomicBoolean isReplaying = new AtomicBoolean(false);
     private CompletableFuture pendingAsyncOp = null;
     // name of the file that stores timestamp
     private Path timestampFile = null;
@@ -68,6 +89,7 @@ public class OptOutSender extends AbstractVerticle {
     }
 
     public OptOutSender(JsonObject jsonConfig, IOptOutPartnerEndpoint optOutPartner, String eventCloudSyncDownloaded) {
+        this.logger = new OptOutSenderLogger(optOutPartner.name());
         this.healthComponent = HealthManager.instance.registerComponent("optout-sender-" + optOutPartner.name());
         this.healthComponent.setHealthStatus(false, "not started");
 
@@ -85,7 +107,7 @@ public class OptOutSender extends AbstractVerticle {
         this.timestampFile = Paths.get(jsonConfig.getString(Const.Config.OptOutDataDirProp), "remote_replicate", this.remotePartner.name() + "_timestamp.txt");
         this.processedDeltasFile = Paths.get(jsonConfig.getString(Const.Config.OptOutDataDirProp), "remote_replicate", this.remotePartner.name() + "_processed.txt");
 
-        Gauge.builder("uid2.optout.last_entry_sent", () -> this.lastEndtrySent.get())
+        Gauge.builder("uid2.optout.last_entry_sent", () -> this.lastEntrySent.get())
             .description("gauge for last entry send epoch seconds, per each remote partner")
             .tag("remote_partner", remotePartner.name())
             .register(Metrics.globalRegistry);
@@ -94,63 +116,58 @@ public class OptOutSender extends AbstractVerticle {
             .description("gauge for remaining delta files to send to remote, per each remote partner")
             .tag("remote_partner", remotePartner.name())
             .register(Metrics.globalRegistry);
-
-        this.counterTotalEntriesSent = Counter.builder("uid2.optout.entries_sent")
-            .description("counter for total entries sent, per each remote partner")
-            .tag("remote_partner", remotePartner.name())
-            .register(Metrics.globalRegistry);
     }
 
     @Override
     public void start(Promise<Void> startPromise) throws Exception {
-        LOGGER.info("starting OptOutSender");
+        this.logger.info("starting OptOutSender");
         this.healthComponent.setHealthStatus(false, "still starting");
 
         try {
             EventBus eb = vertx.eventBus();
 
-            LOGGER.info("replica id is set to " + this.replicaId);
+            this.logger.info("replica id is set to " + this.replicaId);
             if (this.replicaId == this.senderReplicaId) {
-                LOGGER.info("this is replica " + this.replicaId + ", and will be responsible for consolidating deltas before replaying to remote");
+                this.logger.info("this is replica " + this.replicaId + ", and will be responsible for consolidating deltas before replaying to remote");
                 eb.<String>consumer(this.eventCloudSyncDownloaded, msg -> this.handleCloudDownloaded(msg));
 
                 // before mark startPromise complete, scan local delta files and find unprocessed deltas
                 this.scanLocalForUnprocessed().onComplete(ar -> startPromise.handle(ar));
             } else {
-                LOGGER.info("this is not replica " + this.senderReplicaId + ", and will not be responsible for consolidating deltas before replaying to remote");
+                this.logger.info("this is not replica " + this.senderReplicaId + ", and will not be responsible for consolidating deltas before replaying to remote");
                 startPromise.complete();
             }
         } catch (Exception ex) {
-            LOGGER.error(ex.getMessage(), ex);
+            this.logger.error(ex.getMessage(), ex);
             startPromise.fail(new Throwable(ex));
         }
 
         startPromise.future()
             .onSuccess(v -> {
-                LOGGER.info("started OptOutSender");
+                this.logger.info("started OptOutSender");
                 this.healthComponent.setHealthStatus(true);
             })
             .onFailure(e -> {
-                LOGGER.error("failed starting OptOutSender", e);
+                this.logger.error("failed starting OptOutSender", e);
                 this.healthComponent.setHealthStatus(false, e.getMessage());
             });
     }
 
     @Override
     public void stop(Promise<Void> stopPromise) throws Exception {
-        LOGGER.info("shutting down OptOutSender.");
+        this.logger.info("shutting down OptOutSender.");
 
         AtomicInteger shutdownTryCounter = new AtomicInteger(0);
         vertx.setPeriodic(500, i -> {
-            if (this.isReplaying == false || shutdownTryCounter.incrementAndGet() > 120) {
+            if (this.isReplaying.get() == false || shutdownTryCounter.incrementAndGet() > 120) {
                 // wait for at most 60s (120 * 500ms) for current replaying to complete
                 stopPromise.complete();
             }
         });
 
         stopPromise.future()
-            .onSuccess(v -> LOGGER.info("stopped OptOutSender"))
-            .onFailure(e -> LOGGER.error("failed stopping OptOutSender", e));
+            .onSuccess(v -> this.logger.info("stopped OptOutSender"))
+            .onFailure(e -> this.logger.error("failed stopping OptOutSender", e));
     }
 
     // returning name of the file that stores timestamp
@@ -169,7 +186,9 @@ public class OptOutSender extends AbstractVerticle {
         return CompositeFuture.all(step1, step2).compose(cf -> {
             HashSet<String> processedDeltas = new HashSet<>(Arrays.asList(cf.resultAt(0)));
             this.lastProcessedTimestamp = Instant.ofEpochSecond(cf.resultAt(1));
-            LOGGER.info("found total " + processedDeltas.size() + " local deltas on disk");
+            this.lastEntrySent.set(this.lastProcessedTimestamp.getEpochSecond());
+
+            this.logger.info("found total " + processedDeltas.size() + " local deltas on disk");
 
             // checking our deltaConsumerDir
             File dirToList = new File(deltaConsumerDir);
@@ -202,14 +221,14 @@ public class OptOutSender extends AbstractVerticle {
                 if (!processedDeltas.contains(fullName)) {
                     // log an error if an unprocessed delta is found before the timestamp
                     if (fileTimestamp.isBefore(this.lastProcessedTimestamp)) {
-                        LOGGER.error("unprocessed delta file: " + fullName + " found before the last processed timestamp: " + this.lastProcessedTimestamp);
+                        this.logger.error("unprocessed delta file: " + fullName + " found before the last processed timestamp: " + this.lastProcessedTimestamp);
                     }
 
                     this.pendingFiles.add(fullName);
                 }
             }
 
-            LOGGER.info("added " + this.pendingFiles.size() + " local deltas as pending deltas");
+            this.logger.info("added " + this.pendingFiles.size() + " local deltas as pending deltas");
 
             return Future.succeededFuture();
         });
@@ -219,19 +238,22 @@ public class OptOutSender extends AbstractVerticle {
         try {
             String filename = msg.body();
             if (!OptOutUtils.isDeltaFile(filename)) {
-                LOGGER.info("ignoring non-delta file " + filename + " downloaded from s3");
+                this.logger.info("ignoring non-delta file " + filename + " downloaded from s3");
                 return;
             }
 
-            LOGGER.info("received delta " + filename + " to consolidate and replicate to remote");
+            this.logger.info("received delta " + filename + " to consolidate and replicate to remote");
             OptOutUtils.addSorted(this.pendingFiles, filename, OptOutUtils.DeltaFilenameComparator);
 
             // if it is still replaying the last one, return
-            if (this.isReplaying) return;
+            if (this.isReplaying.get())  {
+                this.logger.info("still replaying the last delta, will not start replaying this one");
+                return;
+            }
 
             this.processPendingFilesToConsolidate(Instant.now());
         } catch (Exception ex) {
-            LOGGER.error("handleLogReplay failed unexpectedly: " + ex.getMessage(), ex);
+            this.logger.error("handleLogReplay failed unexpectedly: " + ex.getMessage(), ex);
         }
     }
 
@@ -251,10 +273,10 @@ public class OptOutSender extends AbstractVerticle {
             // if lastProcessedTimestamp is not initialized, just process up to the current timestamp
             Instant firstDeltaTimestamp = OptOutUtils.getFileTimestamp(this.pendingFiles.get(0));
             nextTimestamp = firstDeltaTimestamp.plusSeconds(OptOutUtils.getSecondsBeforeNextSlot(firstDeltaTimestamp, this.deltaRotateInterval));
-            LOGGER.info("last processed timestamp is found to be uninitialized, will process all deltas up to: " + nextTimestamp);
+            this.logger.info("last processed timestamp is found to be uninitialized, will process all deltas up to: " + nextTimestamp);
         } else {
             nextTimestamp = this.lastProcessedTimestamp.plus(this.deltaRotateInterval, ChronoUnit.SECONDS);
-            LOGGER.info("last processed timestamp is " + this.lastProcessedTimestamp + ", will process all deltas up to: " + nextTimestamp);
+            this.logger.info("last processed timestamp is " + this.lastProcessedTimestamp + ", will process all deltas up to: " + nextTimestamp);
         }
 
         ListIterator<String> iterator = this.pendingFiles.listIterator();
@@ -276,17 +298,17 @@ public class OptOutSender extends AbstractVerticle {
         }
 
         // either we received deltas from all replicas, or we waited for an entire delta rotation interval
-        LOGGER.info("current slot: " + currentSlot);
+        this.logger.info("current slot: " + currentSlot);
         if (deltasForCurrentIntervalReceived >= this.totalReplicas || currentSlot.isAfter(nextTimestamp)) {
             if (deltasToConsolidate.size() == 0) {
-                LOGGER.info("received 0 new deltas, between " + this.lastProcessedTimestamp + " and " + nextTimestamp);
+                this.logger.info("received 0 new deltas, between " + this.lastProcessedTimestamp + " and " + nextTimestamp);
             } else {
-                LOGGER.info("received " + deltasForCurrentIntervalReceived + " new deltas, and total of " + deltasToConsolidate.size() + " to consolidate between " + this.lastProcessedTimestamp + " and " + nextTimestamp);
+                this.logger.info("received " + deltasForCurrentIntervalReceived + " new deltas, and total of " + deltasToConsolidate.size() + " to consolidate between " + this.lastProcessedTimestamp + " and " + nextTimestamp);
             }
 
             // if received deltas is the same or greater than the total replicas in the current consolidating window
             // or if the consolidating time window (last, last + deltaRotateInterval) is already in the past
-            this.isReplaying = true;
+            this.isReplaying.set(true);
             this.kickOffDeltaReplayWithConsolidation(nextTimestamp, deltasToConsolidate);
         }
     }
@@ -295,7 +317,7 @@ public class OptOutSender extends AbstractVerticle {
         vertx.<Void>executeBlocking(promise -> deltaReplayWithConsolidation(promise, deltasToConsolidate),
             ar -> {
                 if (ar.failed()) {
-                    LOGGER.error("delta consolidation failed", new Exception(ar.cause()));
+                    this.logger.error("delta consolidation failed", new Exception(ar.cause()));
                 } else {
                     updateProcessedDeltas(nextTimestamp, deltasToConsolidate);
                     // once complete, check if we could start the next round
@@ -303,7 +325,7 @@ public class OptOutSender extends AbstractVerticle {
                 }
 
                 // call process again
-                this.isReplaying = false;
+                this.isReplaying.set(false);
                 this.processPendingFilesToConsolidate(Instant.now());
             }
         );
@@ -311,30 +333,30 @@ public class OptOutSender extends AbstractVerticle {
 
     private void updateProcessedDeltas(Instant nextTimestamp, List<String> deltasConsolidated) {
         if (deltasConsolidated.size() == 0) {
-            LOGGER.info("skip updating processed delta timestamp due to 0 deltas being processed");
+            this.logger.info("skip updating processed delta timestamp due to 0 deltas being processed");
             return;
         }
 
-        LOGGER.info("updating processed delta timestamp to: " + nextTimestamp);
+        this.logger.info("updating processed delta timestamp to: " + nextTimestamp);
         OptOutUtils.writeTimestampToFile(vertx, this.timestampFile, nextTimestamp.getEpochSecond()).compose(v -> {
-            LOGGER.info("updated processed delta timestamp to: " + nextTimestamp);
+            this.logger.info("updated processed delta timestamp to: " + nextTimestamp);
 
             // if no files in the list, skip appending process delta filenames to disk
             if (deltasConsolidated.size() == 0) return Future.succeededFuture();
 
             // persist the list of files on disk
-            LOGGER.info("appending " + deltasConsolidated.size() + " files to processed delta list");
+            this.logger.info("appending " + deltasConsolidated.size() + " files to processed delta list");
             return OptOutUtils.appendLinesToFile(vertx, this.processedDeltasFile, deltasConsolidated);
         }).onFailure(v -> {
             String filenames = String.join(",", deltasConsolidated);
-            LOGGER.error("unable to persistent last delta timestamp and/or processed delta filenames: " + nextTimestamp + ": " + filenames);
+            this.logger.error("unable to persistent last delta timestamp and/or processed delta filenames: " + nextTimestamp + ": " + filenames);
         });
 
         for (String deltaFile : deltasConsolidated) {
             this.pendingFiles.remove(deltaFile);
         }
 
-        LOGGER.info("removed " + deltasConsolidated.size() + " delta(s) from pending to process list");
+        this.logger.info("removed " + deltasConsolidated.size() + " delta(s) from pending to process list");
     }
 
     private void deltaReplayWithConsolidation(Promise<Void> promise, List<String> deltasToConsolidate) {
@@ -347,7 +369,7 @@ public class OptOutSender extends AbstractVerticle {
         try {
             OptOutHeap heap = new OptOutHeap(1000);
             for (String deltaFile : deltasToConsolidate) {
-                LOGGER.info("loading delta " + deltaFile);
+                this.logger.info("loading delta " + deltaFile);
                 Path fp = Paths.get(deltaFile);
 
                 try {
@@ -355,63 +377,74 @@ public class OptOutSender extends AbstractVerticle {
                     OptOutCollection store = new OptOutCollection(data);
                     heap.add(store);
                 } catch (NoSuchFileException ex) {
-                    LOGGER.error("ignoring non-existing file: " + ex.getFile().toString());
+                    this.logger.error("ignoring non-existing file: " + ex.getFile().toString());
                 }
             }
 
             OptOutPartition consolidatedDelta = heap.toPartition(true);
             deltaReplay(promise, consolidatedDelta, deltasToConsolidate);
         } catch (Exception ex) {
-            LOGGER.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
+            this.logger.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
             // this error is a code logic error and needs to be fixed
             promise.fail(new Throwable(ex));
         }
+    }
+
+    private void recordEntryReplayStatus(String status) {
+        this.entryReplayStatusCounters.computeIfAbsent(new Tuple.Tuple2<>(remotePartner.name(), status), pair -> Counter
+                .builder("uid2.optout.entries_sent")
+                .description("Counter for entry replay status")
+                .tags("remote_partner", String.valueOf(pair.getItem1()), "status", String.valueOf(pair.getItem2()))
+                .register(Metrics.globalRegistry)).increment();
     }
 
     private void deltaReplay(Promise<Void> promise, OptOutCollection store, List<String> fileList) {
         try {
             // generate comma separated filename list for logging
             String filenames = String.join(",", fileList);
-            this.pendingAsyncOp = new CompletableFuture();
 
             // sequentially send each entry
             Future<Void> lastOp = Future.succeededFuture();
             for (int i = 0; i < store.size(); ++i) {
                 final OptOutEntry entry = store.get(i);
-                lastOp = lastOp.compose(v -> this.remotePartner.send(entry));
-                lastOp.onComplete(v -> {
-                    this.lastEndtrySent.set(Instant.now().getEpochSecond());
-                    this.counterTotalEntriesSent.increment();
+                Future<Void> sendOp = this.remotePartner.send(entry);
+                sendOp.onComplete(v -> {
+                    if (v.succeeded()) {
+                        recordEntryReplayStatus("success");
+                        this.lastEntrySent.set(entry.timestamp);
+                    } else {
+                        if (v.cause() instanceof TooManyRetriesException) {
+                            recordEntryReplayStatus("too_many_retries");
+                        } else if (v.cause() instanceof UnexpectedStatusCodeException) {
+                            recordEntryReplayStatus("unexpected_status_code_" + ((UnexpectedStatusCodeException) v.cause()).getStatusCode());
+                        } else {
+                            recordEntryReplayStatus("unknown_error");
+                        }
+
+                        this.logger.error("deltaReplay failed sending entry: " + entry.timestamp, v.cause());
+                    }
                 });
+
+                lastOp = lastOp.compose(v -> sendOp);
             }
 
             lastOp.onComplete(ar -> {
                 if (ar.failed()) {
-                    LOGGER.error("deltaReplay failed sending delta " + filenames + " to remote: " + this.remotePartner.name(), ar.cause());
-                    LOGGER.error("deltaReplay has " + this.pendingFilesCount.get() + " pending file");
-                    LOGGER.error("deltaReplay will restart in 3600s");
-                    vertx.setTimer(1000 * 3600, i -> this.pendingAsyncOp.completeExceptionally(new Exception(ar.cause())));
+                    this.logger.error("deltaReplay failed sending delta " + filenames + " to remote: " + this.remotePartner.name(), ar.cause());
+                    this.logger.error("deltaReplay has " + this.pendingFilesCount.get() + " pending file");
+                    this.logger.error("deltaReplay will restart in 3600s");
+                    vertx.setTimer(1000 * 3600, i -> promise.fail(ar.cause()));
                 } else {
-                    LOGGER.info("finished delta replay for file: " + filenames);
-                    this.pendingAsyncOp.complete(null);
+                    this.logger.info("finished delta replay for file: " + filenames);
 
                     String completeMsg = this.remotePartner.name() + "," + filenames;
                     vertx.eventBus().send(Const.Event.DeltaSentRemote, completeMsg);
+                    promise.complete();
                 }
             });
 
-            // this causes it to block on the worker thread (this function should be called on a worker thread)
-            try {
-                this.pendingAsyncOp.get();
-                promise.complete();
-            } catch (Exception ex) {
-                LOGGER.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
-                promise.fail(ex);
-            } finally {
-                this.pendingAsyncOp = null;
-            }
         } catch (Exception ex) {
-            LOGGER.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
+            this.logger.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
             // this error is a code logic error and needs to be fixed
             promise.fail(new Throwable(ex));
         }
