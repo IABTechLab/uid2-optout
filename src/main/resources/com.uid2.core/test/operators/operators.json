@@ -5,11 +5,13 @@
     "contact": "partner@uid2.com",
     "created": 1617149276,
     "protocol": "aws-nitro",
-    "disabled" : false,
+    "disabled": false,
     "site_id": 123,
-    "roles" : [
+    "roles": [
       "OPERATOR"
-    ]
+    ],
+    "key_hash": "GW1UOc8O1VJD8FH4zUKCCmfU9foEG5XhlxXt6nHHj4nv8lSZyrAt9H4iUZyGxyWfMDRp9kd9YvkTpbXWgs10AQ==",
+    "key_salt": "CLI6UJ0bmckQleIKj1swDU8M2P8uZzifT0HCItoP+Y8="
   },
   {
     "key": "trusted-partner-key",
@@ -18,9 +20,11 @@
     "created": 1617149276,
     "protocol": "trusted",
     "site_id": 123,
-    "roles" : [
+    "roles": [
       "OPERATOR",
       "OPTOUT"
-    ]
+    ],
+    "key_hash": "9uKlxGkLf9t3M7j+QpFRnpuNLxxyTRfeMRZptEP1w5DnMEmvxQpr9+nGz5zWhSTqvXx3bD/4aUxSxd+ShTCkJw==",
+    "key_salt": "p8JUQHdcsGMJWmcaNIPO2fFykwTA0Dw+geNFuQJj5DE="
   }
 ]

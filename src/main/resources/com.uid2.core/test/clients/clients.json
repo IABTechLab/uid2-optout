@@ -1,16 +1,26 @@
 [
-    {
-        "key": "test-admin-key",
-        "name": "admin@uid2.com",
-        "contact": "admin@uid2.com",
-        "created": 1617149276,
-        "roles": [ "mapper", "generator" ]
-    },
-    {
-        "key": "test-mapper-key",
-        "name": "mapper@uid2.com",
-        "contact": "mapper@uid2.com",
-        "created": 1617149276,
-        "roles": [ "mapper", "generator" ]
-    }
+  {
+    "key": "test-admin-key",
+    "name": "admin@uid2.com",
+    "contact": "admin@uid2.com",
+    "created": 1617149276,
+    "roles": [
+      "mapper",
+      "generator"
+    ],
+    "key_hash": "3NK7+/dVdyhHCvheh8g7wTekBHBRfYPYEzzmy+pk9CF6MatuamEC9HrxnpC1GaAvGCWDlOSJf9WqKPCVrD4HRg==",
+    "key_salt": "8fhxtWppaXf1Rw7qV2ydhpQ0plQG+pWHQ/a5uSLXhp8="
+  },
+  {
+    "key": "test-mapper-key",
+    "name": "mapper@uid2.com",
+    "contact": "mapper@uid2.com",
+    "created": 1617149276,
+    "roles": [
+      "mapper",
+      "generator"
+    ],
+    "key_hash": "l9O20rwWUQSA1NjS7ptReMKsvzHPE1eCxONPauU4VBn9EjB3Z1ejUzCslbKqstu1iad28ICXTw/dyiYtRNCjAA==",
+    "key_salt": "SFc7khxy17su9k0lrf/UUwUKjqZXvKOR2hysh42p+8Y="
+  }
 ]
