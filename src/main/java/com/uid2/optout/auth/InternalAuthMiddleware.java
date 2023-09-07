@@ -7,8 +7,8 @@ import io.vertx.ext.web.RoutingContext;
 
 public class InternalAuthMiddleware {
     private static class InternalAuthHandler {
-        private static final String AuthorizationHeader = "Authorization";
-        private static final String PrefixString = "bearer ";
+        private static final String AUTHORIZATION_HEADER = "Authorization";
+        private static final String BEARER_TOKEN_PREFIX = "bearer ";
 
         private final Handler<RoutingContext> innerHandler;
         private final String internalApiToken;
@@ -24,20 +24,20 @@ public class InternalAuthMiddleware {
             }
 
             final String v = headerValue.trim();
-            if (v.length() < PrefixString.length()) {
+            if (v.length() < BEARER_TOKEN_PREFIX.length()) {
                 return null;
             }
 
-            final String givenPrefix = v.substring(0, PrefixString.length());
+            final String givenPrefix = v.substring(0, BEARER_TOKEN_PREFIX.length());
 
-            if (!PrefixString.equals(givenPrefix.toLowerCase())) {
+            if (!BEARER_TOKEN_PREFIX.equals(givenPrefix.toLowerCase())) {
                 return null;
             }
-            return v.substring(PrefixString.length());
+            return v.substring(BEARER_TOKEN_PREFIX.length());
         }
 
         public void handle(RoutingContext rc) {
-            final String authHeaderValue = rc.request().getHeader(AuthorizationHeader);
+            final String authHeaderValue = rc.request().getHeader(AUTHORIZATION_HEADER);
             final String authKey = extractBearerToken(authHeaderValue);
             if (authKey == null || !authKey.equals(internalApiToken)) {
                 // auth key doesn't match internal key
