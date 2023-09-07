@@ -1,6 +1,7 @@
 package com.uid2.optout.vertx;
 
 import com.uid2.optout.Const;
+import com.uid2.optout.auth.InternalAuthMiddleware;
 import com.uid2.optout.web.QuorumWebClient;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationTokenService;
@@ -60,6 +61,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final ICloudStorage cloudStorage;
     private final boolean enableOptOutPartnerMock;
     private final String internalApiKey;
+    private final InternalAuthMiddleware internalAuth;
 
     public OptOutServiceVerticle(Vertx vertx,
                                  IAuthorizableProvider clientKeyProvider,
@@ -102,7 +104,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.defaultDeliveryOptions.setSendTimeout(addEntryTimeoutMs);
 
         this.internalApiKey = jsonConfig.getString(Const.Config.OptOutInternalApiTokenProp);
-        this.auth.setInternalClientKey(new OperatorKey(this.internalApiKey, "internal", "internal", "internal", 0, false));
+        this.internalAuth = new InternalAuthMiddleware(this.internalApiKey);
         this.enableOptOutPartnerMock = jsonConfig.getBoolean(Const.Config.OptOutPartnerEndpointMockProp);
     }
 
@@ -167,7 +169,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .allowedHeader("Content-Type"));
 
         router.route(WRITE_METHOD)
-                .handler(auth.internalOnly(this::handleWrite));
+                .handler(internalAuth.handle(this::handleWrite));
         router.route(REPLICATE_METHOD)
                 .handler(auth.handle(this::handleReplicate, Role.OPTOUT));
         router.route(REFRESH_METHOD)
@@ -176,7 +178,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .handler(this::handleHealthCheck);
 
         if (this.enableOptOutPartnerMock) {
-            final OperatorKey loopbackClient = new OperatorKey("no-key", "loopback", "loopback", "loopback", 0, false);
+            final OperatorKey loopbackClient = new OperatorKey("", "","", "loopback", "loopback", "loopback", 0, false);
             router.route(OPTOUT_PARTNER_MOCK_METHOD).handler(auth.loopbackOnly(this::handleOptOutPartnerMock, loopbackClient));
         }
 

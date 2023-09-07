@@ -16,9 +16,9 @@ public class TestOperatorKeyProvider implements IOperatorKeyProvider {
     private static final Collection<OperatorKey> ALL_KEYS = new ArrayList<>();
 
     static {
-        TEST_OPERATOR_KEY = new OperatorKey("test-operator-key", "test_operator", "test_operator", "trusted", 0,
+        TEST_OPERATOR_KEY = new OperatorKey("test-operator-key", "", "", "test_operator", "test_operator", "trusted", 0,
                 false, 5, new HashSet<>(Arrays.asList(Role.OPERATOR)));
-        TEST_OPTOUT_KEY = new OperatorKey("test-optout-operator-key", "test_optout_operator", "test_optout_operator", "trusted", 0,
+        TEST_OPTOUT_KEY = new OperatorKey("test-optout-operator-key", "", "", "test_optout_operator", "test_optout_operator", "trusted", 0,
                 false, 5, new HashSet<>(Arrays.asList(Role.OPERATOR, Role.OPTOUT)));
 
         ALL_KEYS.add(TEST_OPERATOR_KEY);
