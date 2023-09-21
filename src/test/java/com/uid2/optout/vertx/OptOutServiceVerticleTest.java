@@ -10,7 +10,6 @@ import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
-import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.unit.Async;
@@ -24,12 +23,10 @@ import org.junit.runner.RunWith;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.uid2.optout.vertx.TestOperatorKeyProvider.TEST_OPERATOR_KEY;
-import static com.uid2.optout.vertx.TestOperatorKeyProvider.TEST_OPTOUT_KEY;
-
 @RunWith(VertxUnitRunner.class)
 public class OptOutServiceVerticleTest {
-    private static String internalTestKey = TEST_OPERATOR_KEY.getKey();
+    private static final String INTERNAL_TEST_KEY = "test-operator-key";
+    private static final String INTERNAL_OPTOUT_KEY = "test-optout-operator-key";
     private static Vertx vertx;
 
     @BeforeClass
@@ -59,7 +56,7 @@ public class OptOutServiceVerticleTest {
         // set data_dir option to use tmpDir during test
         config
                 .put(Const.Config.OptOutDataDirProp, OptOutUtils.tmpDir)
-                .put(Const.Config.OptOutInternalApiTokenProp, TEST_OPERATOR_KEY.getKey())
+                .put(Const.Config.OptOutInternalApiTokenProp, INTERNAL_TEST_KEY)
                 .put(Const.Config.OptOutReplicaUris, "http://127.0.0.1:8081/optout/write,http://127.0.0.1:8081/optout/write,http://127.0.0.1:8081/optout/write");
 
         OptOutLogProducer producer = TestUtils.createOptOutLogProducer(vertx, config);
@@ -135,7 +132,7 @@ public class OptOutServiceVerticleTest {
     }
     @Test
     public void replicate_expect200(TestContext context) {
-        verifyStatus(context, replicateQuery(234), 200, TEST_OPTOUT_KEY.getKey());
+        verifyStatus(context, replicateQuery(234), 200, INTERNAL_OPTOUT_KEY);
     }
 
     @Test
@@ -149,7 +146,7 @@ public class OptOutServiceVerticleTest {
         quorumClient.get(req -> {
             req.addQueryParam(OptOutServiceVerticle.IDENTITY_HASH, OptOutEntry.idHashB64FromLong(123));
             req.addQueryParam(OptOutServiceVerticle.ADVERTISING_ID, OptOutEntry.idHashB64FromLong(456));
-            req.bearerTokenAuthentication(internalTestKey);
+            req.bearerTokenAuthentication(INTERNAL_TEST_KEY);
             return req;
         }).onComplete(context.asyncAssertSuccess());
     }
@@ -166,7 +163,7 @@ public class OptOutServiceVerticleTest {
         quorumClient.get(req -> {
             req.addQueryParam(OptOutServiceVerticle.IDENTITY_HASH, OptOutEntry.idHashB64FromLong(123));
             req.addQueryParam(OptOutServiceVerticle.ADVERTISING_ID, OptOutEntry.idHashB64FromLong(456));
-            req.bearerTokenAuthentication(internalTestKey);
+            req.bearerTokenAuthentication(INTERNAL_TEST_KEY);
             return req;
         }).onComplete(context.asyncAssertSuccess());
     }
@@ -224,7 +221,7 @@ public class OptOutServiceVerticleTest {
                 advertisingIdB64);
     }
     private Future<Void> verifyStatus(TestContext context, String pq, int status) {
-        return verifyStatus(context, pq, status, internalTestKey);
+        return verifyStatus(context, pq, status, INTERNAL_TEST_KEY);
     }
 
     private Future<Void> verifyStatus(TestContext context, String pq, int status, String token) {
@@ -250,7 +247,7 @@ public class OptOutServiceVerticleTest {
         int port = Const.Port.ServicePortForOptOut;
         vertx.createHttpClient()
                 .request(HttpMethod.GET, port, "127.0.0.1", pq)
-                .compose(req -> req.putHeader("Authorization", "Bearer " + internalTestKey)
+                .compose(req -> req.putHeader("Authorization", "Bearer " + INTERNAL_TEST_KEY)
                         .send()
                         .compose(resp -> {
                             context.assertEquals(status, resp.statusCode());

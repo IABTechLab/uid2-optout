@@ -19,7 +19,6 @@ import java.util.InvalidPropertiesFormatException;
 
 @RunWith(VertxUnitRunner.class)
 public class OptOutPartnerTest {
-
     private static final String PARAM_UID2 = "uid2";
     private static final String PARAM_TIMESTAMP = "timestamp";
 
@@ -38,19 +37,19 @@ public class OptOutPartnerTest {
     @Test
     public void internalSite_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
         String partnerConfigStr = "{" +
-            "      \"name\": \"ttd\",\n" +
-            "      \"url\": \"http://localhost:18083/uid2optout\",\n" +
-            "      \"method\": \"GET\",\n" +
-            "      \"query_params\": [\n" +
-            "        \"uid2=${ADVERTISING_ID}\",\n" +
-            "        \"timestamp=${OPTOUT_EPOCH}\"\n" +
-            "      ],\n" +
-            "      \"additional_headers\": [\n" +
-            "        \"Authorization: Bearer 111-1111111\"\n" +
-            "      ],\n" +
-            "      \"retry_count\": 600,\n" +
-            "      \"retry_backoff_ms\": 6000" +
-            "}";
+                "      \"name\": \"ttd\",\n" +
+                "      \"url\": \"http://localhost:18083/uid2optout\",\n" +
+                "      \"method\": \"GET\",\n" +
+                "      \"query_params\": [\n" +
+                "        \"uid2=${ADVERTISING_ID}\",\n" +
+                "        \"timestamp=${OPTOUT_EPOCH}\"\n" +
+                "      ],\n" +
+                "      \"additional_headers\": [\n" +
+                "        \"Authorization: Bearer 111-1111111\"\n" +
+                "      ],\n" +
+                "      \"retry_count\": 600,\n" +
+                "      \"retry_backoff_ms\": 6000" +
+                "}";
         testConfig_expectSuccess(ctx, partnerConfigStr, true);
     }
 
@@ -66,19 +65,19 @@ public class OptOutPartnerTest {
 
     private void testSite_expectSuccess(TestContext ctx, String site) throws JsonProcessingException, InvalidPropertiesFormatException {
         String partnerConfigStr = "{" +
-            "      \"name\": \"ttd\",\n" +
-            "      \"url\": \"" + site + "\",\n" +
-            "      \"method\": \"GET\",\n" +
-            "      \"query_params\": [\n" +
-            "        \"uid2=${ADVERTISING_ID}\",\n" +
-            "        \"timestamp=${OPTOUT_EPOCH}\"\n" +
-            "      ],\n" +
-            "      \"additional_headers\": [\n" +
-            "        \"Authorization: Bearer 111-1111111\"\n" +
-            "      ],\n" +
-            "      \"retry_count\": 600,\n" +
-            "      \"retry_backoff_ms\": 6000" +
-            "}";
+                "      \"name\": \"ttd\",\n" +
+                "      \"url\": \"" + site + "\",\n" +
+                "      \"method\": \"GET\",\n" +
+                "      \"query_params\": [\n" +
+                "        \"uid2=${ADVERTISING_ID}\",\n" +
+                "        \"timestamp=${OPTOUT_EPOCH}\"\n" +
+                "      ],\n" +
+                "      \"additional_headers\": [\n" +
+                "        \"Authorization: Bearer 111-1111111\"\n" +
+                "      ],\n" +
+                "      \"retry_count\": 600,\n" +
+                "      \"retry_backoff_ms\": 6000" +
+                "}";
         testConfig_expectSuccess(ctx, partnerConfigStr, false);
     }
 
@@ -117,10 +116,10 @@ public class OptOutPartnerTest {
 
     private HttpServer createTestServer(TestContext ctx, Handler<HttpServerRequest> requestValidator) {
         return vertx.createHttpServer()
-            .requestHandler(req -> {
-                requestValidator.handle(req);
-                req.response().setStatusCode(200).end();
-            })
-            .listen(18083, ctx.asyncAssertSuccess());
+                .requestHandler(req -> {
+                    requestValidator.handle(req);
+                    req.response().setStatusCode(200).end();
+                })
+                .listen(18083, ctx.asyncAssertSuccess());
     }
 }
