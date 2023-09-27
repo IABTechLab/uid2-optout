@@ -5,35 +5,46 @@ import com.uid2.shared.auth.OperatorKey;
 import com.uid2.shared.auth.Role;
 import com.uid2.shared.store.IOperatorKeyProvider;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashSet;
+import java.util.*;
 
 public class TestOperatorKeyProvider implements IOperatorKeyProvider {
     public static final OperatorKey TEST_OPERATOR_KEY;
     public static final OperatorKey TEST_OPTOUT_KEY;
-    private static final Collection<OperatorKey> ALL_KEYS = new ArrayList<>();
+    private static final Map<String, OperatorKey> ALL_KEYS;
 
     static {
-        TEST_OPERATOR_KEY = new OperatorKey("test-operator-key", "", "", "test_operator", "test_operator", "trusted", 0,
-                false, 5, new HashSet<>(Arrays.asList(Role.OPERATOR)));
-        TEST_OPTOUT_KEY = new OperatorKey("test-optout-operator-key", "", "", "test_optout_operator", "test_optout_operator", "trusted", 0,
-                false, 5, new HashSet<>(Arrays.asList(Role.OPERATOR, Role.OPTOUT)));
+        TEST_OPERATOR_KEY = new OperatorKey("test-operator-keyhash", "test-operator-keysalt", "test_operator", "test_operator", "trusted", 0,
+                false, 5, Set.of(Role.OPERATOR));
+        TEST_OPTOUT_KEY = new OperatorKey("test-optout-operator-keyhash", "test-optout-operator-keysalt", "test_optout_operator", "test_optout_operator", "trusted", 0,
+                false, 5, Set.of(Role.OPERATOR, Role.OPTOUT));
 
-        ALL_KEYS.add(TEST_OPERATOR_KEY);
-        ALL_KEYS.add(TEST_OPTOUT_KEY);
+        ALL_KEYS = Map.of(
+                "test-operator-key", TEST_OPERATOR_KEY,
+                "test-optout-operator-key", TEST_OPTOUT_KEY
+        );
     }
 
     @Override
     public OperatorKey getOperatorKey(String token) {
-        return ALL_KEYS.stream().filter(t -> t.getKey().equals(token))
-                .findAny().orElse(TEST_OPERATOR_KEY);
+        return ALL_KEYS.entrySet().stream()
+                .filter(entry -> entry.getKey().equals(token))
+                .map(Map.Entry::getValue)
+                .findAny()
+                .orElse(TEST_OPERATOR_KEY);
+    }
+
+    @Override
+    public OperatorKey getOperatorKeyFromHash(String hash) {
+        return ALL_KEYS.entrySet().stream()
+                .filter(entry -> entry.getValue().getKeyHash().equals(hash))
+                .map(Map.Entry::getValue)
+                .findAny()
+                .orElse(TEST_OPERATOR_KEY);
     }
 
     @Override
     public Collection<OperatorKey> getAll() {
-        return ALL_KEYS;
+        return ALL_KEYS.values();
     }
 
     @Override

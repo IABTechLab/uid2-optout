@@ -43,7 +43,7 @@ public class InternalAuthMiddleware {
                 // auth key doesn't match internal key
                 rc.fail(401);
             } else {
-                AuthMiddleware.setAuthClient(rc, new OperatorKey("", "", "", "internal", "internal", "internal", 0, false));
+                AuthMiddleware.setAuthClient(rc, new OperatorKey("", "", "internal", "internal", "internal", 0, false));
                 this.innerHandler.handle(rc);
             }
         }
