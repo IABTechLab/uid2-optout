@@ -12,7 +12,6 @@
   "optout_s3_folder": "optout/",
   "optout_internal_api_token": "test-optout-internal-key",
   "optout_replica_uris": null,
-  "optout_producer_max_replicas": 1,
   "partners_metadata_path": "http://core:8088/partners/refresh",
   "operators_metadata_path": "http://core:8088/operators/refresh",
   "core_attest_url": "http://core:8088/attest",
