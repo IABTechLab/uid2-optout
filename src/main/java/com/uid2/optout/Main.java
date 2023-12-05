@@ -108,7 +108,7 @@ public class Main {
             }
             LOGGER.info("Using CloudStorage for optout: s3://" + optoutBucket);
 
-            this.fsPartnerConfig = CloudUtils.createStorage(optoutBucket, config);;
+            this.fsPartnerConfig = CloudUtils.createStorage(optoutBucket, config);
             LOGGER.info("Using CloudStorage for partners config: s3://" + optoutBucket);
         }
 

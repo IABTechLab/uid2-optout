@@ -11,7 +11,7 @@
   "att_token_enc_key": "<key-for-attestation-token>",
   "att_token_enc_salt": "<salt-for-attestation-token>",
   "optout_producer_max_replicas": 1,
-  "optout_s3_folder": "optout/",
+  "optout_s3_folder": "optout-v2/",
   "optout_internal_api_token": "test-optout-internal-key",
   "optout_replica_uris": "http://localhost:8081/optout/write,http://localhost:8081/optout/write,http://localhost:8081/optout/write",
   "partners_metadata_path": "http://core:8088/partners/refresh",
