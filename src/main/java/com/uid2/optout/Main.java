@@ -294,7 +294,7 @@ public class Main {
                 LOGGER.info("OptOut service fully started...");
             })
             .onFailure(t -> {
-                LOGGER.error("Unable to bootstrap OptOutSerivce and its dependencies");
+                LOGGER.error("Unable to bootstrap OptOutService and its dependencies");
                 LOGGER.error(t.getMessage(), new Exception(t));
                 vertx.close();
                 System.exit(1);
