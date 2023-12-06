@@ -15,6 +15,7 @@
   "optout_internal_api_token": "test-optout-internal-key",
   "optout_replica_uris": "http://localhost:8081/optout/write,http://localhost:8081/optout/write,http://localhost:8081/optout/write",
   "optout_producer_replica_id": 0,
+  "optout_delta_rotate_interval": 60,
   "partners_metadata_path": "http://core:8088/partners/refresh",
   "operators_metadata_path": "http://core:8088/operators/refresh",
   "core_attest_url": "http://core:8088/attest",
