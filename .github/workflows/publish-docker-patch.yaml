@@ -2,17 +2,7 @@ name: Publish Patch to Docker
 on:
   workflow_dispatch:
 permissions:
-  actions: write
-  checks: write
-  contents: write
-  deployments: write
-  issues: write
-  packages: write
-  pages: write
-  pull-requests: write
-  repository-projects: write
-  security-events: write
-  statuses: write
+  pull-requests: read
 
 jobs:
   build-publish-docker:
