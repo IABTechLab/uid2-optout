@@ -1,6 +1,11 @@
 name: Publish Snapshot to Docker
 on:
   workflow_dispatch:
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+  pull-requests: write
 
 jobs:
   build-publish-docker:
