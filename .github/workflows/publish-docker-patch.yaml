@@ -6,7 +6,7 @@ permissions:
 
 jobs:
   build-publish-docker:
-    uses: IABTechLab/uid2-shared-actions/.github/workflows/shared-publish-docker-versioned.yaml@v2.6
+    uses: IABTechLab/uid2-shared-actions/.github/workflows/shared-publish-docker-versioned.yaml@v2.8
     with: 
       cloud_provider: 'default'
       release_type: 'Patch'
