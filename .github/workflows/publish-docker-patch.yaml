@@ -1,8 +1,6 @@
 name: Publish Patch to Docker
 on:
   workflow_dispatch:
-permissions:
-  pull-requests: read
 
 jobs:
   build-publish-docker:
