@@ -2,28 +2,22 @@ name: Publish Patch to Docker
 on:
   workflow_dispatch:
 permissions:
-  Actions: write
-  Checks: write
-  Contents: write
-  Deployments: write
-  Discussions: write
-  Issues: write
-  Metadata: read
-  Packages: write
-  Pages: write
-  PullRequests: write
-  RepositoryProjects: write
-  SecurityEvents: write
-  Statuses: write
+  actions: write
+  checks: write
+  contents: write
+  deployments: write
+  issues: write
+  metadata: read
+  packages: write
+  pages: write
+  pull-requests: write
+  repository-projects: write
+  security-events: write
+  statuses: write
 
 jobs:
   build-publish-docker:
     uses: IABTechLab/uid2-shared-actions/.github/workflows/shared-publish-docker-versioned.yaml@v2.6
-    permissions:
-      contents: write
-      packages: write
-      security-events: write
-      pull-requests: write
     with: 
       cloud_provider: 'default'
       release_type: 'Patch'
