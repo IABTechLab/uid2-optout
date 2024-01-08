@@ -14,9 +14,9 @@ public class TestOperatorKeyProvider implements IOperatorKeyProvider {
 
     static {
         TEST_OPERATOR_KEY = new OperatorKey("test-operator-keyhash", "test-operator-keysalt", "test_operator", "test_operator", "trusted", 0,
-                false, 5, Set.of(Role.OPERATOR));
+                false, 5, Set.of(Role.OPERATOR), "test-operator-key-id");
         TEST_OPTOUT_KEY = new OperatorKey("test-optout-operator-keyhash", "test-optout-operator-keysalt", "test_optout_operator", "test_optout_operator", "trusted", 0,
-                false, 5, Set.of(Role.OPERATOR, Role.OPTOUT));
+                false, 5, Set.of(Role.OPERATOR, Role.OPTOUT), "test-operator-key-id");
 
         ALL_KEYS = Map.of(
                 "test-operator-key", TEST_OPERATOR_KEY,

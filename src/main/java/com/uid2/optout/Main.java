@@ -122,7 +122,7 @@ public class Main {
                 LOGGER.warn("Core Attest URL set, but the API Token is not set");
             }
             boolean enforceHttps = this.config.getBoolean("enforce_https", true);
-            var tokenRetriever = new AttestationTokenRetriever(vertx, coreAttestUrl, coreApiToken, appVersion, new NoAttestationProvider(), null);
+            var tokenRetriever = new AttestationTokenRetriever(vertx, coreAttestUrl, coreApiToken, appVersion, new NoAttestationProvider(), null, CloudUtils.defaultProxy);
             UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreApiToken, enforceHttps, tokenRetriever);
             if (useStorageMock) uidCoreClient.setAllowContentFromLocalFileSystem(true);
             this.fsOperatorKeyConfig = uidCoreClient;
