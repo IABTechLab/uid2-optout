@@ -178,7 +178,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .handler(this::handleHealthCheck);
 
         if (this.enableOptOutPartnerMock) {
-            final OperatorKey loopbackClient = new OperatorKey("", "", "loopback", "loopback", "loopback", 0, false);
+            final OperatorKey loopbackClient = new OperatorKey("", "", "loopback", "loopback", "loopback", 0, false, "");
             router.route(OPTOUT_PARTNER_MOCK_METHOD).handler(auth.loopbackOnly(this::handleOptOutPartnerMock, loopbackClient));
         }
 
