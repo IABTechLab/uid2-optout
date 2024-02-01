@@ -53,59 +53,59 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
     public Future<Void> send(OptOutEntry entry) {
         long startTimeMs = System.currentTimeMillis();
         return this.retryingClient.send(
-                (URI uri, HttpMethod method) -> {
-                    URIBuilder uriBuilder = new URIBuilder(uri);
+            (URI uri, HttpMethod method) -> {
+                URIBuilder uriBuilder = new URIBuilder(uri);
 
-                    for (String queryParam : config.queryParams()) {
-                        int indexOfEqualSign = queryParam.indexOf('=');
-                        String paramName = queryParam.substring(0, indexOfEqualSign);
-                        String paramValue = queryParam.substring(indexOfEqualSign + 1);
-                        String replacedValue = replaceValueReferences(entry, paramValue);
+                for (String queryParam : config.queryParams()) {
+                    int indexOfEqualSign = queryParam.indexOf('=');
+                    String paramName = queryParam.substring(0, indexOfEqualSign);
+                    String paramValue = queryParam.substring(indexOfEqualSign + 1);
+                    String replacedValue = replaceValueReferences(entry, paramValue);
 
-                        uriBuilder.addParameter(paramName, replacedValue);
-                    }
-
-                    URI uriWithParams;
-                    try {
-                        uriWithParams = uriBuilder.build();
-                    } catch (URISyntaxException e) {
-                        throw new RuntimeException(e);
-                    }
-
-                    HttpRequest.Builder builder = HttpRequest.newBuilder()
-                            .uri(uriWithParams)
-                            .method(method.toString(), HttpRequest.BodyPublishers.noBody());
-
-                    for (String additionalHeader : this.config.additionalHeaders()) {
-                        int indexOfColonSign = additionalHeader.indexOf(':');
-                        String headerName = additionalHeader.substring(0, indexOfColonSign);
-                        String headerValue = additionalHeader.substring(indexOfColonSign + 1);
-                        String replacedValue = replaceValueReferences(entry, headerValue);
-                        builder.header(headerName, replacedValue);
-                    }
-
-                    LOGGER.info("replaying optout " + config.url() + " - advertising_id: " + Utils.maskPii(entry.advertisingId) + ", epoch: " + entry.timestamp);
-
-                    return builder.build();
-                },
-                resp -> {
-                    if (resp == null) {
-                        throw new RuntimeException("response is null");
-                    }
-
-                    if (SUCCESS_STATUS_CODES.contains(resp.statusCode())) {
-                        long finishTimeMs = System.currentTimeMillis();
-                        timer.record(finishTimeMs - startTimeMs, TimeUnit.MILLISECONDS);
-                        return true;
-                    }
-
-                    LOGGER.info("received non-200 response: " + resp.statusCode() + "-" + resp.body() + " for optout " + config.url() + " - advertising_id: " + Utils.maskPii(entry.advertisingId) + ", epoch: " + entry.timestamp);
-                    if (RETRYABLE_STATUS_CODES.contains(resp.statusCode())) {
-                        return false;
-                    } else {
-                        throw new UnexpectedStatusCodeException(resp.statusCode());
-                    }
+                    uriBuilder.addParameter(paramName, replacedValue);
                 }
+
+                URI uriWithParams;
+                try {
+                    uriWithParams = uriBuilder.build();
+                } catch (URISyntaxException e) {
+                    throw new RuntimeException(e);
+                }
+
+                HttpRequest.Builder builder = HttpRequest.newBuilder()
+                        .uri(uriWithParams)
+                        .method(method.toString(), HttpRequest.BodyPublishers.noBody());
+
+                for (String additionalHeader : this.config.additionalHeaders()) {
+                    int indexOfColonSign = additionalHeader.indexOf(':');
+                    String headerName = additionalHeader.substring(0, indexOfColonSign);
+                    String headerValue = additionalHeader.substring(indexOfColonSign + 1);
+                    String replacedValue = replaceValueReferences(entry, headerValue);
+                    builder.header(headerName, replacedValue);
+                }
+
+                LOGGER.info("replaying optout " + config.url() + " - advertising_id: " + Utils.maskPii(entry.advertisingId) + ", epoch: " + entry.timestamp);
+
+                return builder.build();
+            },
+            resp -> {
+                if (resp == null) {
+                    throw new RuntimeException("response is null");
+                }
+
+                if (SUCCESS_STATUS_CODES.contains(resp.statusCode())) {
+                    long finishTimeMs = System.currentTimeMillis();
+                    timer.record(finishTimeMs - startTimeMs, TimeUnit.MILLISECONDS);
+                    return true;
+                }
+
+                LOGGER.info("received non-200 response: " + resp.statusCode() + "-" + resp.body() + " for optout " + config.url() + " - advertising_id: " + Utils.maskPii(entry.advertisingId) + ", epoch: " + entry.timestamp);
+                if (RETRYABLE_STATUS_CODES.contains(resp.statusCode())) {
+                    return false;
+                } else {
+                    throw new UnexpectedStatusCodeException(resp.statusCode());
+                }
+            }
         );
     }
 
