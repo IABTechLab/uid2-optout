@@ -12,6 +12,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.BiFunction;
 
@@ -19,15 +20,20 @@ public class RetryingWebClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(RetryingWebClient.class);
     private final URI uri;
     private final HttpMethod method;
+    private final long resultTimeoutMs;
     private final int retryCount;
     private final int retryBackoffMs;
     private final HttpClient httpClient;
     private Vertx vertx;
 
     public RetryingWebClient(Vertx vertx, String uri, HttpMethod method, int retryCount, int retryBackoffMs) {
+        this(vertx, uri, method, retryCount, retryBackoffMs, 5*60*1000);
+    }
+    public RetryingWebClient(Vertx vertx, String uri, HttpMethod method, int retryCount, int retryBackoffMs, long resultTimeoutMs) {
         this.vertx = vertx;
         this.uri = URI.create(uri);
         this.method = method;
+        this.resultTimeoutMs = resultTimeoutMs;
         this.httpClient = HttpClient.newHttpClient();
 
         this.retryCount = retryCount;
@@ -42,7 +48,8 @@ public class RetryingWebClient {
         Promise<Void> promise = Promise.promise();
 
         HttpRequest request = requestCreator.apply(this.uri, this.method);
-        CompletableFuture<HttpResponse<String>> asyncResponse = this.httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        CompletableFuture<HttpResponse<String>> asyncResponse = this.httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .orTimeout(this.resultTimeoutMs, TimeUnit.MILLISECONDS);
 
         asyncResponse.thenAccept(response -> {
             try {
