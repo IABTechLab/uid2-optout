@@ -16,7 +16,7 @@
         <vertx.version>4.3.8</vertx.version>
         <!-- check micrometer.version vertx-micrometer-metrics consumes before bumping up -->
         <micrometer.version>1.1.0</micrometer.version>
-        <uid2-shared.version>6.1.19-SNAPSHOT</uid2-shared.version>
+        <uid2-shared.version>7.0.0-b264db84a3</uid2-shared.version>
         <image.version>${project.version}</image.version>
     </properties>
 
