@@ -1,7 +1,6 @@
 {
   "service_instances": 1,
   "storage_mock": true,
-  "enforce_https": false,
   "att_token_enc_key": "<key-for-attestation-token>",
   "att_token_enc_salt": "<salt-for-attestation-token>",
   "optout_s3_folder": "optout/",
