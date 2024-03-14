@@ -12,6 +12,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.BiFunction;
 
@@ -42,7 +43,8 @@ public class RetryingWebClient {
         Promise<Void> promise = Promise.promise();
 
         HttpRequest request = requestCreator.apply(this.uri, this.method);
-        CompletableFuture<HttpResponse<String>> asyncResponse = this.httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        CompletableFuture<HttpResponse<String>> asyncResponse = this.httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .orTimeout(30, TimeUnit.SECONDS);
 
         asyncResponse.thenAccept(response -> {
             try {

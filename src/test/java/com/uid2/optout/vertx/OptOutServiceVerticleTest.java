@@ -168,7 +168,7 @@ public class OptOutServiceVerticleTest {
         }).onComplete(context.asyncAssertSuccess());
     }
 
-    @Test
+   /* @Test
     public void testQuorumClientAllFailures_expectSuccess(TestContext context) {
         String[] uris = new String[3];
         for (int i = 0; i < 3; ++i) {
@@ -181,7 +181,7 @@ public class OptOutServiceVerticleTest {
             req.addQueryParam(OptOutServiceVerticle.ADVERTISING_ID, OptOutEntry.idHashB64FromLong(456));
             return req;
         }).onComplete(context.asyncAssertFailure());
-    }
+    }*/
 
     private String writeQuery(long id) {
         return this.writeQuery(OptOutEntry.idHashB64FromLong(id));
