@@ -11,6 +11,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.BiFunction;
@@ -28,7 +29,7 @@ public class RetryingWebClient {
         this.vertx = vertx;
         this.uri = URI.create(uri);
         this.method = method;
-        this.httpClient = HttpClient.newHttpClient();
+        this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(30)).build();
 
         this.retryCount = retryCount;
         this.retryBackoffMs = retryBackoffMs;
