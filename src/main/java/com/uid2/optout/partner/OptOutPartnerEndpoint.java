@@ -15,7 +15,6 @@ import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpRequest;
-import java.time.Duration;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -66,8 +65,7 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
 
                 HttpRequest.Builder builder = HttpRequest.newBuilder()
                         .uri(uriWithParams)
-                        .method(method.toString(), HttpRequest.BodyPublishers.noBody())
-                        .timeout(Duration.ofSeconds(30));
+                        .method(method.toString(), HttpRequest.BodyPublishers.noBody());
 
                 for (String additionalHeader : this.config.additionalHeaders()) {
                     int indexOfColonSign = additionalHeader.indexOf(':');
