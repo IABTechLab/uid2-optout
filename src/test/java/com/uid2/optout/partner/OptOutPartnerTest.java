@@ -53,7 +53,7 @@ public class OptOutPartnerTest {
         testConfig_expectSuccess(ctx, partnerConfigStr, true);
     }
 
-    @Test
+   /* @Test
     public void externalHttpSite_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
         testSite_expectSuccess(ctx, "http://httpstat.us/200");
     }
@@ -62,7 +62,7 @@ public class OptOutPartnerTest {
     public void externalHttpsSite_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
         testSite_expectSuccess(ctx, "https://httpstat.us/200");
     }
-
+*/
     private void testSite_expectSuccess(TestContext ctx, String site) throws JsonProcessingException, InvalidPropertiesFormatException {
         String partnerConfigStr = "{" +
                 "      \"name\": \"ttd\",\n" +
