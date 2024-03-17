@@ -5,9 +5,11 @@ import com.uid2.optout.web.UnexpectedStatusCodeException;
 import com.uid2.shared.Utils;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
+import io.micrometer.core.instrument.Metrics;
 import io.netty.handler.codec.http.HttpMethod;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.micrometer.core.instrument.Timer;
 import org.apache.http.client.utils.URIBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +18,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpRequest;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
@@ -30,9 +33,14 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
 
     private final EndpointConfig config;
     private final RetryingWebClient retryingClient;
+    private final Timer timer;
 
     public OptOutPartnerEndpoint(Vertx vertx, EndpointConfig config) {
         this.config = config;
+        this.timer = Timer.builder("uid2.optout.deltasend_successfulchunktime_ms")
+                .description("Timer for each HTTP connection that successfully transfers part of a delta to a partner")
+                .tag("remote_partner", this.name())
+                .register(Metrics.globalRegistry);
         this.retryingClient = new RetryingWebClient(vertx, config.url(), config.method(), config.retryCount(), config.retryBackoffMs());
     }
 
@@ -43,6 +51,7 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
 
     @Override
     public Future<Void> send(OptOutEntry entry) {
+        long startTimeMs = System.currentTimeMillis();
         return this.retryingClient.send(
             (URI uri, HttpMethod method) -> {
                 URIBuilder uriBuilder = new URIBuilder(uri);
@@ -85,6 +94,8 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
                 }
 
                 if (SUCCESS_STATUS_CODES.contains(resp.statusCode())) {
+                    long finishTimeMs = System.currentTimeMillis();
+                    timer.record(finishTimeMs - startTimeMs, TimeUnit.MILLISECONDS);
                     return true;
                 }
 

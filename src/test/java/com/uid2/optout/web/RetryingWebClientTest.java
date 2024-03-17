@@ -1,7 +1,11 @@
 package com.uid2.optout.web;
 
 import io.netty.handler.codec.http.HttpMethod;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
+import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.After;
@@ -11,8 +15,11 @@ import org.junit.runner.RunWith;
 
 import java.net.URI;
 import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.Random;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 @RunWith(VertxUnitRunner.class)
 public class RetryingWebClientTest {
@@ -34,6 +41,13 @@ public class RetryingWebClientTest {
                         // pick a random code and respond with it
                         int statusCode = Integer.valueOf(statusCodes[rand.nextInt(statusCodes.length)]);
                         req.response().setStatusCode(statusCode).end();
+                    } else if (subPath.startsWith("delayed")) {
+                        vertx.setTimer(1000, id -> {
+                            try {
+                                req.response().setStatusCode(200).end();
+                            }
+                            catch (Exception ex) {}
+                        });
                     } else {
                         int statusCode = Integer.valueOf(subPath);
                         req.response().setStatusCode(statusCode).end();
@@ -174,5 +188,37 @@ public class RetryingWebClientTest {
                 ctx.assertTrue(v instanceof UnexpectedStatusCodeException);
             }));
         }
+    }
+
+    public Function<HttpResponse, Boolean> assertStatusCodeFactory(TestContext ctx, int code) {
+        return result -> {
+            ctx.assertEquals(code, result.statusCode());
+            return code == result.statusCode();
+        };
+    }
+    public Handler<AsyncResult<Void>> ensureAsyncExceptionFactory(TestContext ctx, Class<? extends Exception> exceptionClass) {
+         return ctx.asyncAssertFailure(cause -> {
+            ctx.assertTrue(cause.getClass() == exceptionClass, "Expected a " + exceptionClass.toString() + " but got a " + cause);
+        });
+    }
+
+    @Test
+    public void longRequest_longerTimeout_expectSuccess(TestContext ctx) {
+        testDelayedResponse(ctx, assertStatusCodeFactory(ctx, 200), 1500)
+                .onComplete(ctx.asyncAssertSuccess());
+    }
+
+    @Test
+    public void longRequest_shorterTimeout_expectFailure(TestContext ctx) {
+        testDelayedResponse(ctx, req -> true, 500)
+                .onComplete(ensureAsyncExceptionFactory(ctx, TimeoutException.class));
+    }
+
+    private Future<Void> testDelayedResponse(TestContext ctx, Function<HttpResponse, Boolean> assertion, int resultTimeoutMs) {
+        Async async = ctx.async();
+
+        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/delayed", HttpMethod.GET, 0, 0, resultTimeoutMs);
+        return c.send((URI uri, HttpMethod method) -> HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build(), assertion)
+                .andThen(r -> async.complete());
     }
 }
