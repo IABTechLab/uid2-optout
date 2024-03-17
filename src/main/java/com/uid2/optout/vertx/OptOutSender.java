@@ -407,25 +407,25 @@ public class OptOutSender extends AbstractVerticle {
             Future<Void> lastOp = Future.succeededFuture();
             for (int i = 0; i < store.size(); ++i) {
                 final OptOutEntry entry = store.get(i);
-                Future<Void> sendOp = this.remotePartner.send(entry);
-                sendOp.onComplete(v -> {
-                    if (v.succeeded()) {
-                        recordEntryReplayStatus("success");
-                        this.lastEntrySent.set(entry.timestamp);
-                    } else {
-                        if (v.cause() instanceof TooManyRetriesException) {
-                            recordEntryReplayStatus("too_many_retries");
-                        } else if (v.cause() instanceof UnexpectedStatusCodeException) {
-                            recordEntryReplayStatus("unexpected_status_code_" + ((UnexpectedStatusCodeException) v.cause()).getStatusCode());
+                lastOp = lastOp.compose(ar -> {
+                    Future<Void> sendOp = this.remotePartner.send(entry);
+                    return sendOp.onComplete(v -> {
+                        if (v.succeeded()) {
+                            recordEntryReplayStatus("success");
+                            this.lastEntrySent.set(entry.timestamp);
                         } else {
-                            recordEntryReplayStatus("unknown_error");
+                            if (v.cause() instanceof TooManyRetriesException) {
+                                recordEntryReplayStatus("too_many_retries");
+                            } else if (v.cause() instanceof UnexpectedStatusCodeException) {
+                                recordEntryReplayStatus("unexpected_status_code_" + ((UnexpectedStatusCodeException) v.cause()).getStatusCode());
+                            } else {
+                                recordEntryReplayStatus("unknown_error");
+                            }
+
+                            this.logger.error("deltaReplay failed sending entry: " + entry.timestamp, v.cause());
                         }
-
-                        this.logger.error("deltaReplay failed sending entry: " + entry.timestamp, v.cause());
-                    }
+                    });
                 });
-
-                lastOp = lastOp.compose(v -> sendOp);
             }
 
             lastOp.onComplete(ar -> {
