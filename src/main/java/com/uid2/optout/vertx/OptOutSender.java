@@ -404,11 +404,29 @@ public class OptOutSender extends AbstractVerticle {
             String filenames = String.join(",", fileList);
 
             // sequentially send each entry
-            Future<Void> lastOp = Future.succeededFuture();
+            var ref = new Object() {
+                Future<Void> lastOp = Future.succeededFuture();
+            };
+
+            List<Future<Void>> sendOps = new ArrayList<Future<Void>>();
+
+            long periodicId = this.vertx.setPeriodic(1000, l -> {
+                int completeSendOps = 0;
+                for (Future<Void> sendOp : sendOps) {
+                    if (sendOp.isComplete()) {
+                        completeSendOps++;
+                    }
+                }
+
+                this.logger.info("Completed " + completeSendOps + " send ops out of " + sendOps.size());
+                this.logger.info("LastOp is complete: " + ref.lastOp.isComplete());
+            });
+
             for (int i = 0; i < store.size(); ++i) {
                 final OptOutEntry entry = store.get(i);
-                lastOp = lastOp.compose(ar -> {
+                ref.lastOp = ref.lastOp.compose(ar -> {
                     Future<Void> sendOp = this.remotePartner.send(entry);
+                    sendOps.add(sendOp);
                     return sendOp.onComplete(v -> {
                         if (v.succeeded()) {
                             recordEntryReplayStatus("success");
@@ -428,7 +446,8 @@ public class OptOutSender extends AbstractVerticle {
                 });
             }
 
-            lastOp.onComplete(ar -> {
+            ref.lastOp.onComplete(ar -> {
+                this.vertx.cancelTimer(periodicId);
                 if (ar.failed()) {
                     this.logger.error("deltaReplay failed sending delta " + filenames + " to remote: " + this.remotePartner.name(), ar.cause());
                     this.logger.error("deltaReplay has " + this.pendingFilesCount.get() + " pending file");
