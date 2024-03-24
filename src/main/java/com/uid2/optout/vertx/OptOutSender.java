@@ -29,6 +29,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -426,6 +427,7 @@ public class OptOutSender extends AbstractVerticle {
                 final OptOutEntry entry = store.get(i);
                 ref.lastOp = ref.lastOp.compose(ar -> {
                     Future<Void> sendOp = this.remotePartner.send(entry);
+                    sendOp.timeout(1, TimeUnit.MINUTES);
                     sendOps.add(sendOp);
                     return sendOp.onComplete(v -> {
                         if (v.succeeded()) {
