@@ -2,7 +2,6 @@ package com.uid2.optout.web;
 
 import io.netty.handler.codec.http.HttpMethod;
 import io.vertx.core.Future;
-import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,47 +38,32 @@ public class RetryingWebClient {
     }
 
     public Future<Void> send(BiFunction<URI, HttpMethod, HttpRequest> requestCreator, Function<HttpResponse, Boolean> responseValidator, int currentRetries) {
-        Promise<Void> promise = Promise.promise();
-
         HttpRequest request = requestCreator.apply(this.uri, this.method);
-        CompletableFuture<HttpResponse<String>> asyncResponse = this.httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
 
-        asyncResponse.thenAccept(response -> {
-            try {
-                Boolean responseOK = responseValidator.apply(response);
-                if (responseOK == null) {
-                    throw new RuntimeException("Response validator returned null");
-                }
+        final CompletableFuture<HttpResponse<Void>> asyncResponse = this.httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding());
 
-                if (responseOK) {
-                    promise.complete();
-                } else if (currentRetries < this.retryCount) {
-                    LOGGER.error("failed sending to " + uri + ", currentRetries: " + currentRetries + ", backing off before retrying");
-                    if (this.retryBackoffMs > 0) {
-                        vertx.setTimer(this.retryBackoffMs, i -> {
-                            send(requestCreator, responseValidator, currentRetries + 1)
-                                    .onComplete(ar2 -> promise.handle(ar2));
-                        });
-                    } else {
-                        send(requestCreator, responseValidator, currentRetries + 1)
-                                .onComplete(ar2 -> promise.handle(ar2));
-                    }
+        return Future.fromCompletionStage(asyncResponse, vertx.getOrCreateContext()).compose(response -> {
+            Boolean responseOK = responseValidator.apply(response);
+            if (responseOK == null) {
+                return Future.failedFuture(new RuntimeException("Response validator returned null"));
+            }
+
+            if (responseOK) {
+                return Future.succeededFuture();
+            }
+
+            if (currentRetries < this.retryCount) {
+                LOGGER.error("failed sending to " + uri + ", currentRetries: " + currentRetries + ", backing off before retrying");
+                if (this.retryBackoffMs > 0) {
+                    return vertx.timer(this.retryBackoffMs)
+                            .compose(v -> send(requestCreator, responseValidator, currentRetries + 1));
                 } else {
-                    LOGGER.error("retry count exceeded for sending to " + this.uri);
-                    throw new TooManyRetriesException(currentRetries);
+                    return send(requestCreator, responseValidator, currentRetries + 1);
                 }
             }
-            catch (Throwable ex) {
-                promise.fail(ex);
-            }
+
+            LOGGER.error("retry count exceeded for sending to " + this.uri);
+            return Future.failedFuture(new TooManyRetriesException(currentRetries));
         });
-
-        asyncResponse.exceptionally(ex -> {
-            promise.fail(ex);
-            return null;
-        });
-
-
-        return promise.future();
     }
 }
