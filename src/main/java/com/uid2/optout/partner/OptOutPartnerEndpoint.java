@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpRequest;
+import java.time.Duration;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -77,7 +78,7 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
 
                 LOGGER.info("replaying optout " + config.url() + " - advertising_id: " + Utils.maskPii(entry.advertisingId) + ", epoch: " + entry.timestamp);
 
-                return builder.build();
+                return builder.timeout(Duration.ofSeconds(30)).build();
             },
             resp -> {
                 if (resp == null) {

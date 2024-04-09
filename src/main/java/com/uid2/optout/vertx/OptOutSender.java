@@ -29,6 +29,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -62,6 +63,14 @@ public class OptOutSender extends AbstractVerticle {
         }
     }
 
+    // When the partner config changes, Verticles are undeployed and new ones
+    // are created. These newly created Verticles register Micrometer gauges.
+    // However, you can't "re-register" a gauge with a new number. Therefore,
+    // we need to re-use the numbers that the gauges track across different
+    // Verticle instances.
+    private static final ConcurrentHashMap<String, AtomicLong> lastEntrySentMap = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, AtomicInteger> pendingFilesCountMap = new ConcurrentHashMap<>();
+
     private final OptOutSenderLogger logger;
     private final HealthComponent healthComponent;
     private final String deltaConsumerDir;
@@ -72,8 +81,8 @@ public class OptOutSender extends AbstractVerticle {
     private final IOptOutPartnerEndpoint remotePartner;
     private final String eventCloudSyncDownloaded;
     private final Map<Tuple.Tuple2<String, String>, Counter> entryReplayStatusCounters = new HashMap<>();
-    private final AtomicInteger pendingFilesCount = new AtomicInteger(0);
-    private final AtomicLong lastEntrySent = new AtomicLong(0);
+    private final AtomicInteger pendingFilesCount;
+    private final AtomicLong lastEntrySent;
     private LinkedList<String> pendingFiles = new LinkedList<>();
     private AtomicBoolean isReplaying = new AtomicBoolean(false);
     private CompletableFuture pendingAsyncOp = null;
@@ -106,6 +115,9 @@ public class OptOutSender extends AbstractVerticle {
         this.remotePartner = optOutPartner;
         this.timestampFile = Paths.get(jsonConfig.getString(Const.Config.OptOutDataDirProp), "remote_replicate", this.remotePartner.name() + "_timestamp.txt");
         this.processedDeltasFile = Paths.get(jsonConfig.getString(Const.Config.OptOutDataDirProp), "remote_replicate", this.remotePartner.name() + "_processed.txt");
+
+        this.pendingFilesCount = pendingFilesCountMap.computeIfAbsent(remotePartner.name(), s -> new AtomicInteger(0));
+        this.lastEntrySent = lastEntrySentMap.computeIfAbsent(remotePartner.name(), s -> new AtomicLong(0));
 
         Gauge.builder("uid2.optout.last_entry_sent", () -> this.lastEntrySent.get())
             .description("gauge for last entry send epoch seconds, per each remote partner")
