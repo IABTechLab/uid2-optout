@@ -6,5 +6,4 @@ sync/
 out/
 generated/
 uid2-optout.iml
-.pre-commit-trivy-cache/
 .DS_Store
