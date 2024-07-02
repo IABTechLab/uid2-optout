@@ -45,8 +45,9 @@ public class EndpointConfig {
     public static EndpointConfig fromJsonString(String str) throws JsonProcessingException, InvalidPropertiesFormatException {
         EndpointConfig ret = EndpointConfig.mapper.readValue(str, EndpointConfig.class);
 
-        // normalize name and URL, query_params and additional_headers are spared)
-        ret.url = ret.url.toLowerCase();
+        // normalize name, query_params and additional_headers are spared)
+        // UID2-3697 do not normalize/lower case ret.url as it doesn't just contain the top level domain/hostname
+        // but also optional path which is case sensitive
         ret.name = ret.name.toLowerCase();
 
         // validate query_params, param should be in the format of key=val
