@@ -38,7 +38,8 @@ public class OptOutPartnerTest {
     public void internalSite_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
         String partnerConfigStr = "{" +
                 "      \"name\": \"ttd\",\n" +
-                "      \"url\": \"http://localhost:18083/uid2optout\",\n" +
+                //UID2-3697 intentionally added some upper cases to make sure the url is the same as what's provided by DSP originally
+                "      \"url\": \"http://localhost:18083/AdServer/uid2optout\",\n" +
                 "      \"method\": \"GET\",\n" +
                 "      \"query_params\": [\n" +
                 "        \"uid2=${ADVERTISING_ID}\",\n" +
@@ -93,7 +94,7 @@ public class OptOutPartnerTest {
         if (createInternalTestServer) {
             Async async = ctx.async();
             HttpServer server = this.createTestServer(ctx, req -> {
-                ctx.assertEquals("/uid2optout", req.path());
+                ctx.assertEquals("/AdServer/uid2optout", req.path());
 
                 String uid2Expected = OptOutEntry.idHashB64FromLong(1234);
                 String uid2 = req.getParam(OptOutPartnerTest.PARAM_UID2);
