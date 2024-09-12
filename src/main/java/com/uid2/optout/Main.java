@@ -121,7 +121,7 @@ public class Main {
             if (coreApiToken == null || coreApiToken.isBlank()) {
                 LOGGER.warn("Core Attest URL set, but the API Token is not set");
             }
-            var tokenRetriever = new AttestationResponseHandler(vertx, coreAttestUrl, coreApiToken, appVersion, new NoAttestationProvider(), null, CloudUtils.defaultProxy);
+            var tokenRetriever = new AttestationResponseHandler(vertx, coreAttestUrl, coreApiToken, "public", appVersion, new NoAttestationProvider(), null, CloudUtils.defaultProxy);
             UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreApiToken, tokenRetriever);
             if (useStorageMock) uidCoreClient.setAllowContentFromLocalFileSystem(true);
             this.fsOperatorKeyConfig = uidCoreClient;
