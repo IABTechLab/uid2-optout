@@ -93,17 +93,17 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-core</artifactId>
-            <version>1.4.12</version>
+            <version>1.5.8</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.4.12</version>
+            <version>1.5.8</version>
         </dependency>
         <dependency>
             <groupId>com.github.loki4j</groupId>
             <artifactId>loki-logback-appender</artifactId>
-            <version>1.2.0</version>
+            <version>1.5.2</version>
         </dependency>
         <dependency>
             <groupId>org.jacoco</groupId>
