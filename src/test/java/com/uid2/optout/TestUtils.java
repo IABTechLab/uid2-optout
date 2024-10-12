@@ -64,12 +64,26 @@ public class TestUtils {
         return newDeltaFile(TestUtils.toEntries(ids));
     }
 
+    public static String newDeltaFile(Path path, long... ids) {
+        return newDeltaFile(TestUtils.toEntries(ids), path);
+    }
+
     public static String newDeltaFile(OptOutEntry[] entries) {
+        Path tmpFile;
         try {
-            Path tmpFile = Files.createTempFile(OptOutUtils.prefixDeltaFile, newSuffix());
+            tmpFile = Files.createTempFile(OptOutUtils.prefixDeltaFile, newSuffix());
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
+        return newDeltaFile(entries, tmpFile);
+    }
+
+    public static String newDeltaFile(OptOutEntry[] entries, Path path) {
+        try {
             OptOutCollection store = new OptOutCollection(entries);
-            Files.write(tmpFile, store.getStore(), StandardOpenOption.CREATE);
-            return tmpFile.toString();
+            Files.write(path, store.getStore(), StandardOpenOption.CREATE);
+            return path.toString();
         } catch (IOException e) {
             e.printStackTrace();
             return null;
