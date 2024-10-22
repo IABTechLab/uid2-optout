@@ -8,6 +8,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+
+import com.uid2.shared.optout.OptOutEntry;
 import io.micrometer.core.instrument.Metrics;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.vertx.core.Future;
@@ -110,7 +112,7 @@ public class OptOutSenderTest {
 
     // If this test hangs delete the /tmp/uid2/optout folder and run again.
     @Test
-    void testRecieveMessage(Vertx vertx, VertxTestContext testContext) throws InterruptedException {
+    void testRecieveMessageAndSendsIDs(Vertx vertx, VertxTestContext testContext) throws InterruptedException {
         deployVerticle(vertx, testContext);
         Path newFile = getDeltaPath();
         TestUtils.newDeltaFile(newFile, 1, 2, 3);
@@ -120,5 +122,6 @@ public class OptOutSenderTest {
             Thread.sleep(100);
         }
         verify(optOutPartnerEndpoint, times(3)).send(any());
+        testContext.completeNow();
     }
 }
