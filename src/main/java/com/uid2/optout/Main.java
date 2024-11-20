@@ -1,9 +1,6 @@
 package com.uid2.optout;
 
-import com.uid2.optout.vertx.OptOutLogProducer;
-import com.uid2.optout.vertx.OptOutServiceVerticle;
-import com.uid2.optout.vertx.PartnerConfigMonitor;
-import com.uid2.optout.vertx.PartnerConfigMonitorV2;
+import com.uid2.optout.vertx.*;
 import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationResponseHandler;
@@ -223,7 +220,8 @@ public class Main {
                 .meterFilter(new PrometheusRenameFilter())
                     .meterFilter(MeterFilter.replaceTagValues(Label.HTTP_PATH.toString(), actualPath -> {
                         try {
-                            return HttpUtils.normalizePath(actualPath).split("\\?")[0];
+                            String normalized = HttpUtils.normalizePath(actualPath).split("\\?")[0];
+                            return Endpoints.pathSet().contains(normalized) ? normalized : "/unknown";
                         } catch (IllegalArgumentException e) {
                             return actualPath;
                         }

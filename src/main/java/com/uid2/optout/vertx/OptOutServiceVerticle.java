@@ -39,14 +39,11 @@ import java.util.Collection;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
+import static com.uid2.optout.vertx.Endpoints.*;
+
 public class OptOutServiceVerticle extends AbstractVerticle {
     public static final String IDENTITY_HASH = "identity_hash";
     public static final String ADVERTISING_ID = "advertising_id";
-    public static final String REFRESH_METHOD = "/optout/refresh";
-    public static final String WRITE_METHOD = "/optout/write";
-    public static final String REPLICATE_METHOD = "/optout/replicate";
-    public static final String HEALTHCHECK_METHOD = "/ops/healthcheck";
-    public static final String OPTOUT_PARTNER_MOCK_METHOD = "/optout/partner_mock";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OptOutServiceVerticle.class);
     private final HealthComponent healthComponent = HealthManager.instance.registerComponent("http-server");
@@ -168,18 +165,18 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .allowedHeader("Access-Control-Allow-Headers")
                 .allowedHeader("Content-Type"));
 
-        router.route(WRITE_METHOD)
+        router.route(Endpoints.OPTOUT_WRITE.toString())
                 .handler(internalAuth.handle(this::handleWrite));
-        router.route(REPLICATE_METHOD)
+        router.route(Endpoints.OPTOUT_REPLICATE.toString())
                 .handler(auth.handle(this::handleReplicate, Role.OPTOUT));
-        router.route(REFRESH_METHOD)
+        router.route(Endpoints.OPTOUT_REFRESH.toString())
                 .handler(auth.handle(attest.handle(this::handleRefresh, Role.OPERATOR), Role.OPERATOR));
-        router.get(HEALTHCHECK_METHOD)
+        router.get(Endpoints.OPS_HEALTHCHECK.toString())
                 .handler(this::handleHealthCheck);
 
         if (this.enableOptOutPartnerMock) {
             final OperatorKey loopbackClient = new OperatorKey("", "", "loopback", "loopback", "loopback", 0, false, "");
-            router.route(OPTOUT_PARTNER_MOCK_METHOD).handler(auth.loopbackOnly(this::handleOptOutPartnerMock, loopbackClient));
+            router.route(Endpoints.OPTOUT_PARTNER_MOCK.toString()).handler(auth.loopbackOnly(this::handleOptOutPartnerMock, loopbackClient));
         }
 
         //// if enabled, this would add handler for exposing prometheus metrics

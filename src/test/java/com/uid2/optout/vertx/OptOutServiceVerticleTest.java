@@ -23,6 +23,8 @@ import org.junit.runner.RunWith;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.uid2.optout.vertx.Endpoints.OPTOUT_WRITE;
+
 @RunWith(VertxUnitRunner.class)
 public class OptOutServiceVerticleTest {
     private static final String INTERNAL_TEST_KEY = "test-operator-key";
@@ -92,7 +94,7 @@ public class OptOutServiceVerticleTest {
 
     @Test
     public void getHealthCheck_expectOK(TestContext context) {
-        verifyStatus(context, OptOutServiceVerticle.HEALTHCHECK_METHOD, 200);
+        verifyStatus(context, Endpoints.OPS_HEALTHCHECK.toString(), 200);
     }
 
     @Test
@@ -139,7 +141,7 @@ public class OptOutServiceVerticleTest {
     public void testQuorumClient_expectSuccess(TestContext context) {
         String[] uris = new String[3];
         for (int i = 0; i < 3; ++i) {
-            uris[i] = String.format("http://127.0.0.1:%d%s", Const.Port.ServicePortForOptOut, OptOutServiceVerticle.WRITE_METHOD);
+            uris[i] = String.format("http://127.0.0.1:%d%s", Const.Port.ServicePortForOptOut, Endpoints.OPTOUT_WRITE);
         }
 
         QuorumWebClient quorumClient = new QuorumWebClient(vertx, uris);
@@ -155,7 +157,7 @@ public class OptOutServiceVerticleTest {
     public void testQuorumClient1Failure_expectSuccess(TestContext context) {
         String[] uris = new String[3];
         for (int i = 0; i < 2; ++i) {
-            uris[i] = String.format("http://127.0.0.1:%d%s", Const.Port.ServicePortForOptOut, OptOutServiceVerticle.WRITE_METHOD);
+            uris[i] = String.format("http://127.0.0.1:%d%s", Const.Port.ServicePortForOptOut, Endpoints.OPTOUT_WRITE);
         }
         uris[2] = "http://httpstat.us/404";
 
@@ -201,7 +203,7 @@ public class OptOutServiceVerticleTest {
     }
 
     private String writeQuery(String identityHashB64, String advertisingIdB64) {
-        return String.format("%s?%s=%s&%s=%s", OptOutServiceVerticle.WRITE_METHOD,
+        return String.format("%s?%s=%s&%s=%s", Endpoints.OPTOUT_WRITE,
                 OptOutServiceVerticle.IDENTITY_HASH,
                 identityHashB64,
                 OptOutServiceVerticle.ADVERTISING_ID,
@@ -214,7 +216,7 @@ public class OptOutServiceVerticleTest {
     }
 
     private String replicateQuery(String identityHashB64, String advertisingIdB64) {
-        return String.format("%s?%s=%s&%s=%s", OptOutServiceVerticle.REPLICATE_METHOD,
+        return String.format("%s?%s=%s&%s=%s", Endpoints.OPTOUT_REPLICATE,
                 OptOutServiceVerticle.IDENTITY_HASH,
                 identityHashB64,
                 OptOutServiceVerticle.ADVERTISING_ID,
