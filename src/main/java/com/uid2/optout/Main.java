@@ -240,6 +240,7 @@ public class Main {
 
     public void run(String[] args) throws IOException {
         this.createAppStatusMetric();
+        this.createServiceInstancesMetric();
 
         List<Future> futs = new ArrayList<>();
 
@@ -397,6 +398,12 @@ public class Main {
         Gauge.builder("app.status", () -> 1)
             .description("application version and status")
             .tag("version", version)
+            .register(Metrics.globalRegistry);
+    }
+
+    private void createServiceInstancesMetric() {
+        Gauge.builder("uid2.optout.vertx_service_instances", () -> config.getInteger("service_instances"))
+            .description("gauge for number of request processing threads")
             .register(Metrics.globalRegistry);
     }
 
