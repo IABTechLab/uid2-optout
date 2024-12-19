@@ -240,6 +240,8 @@ public class Main {
 
     public void run(String[] args) throws IOException {
         this.createAppStatusMetric();
+        this.createVertxInstancesMetric();
+        this.createVertxEventLoopsMetric();
 
         List<Future> futs = new ArrayList<>();
 
@@ -397,6 +399,18 @@ public class Main {
         Gauge.builder("app.status", () -> 1)
             .description("application version and status")
             .tag("version", version)
+            .register(Metrics.globalRegistry);
+    }
+
+    private void createVertxInstancesMetric() {
+        Gauge.builder("uid2.optout.vertx_service_instances", () -> config.getInteger("service_instances"))
+            .description("gauge for number of vertx service instances requested")
+            .register(Metrics.globalRegistry);
+    }
+
+    private void createVertxEventLoopsMetric() {
+        Gauge.builder("uid2.optout.vertx_event_loop_threads", () -> VertxOptions.DEFAULT_EVENT_LOOP_POOL_SIZE)
+            .description("gauge for number of vertx event loop threads")
             .register(Metrics.globalRegistry);
     }
 
