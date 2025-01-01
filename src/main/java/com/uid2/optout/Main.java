@@ -17,6 +17,7 @@ import com.uid2.shared.store.scope.GlobalScope;
 import com.uid2.shared.vertx.CloudSyncVerticle;
 import com.uid2.shared.vertx.RotatingStoreVerticle;
 import com.uid2.shared.vertx.VertxUtils;
+import com.uid2.shared.util.HTTPPathMetricFilter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Metrics;
 import io.micrometer.core.instrument.config.MeterFilter;
@@ -218,14 +219,8 @@ public class Main {
             prometheusRegistry.config()
                 // providing common renaming for prometheus metric, e.g. "hello.world" to "hello_world"
                 .meterFilter(new PrometheusRenameFilter())
-                    .meterFilter(MeterFilter.replaceTagValues(Label.HTTP_PATH.toString(), actualPath -> {
-                        try {
-                            String normalized = HttpUtils.normalizePath(actualPath).split("\\?")[0];
-                            return Endpoints.pathSet().contains(normalized) ? normalized : "/unknown";
-                        } catch (IllegalArgumentException e) {
-                            return actualPath;
-                        }
-                    }))
+                    .meterFilter(MeterFilter.replaceTagValues(Label.HTTP_PATH.toString(),
+                            actualPath -> HTTPPathMetricFilter.filterPath(actualPath, Endpoints.pathSet())))
                 // Don't record metrics for 404s.
                 .meterFilter(MeterFilter.deny(id ->
                     id.getName().startsWith(MetricsDomain.HTTP_SERVER.getPrefix()) &&
