@@ -137,12 +137,6 @@
             <artifactId>loki-logback-appender</artifactId>
             <version>1.5.2</version>
         </dependency>
-        <dependency>
-            <groupId>com.uid2</groupId>
-            <artifactId>uid2-shared</artifactId>
-            <version>8.0.25-DEV</version>
-            <scope>compile</scope>
-        </dependency>
     </dependencies>
 
     <build>
