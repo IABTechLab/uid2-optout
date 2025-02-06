@@ -132,11 +132,6 @@
             <artifactId>logback-classic</artifactId>
             <version>1.5.8</version>
         </dependency>
-        <dependency>
-            <groupId>com.github.loki4j</groupId>
-            <artifactId>loki-logback-appender</artifactId>
-            <version>1.5.2</version>
-        </dependency>
     </dependencies>
 
     <build>
