@@ -44,6 +44,7 @@ import static com.uid2.optout.vertx.Endpoints.*;
 public class OptOutServiceVerticle extends AbstractVerticle {
     public static final String IDENTITY_HASH = "identity_hash";
     public static final String ADVERTISING_ID = "advertising_id";
+    public static final long MAX_REQUEST_BODY_SIZE = 1 << 20; // 1MB
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OptOutServiceVerticle.class);
     private final HealthComponent healthComponent = HealthManager.instance.registerComponent("http-server");
@@ -114,7 +115,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.healthComponent.setHealthStatus(false, "still starting");
 
         try {
-            vertx.createHttpServer()
+            vertx.createHttpServer(new HttpServerOptions().setMaxFormBufferedBytes((int) MAX_REQUEST_BODY_SIZE))
                     .requestHandler(createRouter())
                     .listen(listenPort, result -> handleListenResult(startPromise, result));
         } catch (Exception ex) {
