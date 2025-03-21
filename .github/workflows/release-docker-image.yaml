@@ -62,9 +62,9 @@ jobs:
       core_image_version: ${{ inputs.core_image_version }}
       optout_image_version: ${{ needs.image.outputs.image_tag }}
       e2e_image_version: ${{ inputs.e2e_image_version }}
-      branch_core: ${{ inputs.core_branch }}
-      branch_optout: ${{ github.ref }}
-      branch_admin: ${{ inputs.admin_branch }}
+      core_branch: ${{ inputs.core_branch }}
+      optout_branch: ${{ github.ref }}
+      admin_branch: ${{ inputs.admin_branch }}
       operator_branch: ${{ inputs.operator_branch }}
     secrets: inherit
   
