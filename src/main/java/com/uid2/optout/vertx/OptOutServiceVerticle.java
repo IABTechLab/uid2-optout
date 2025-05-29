@@ -7,6 +7,7 @@ import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationTokenService;
 import com.uid2.shared.attest.IAttestationTokenService;
 import com.uid2.shared.attest.JwtService;
+import com.uid2.shared.audit.AuditParams;
 import com.uid2.shared.auth.IAuthorizableProvider;
 import com.uid2.shared.auth.OperatorKey;
 import com.uid2.shared.auth.Role;
@@ -36,10 +37,9 @@ import java.net.URL;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
-
-import static com.uid2.optout.vertx.Endpoints.*;
 
 public class OptOutServiceVerticle extends AbstractVerticle {
     public static final String IDENTITY_HASH = "identity_hash";
@@ -58,6 +58,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final AtomicReference<Collection<String>> cloudPaths = new AtomicReference<>();
     private final ICloudStorage cloudStorage;
     private final boolean enableOptOutPartnerMock;
+    private final boolean enableAuditLogging;
     private final String internalApiKey;
     private final InternalAuthMiddleware internalAuth;
 
@@ -68,13 +69,13 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.healthComponent.setHealthStatus(false, "not started");
 
         this.cloudStorage = cloudStorage;
-        this.auth = new AuthMiddleware(clientKeyProvider);
+        this.auth = new AuthMiddleware(clientKeyProvider, "optout");
 
         final String attestEncKey = jsonConfig.getString(Const.Config.AttestationEncryptionKeyName);
         final String attestEncSalt = jsonConfig.getString(Const.Config.AttestationEncryptionSaltName);
         final String jwtAudience = jsonConfig.getString(Const.Config.OptOutUrlProp);
         final String jwtIssuer = jsonConfig.getString(Const.Config.CorePublicUrlProp);
-        Boolean enforceJwt = jsonConfig.getBoolean(Const.Config.EnforceJwtProp, true);
+        Boolean enforceJwt = jsonConfig.getBoolean(Const.Config.EnforceJwtProp, false);
         if (enforceJwt == null) {
             enforceJwt = true;
         }
@@ -87,6 +88,8 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.listenPort = Const.Port.ServicePortForOptOut + Utils.getPortOffset();
         this.deltaRotateInterval = jsonConfig.getInteger(Const.Config.OptOutDeltaRotateIntervalProp);
         this.isVerbose = jsonConfig.getBoolean(Const.Config.ServiceVerboseProp, false);
+        this.enableAuditLogging = jsonConfig.getBoolean(Const.Config.EnableAuditLoggingProp, true);
+
 
         String replicaUrisConfig = jsonConfig.getString(Const.Config.OptOutReplicaUris);
         if (replicaUrisConfig == null) {
@@ -169,9 +172,9 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         router.route(Endpoints.OPTOUT_WRITE.toString())
                 .handler(internalAuth.handle(this::handleWrite));
         router.route(Endpoints.OPTOUT_REPLICATE.toString())
-                .handler(auth.handle(this::handleReplicate, Role.OPTOUT));
+                .handler(auth.handleWithAudit(this::handleReplicate, new AuditParams(), this.enableAuditLogging, Role.OPTOUT));
         router.route(Endpoints.OPTOUT_REFRESH.toString())
-                .handler(auth.handle(attest.handle(this::handleRefresh, Role.OPERATOR), Role.OPERATOR));
+                .handler(auth.handleWithAudit(attest.handle(this::handleRefresh, Role.OPERATOR), new AuditParams(), this.enableAuditLogging, Role.OPERATOR));
         router.get(Endpoints.OPS_HEALTHCHECK.toString())
                 .handler(this::handleHealthCheck);
 
