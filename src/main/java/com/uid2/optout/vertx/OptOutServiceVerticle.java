@@ -105,7 +105,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.defaultDeliveryOptions.setSendTimeout(addEntryTimeoutMs);
 
         this.internalApiKey = jsonConfig.getString(Const.Config.OptOutInternalApiTokenProp);
-        this.internalAuth = new InternalAuthMiddleware(this.internalApiKey);
+        this.internalAuth = new InternalAuthMiddleware(this.internalApiKey, "optout");
         this.enableOptOutPartnerMock = jsonConfig.getBoolean(Const.Config.OptOutPartnerEndpointMockProp);
     }
 
@@ -170,7 +170,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .allowedHeader("Content-Type"));
 
         router.route(Endpoints.OPTOUT_WRITE.toString())
-                .handler(internalAuth.handle(this::handleWrite));
+                .handler(internalAuth.handleWithAudit(this::handleWrite, new AuditParams(), this.enableAuditLogging));
         router.route(Endpoints.OPTOUT_REPLICATE.toString())
                 .handler(auth.handleWithAudit(this::handleReplicate, new AuditParams(), this.enableAuditLogging, Role.OPTOUT));
         router.route(Endpoints.OPTOUT_REFRESH.toString())

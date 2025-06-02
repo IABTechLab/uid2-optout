@@ -1,5 +1,7 @@
 package com.uid2.optout.auth;
 
+import com.uid2.shared.audit.Audit;
+import com.uid2.shared.audit.AuditParams;
 import com.uid2.shared.auth.OperatorKey;
 import com.uid2.shared.middleware.AuthMiddleware;
 import io.vertx.core.Handler;
@@ -48,15 +50,29 @@ public class InternalAuthMiddleware {
             }
         }
     }
-
+    private final Audit audit;
     private final String internalApiToken;
 
-    public InternalAuthMiddleware(String internalApiToken) {
-        this.internalApiToken = internalApiToken;
+    private Handler<RoutingContext> logAndHandle(Handler<RoutingContext> handler, AuditParams auditParams) {
+        return ctx -> {
+            ctx.addBodyEndHandler(v -> this.audit.log(ctx, auditParams));
+            handler.handle(ctx);
+        };
     }
 
-    public Handler<RoutingContext> handle(Handler<RoutingContext> handler) {
-        final InternalAuthHandler h = new InternalAuthHandler(handler, this.internalApiToken);
+    public InternalAuthMiddleware(String internalApiToken, String auditSource) {
+        this.internalApiToken = internalApiToken;
+        this.audit = new Audit(auditSource);
+    }
+
+    public Handler<RoutingContext> handleWithAudit(Handler<RoutingContext> handler, AuditParams auditParams, Boolean enableAuditLog) {
+        InternalAuthHandler h;
+        if (enableAuditLog) {
+            final Handler<RoutingContext> loggedHandler = logAndHandle(handler, auditParams);
+            h = new InternalAuthHandler(loggedHandler, this.internalApiToken);
+        } else {
+            h = new InternalAuthHandler(handler, this.internalApiToken);
+        }
         return h::handle;
     }
 }
