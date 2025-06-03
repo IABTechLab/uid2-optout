@@ -1,7 +1,6 @@
 package com.uid2.optout.auth;
 
 import org.junit.jupiter.api.BeforeEach;
-import com.uid2.shared.audit.AuditParams;
 import io.vertx.core.Handler;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.ext.web.RoutingContext;
@@ -34,7 +33,7 @@ public class InternalAuthMiddlewareTest {
 
     @Test
     public void internalAuthHandlerNoAuthorizationHeader() {
-        Handler<RoutingContext> handler = internalAuth.handleWithAudit(nextHandler, new AuditParams(), true);
+        Handler<RoutingContext> handler = internalAuth.handleWithAudit(nextHandler);
         handler.handle(routingContext);
         verifyNoInteractions(nextHandler);
         verify(routingContext).fail(401);
@@ -43,7 +42,7 @@ public class InternalAuthMiddlewareTest {
 
     @Test public void authHandlerInvalidAuthorizationHeader() {
         when(request.getHeader("Authorization")).thenReturn("Bogus Header Value");
-        Handler<RoutingContext> handler = internalAuth.handleWithAudit(nextHandler, new AuditParams(), true);
+        Handler<RoutingContext> handler = internalAuth.handleWithAudit(nextHandler);
         handler.handle(routingContext);
         verifyNoInteractions(nextHandler);
         verify(routingContext).fail(401);
@@ -52,7 +51,7 @@ public class InternalAuthMiddlewareTest {
 
     @Test public void authHandlerUnknownKey() {
         when(request.getHeader("Authorization")).thenReturn("Bearer unknown-key");
-        Handler<RoutingContext> handler = internalAuth.handleWithAudit(nextHandler, new AuditParams(), true);
+        Handler<RoutingContext> handler = internalAuth.handleWithAudit(nextHandler);
         handler.handle(routingContext);
         verifyNoInteractions(nextHandler);
         verify(routingContext).fail(401);

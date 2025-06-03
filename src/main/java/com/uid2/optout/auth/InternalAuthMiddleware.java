@@ -65,14 +65,10 @@ public class InternalAuthMiddleware {
         this.audit = new Audit(auditSource);
     }
 
-    public Handler<RoutingContext> handleWithAudit(Handler<RoutingContext> handler, AuditParams auditParams, Boolean enableAuditLog) {
+    public Handler<RoutingContext> handleWithAudit(Handler<RoutingContext> handler) {
         InternalAuthHandler h;
-        if (enableAuditLog) {
-            final Handler<RoutingContext> loggedHandler = logAndHandle(handler, auditParams);
-            h = new InternalAuthHandler(loggedHandler, this.internalApiToken);
-        } else {
-            h = new InternalAuthHandler(handler, this.internalApiToken);
-        }
+        final Handler<RoutingContext> loggedHandler = logAndHandle(handler, new AuditParams());
+        h = new InternalAuthHandler(loggedHandler, this.internalApiToken);
         return h::handle;
     }
 }

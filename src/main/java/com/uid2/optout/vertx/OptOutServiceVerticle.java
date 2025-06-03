@@ -7,7 +7,6 @@ import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationTokenService;
 import com.uid2.shared.attest.IAttestationTokenService;
 import com.uid2.shared.attest.JwtService;
-import com.uid2.shared.audit.AuditParams;
 import com.uid2.shared.auth.IAuthorizableProvider;
 import com.uid2.shared.auth.OperatorKey;
 import com.uid2.shared.auth.Role;
@@ -36,8 +35,8 @@ import io.vertx.ext.web.handler.CorsHandler;
 import java.net.URL;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -58,7 +57,6 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final AtomicReference<Collection<String>> cloudPaths = new AtomicReference<>();
     private final ICloudStorage cloudStorage;
     private final boolean enableOptOutPartnerMock;
-    private final boolean enableAuditLogging;
     private final String internalApiKey;
     private final InternalAuthMiddleware internalAuth;
 
@@ -88,8 +86,6 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.listenPort = Const.Port.ServicePortForOptOut + Utils.getPortOffset();
         this.deltaRotateInterval = jsonConfig.getInteger(Const.Config.OptOutDeltaRotateIntervalProp);
         this.isVerbose = jsonConfig.getBoolean(Const.Config.ServiceVerboseProp, false);
-        this.enableAuditLogging = true;
-
 
         String replicaUrisConfig = jsonConfig.getString(Const.Config.OptOutReplicaUris);
         if (replicaUrisConfig == null) {
@@ -170,11 +166,11 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .allowedHeader("Content-Type"));
 
         router.route(Endpoints.OPTOUT_WRITE.toString())
-                .handler(internalAuth.handleWithAudit(this::handleWrite, new AuditParams(), this.enableAuditLogging));
+                .handler(internalAuth.handleWithAudit(this::handleWrite));
         router.route(Endpoints.OPTOUT_REPLICATE.toString())
-                .handler(auth.handleWithAudit(this::handleReplicate, new AuditParams(), this.enableAuditLogging, Role.OPTOUT));
+                .handler(auth.handleWithAudit(this::handleReplicate, Arrays.asList(Role.OPTOUT)));
         router.route(Endpoints.OPTOUT_REFRESH.toString())
-                .handler(auth.handleWithAudit(attest.handle(this::handleRefresh, Role.OPERATOR), new AuditParams(), this.enableAuditLogging, Role.OPERATOR));
+                .handler(auth.handleWithAudit(attest.handle(this::handleRefresh, Role.OPERATOR), Arrays.asList(Role.OPERATOR)));
         router.get(Endpoints.OPS_HEALTHCHECK.toString())
                 .handler(this::handleHealthCheck);
 
