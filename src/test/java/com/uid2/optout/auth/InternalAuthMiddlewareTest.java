@@ -32,6 +32,16 @@ public class InternalAuthMiddlewareTest {
     }
 
     @Test
+    public void internalAuthHandlerSucceed() {
+        when(request.getHeader("Authorization")).thenReturn("Bearer apiToken");
+        Handler<RoutingContext> handler = internalAuth.handleWithAudit(nextHandler);
+        handler.handle(routingContext);
+        verify(nextHandler).handle(routingContext);
+        verify(routingContext, times(0)).fail(any());
+        verify(routingContext, times(1)).addBodyEndHandler(ArgumentMatchers.<Handler<Void>>any());
+    }
+
+    @Test
     public void internalAuthHandlerNoAuthorizationHeader() {
         Handler<RoutingContext> handler = internalAuth.handleWithAudit(nextHandler);
         handler.handle(routingContext);
