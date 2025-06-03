@@ -35,11 +35,10 @@ import io.vertx.ext.web.handler.CorsHandler;
 import java.net.URL;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
-
-import static com.uid2.optout.vertx.Endpoints.*;
 
 public class OptOutServiceVerticle extends AbstractVerticle {
     public static final String IDENTITY_HASH = "identity_hash";
@@ -68,7 +67,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.healthComponent.setHealthStatus(false, "not started");
 
         this.cloudStorage = cloudStorage;
-        this.auth = new AuthMiddleware(clientKeyProvider);
+        this.auth = new AuthMiddleware(clientKeyProvider, "optout");
 
         final String attestEncKey = jsonConfig.getString(Const.Config.AttestationEncryptionKeyName);
         final String attestEncSalt = jsonConfig.getString(Const.Config.AttestationEncryptionSaltName);
@@ -102,7 +101,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.defaultDeliveryOptions.setSendTimeout(addEntryTimeoutMs);
 
         this.internalApiKey = jsonConfig.getString(Const.Config.OptOutInternalApiTokenProp);
-        this.internalAuth = new InternalAuthMiddleware(this.internalApiKey);
+        this.internalAuth = new InternalAuthMiddleware(this.internalApiKey, "optout");
         this.enableOptOutPartnerMock = jsonConfig.getBoolean(Const.Config.OptOutPartnerEndpointMockProp);
     }
 
@@ -167,11 +166,11 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .allowedHeader("Content-Type"));
 
         router.route(Endpoints.OPTOUT_WRITE.toString())
-                .handler(internalAuth.handle(this::handleWrite));
+                .handler(internalAuth.handleWithAudit(this::handleWrite));
         router.route(Endpoints.OPTOUT_REPLICATE.toString())
-                .handler(auth.handle(this::handleReplicate, Role.OPTOUT));
+                .handler(auth.handleWithAudit(this::handleReplicate, Arrays.asList(Role.OPTOUT)));
         router.route(Endpoints.OPTOUT_REFRESH.toString())
-                .handler(auth.handle(attest.handle(this::handleRefresh, Role.OPERATOR), Role.OPERATOR));
+                .handler(auth.handleWithAudit(attest.handle(this::handleRefresh, Role.OPERATOR), Arrays.asList(Role.OPERATOR)));
         router.get(Endpoints.OPS_HEALTHCHECK.toString())
                 .handler(this::handleHealthCheck);
 
