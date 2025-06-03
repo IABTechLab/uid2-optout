@@ -88,7 +88,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.listenPort = Const.Port.ServicePortForOptOut + Utils.getPortOffset();
         this.deltaRotateInterval = jsonConfig.getInteger(Const.Config.OptOutDeltaRotateIntervalProp);
         this.isVerbose = jsonConfig.getBoolean(Const.Config.ServiceVerboseProp, false);
-        this.enableAuditLogging = jsonConfig.getBoolean(Const.Config.EnableAuditLoggingProp, true);
+        this.enableAuditLogging = true;
 
 
         String replicaUrisConfig = jsonConfig.getString(Const.Config.OptOutReplicaUris);
