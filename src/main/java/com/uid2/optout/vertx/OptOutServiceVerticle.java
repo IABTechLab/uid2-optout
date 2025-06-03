@@ -73,7 +73,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         final String attestEncSalt = jsonConfig.getString(Const.Config.AttestationEncryptionSaltName);
         final String jwtAudience = jsonConfig.getString(Const.Config.OptOutUrlProp);
         final String jwtIssuer = jsonConfig.getString(Const.Config.CorePublicUrlProp);
-        Boolean enforceJwt = jsonConfig.getBoolean(Const.Config.EnforceJwtProp, false);
+        Boolean enforceJwt = jsonConfig.getBoolean(Const.Config.EnforceJwtProp, true);
         if (enforceJwt == null) {
             enforceJwt = true;
         }
