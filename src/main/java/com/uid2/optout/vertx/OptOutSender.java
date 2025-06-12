@@ -7,6 +7,7 @@ import com.uid2.optout.partner.OptOutPartnerEndpoint;
 import com.uid2.optout.util.Tuple;
 import com.uid2.optout.web.TooManyRetriesException;
 import com.uid2.optout.web.UnexpectedStatusCodeException;
+import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.health.HealthComponent;
 import com.uid2.shared.health.HealthManager;
 import com.uid2.shared.optout.*;
@@ -93,8 +94,8 @@ public class OptOutSender extends AbstractVerticle {
     // timestamp when the last delta is processed
     private Instant lastProcessedTimestamp = null;
 
-    public OptOutSender(JsonObject jsonConfig, Vertx vertx, EndpointConfig partnerConfig, String eventCloudDownloaded) {
-        this(jsonConfig, new OptOutPartnerEndpoint(vertx, partnerConfig), eventCloudDownloaded);
+    public OptOutSender(JsonObject jsonConfig, Vertx vertx, EndpointConfig partnerConfig, String eventCloudDownloaded, UidInstanceIdProvider uidInstanceIdProvider) {
+        this(jsonConfig, new OptOutPartnerEndpoint(vertx, partnerConfig, uidInstanceIdProvider), eventCloudDownloaded);
     }
 
     public OptOutSender(JsonObject jsonConfig, IOptOutPartnerEndpoint optOutPartner, String eventCloudSyncDownloaded) {

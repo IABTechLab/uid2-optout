@@ -3,6 +3,7 @@ package com.uid2.optout;
 import com.uid2.optout.vertx.OptOutLogProducer;
 import com.uid2.optout.vertx.OptOutServiceVerticle;
 import com.uid2.optout.vertx.TestOperatorKeyProvider;
+import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.optout.*;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
@@ -23,8 +24,8 @@ public class TestUtils {
         return new OptOutLogProducer(config);
     }
 
-    public static OptOutServiceVerticle createOptOutService(Vertx vertx, JsonObject config) throws Exception {
-        return new OptOutServiceVerticle(vertx, new TestOperatorKeyProvider(), null, config);
+    public static OptOutServiceVerticle createOptOutService(Vertx vertx, JsonObject config, UidInstanceIdProvider uidInstanceIdProvider) throws Exception {
+        return new OptOutServiceVerticle(vertx, new TestOperatorKeyProvider(), null, config, uidInstanceIdProvider);
     }
 
     public static OptOutEntry[] toEntries(long... ids) {
