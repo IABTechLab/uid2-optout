@@ -34,6 +34,10 @@ public class QuorumWebClient {
         this.uidInstanceIdProvider = uidInstanceIdProvider;
     }
 
+    public String getInstanceId() {
+        return this.uidInstanceIdProvider.getInstanceId();
+    }
+
     public Future<HttpResponse<Buffer>[]> get(Function<HttpRequest<Buffer>, HttpRequest<Buffer>> requestCreator) {
         Promise<HttpResponse<Buffer>[]> promise = Promise.promise();
         HttpResponse<Buffer>[] resps = new HttpResponse[this.uris.length];

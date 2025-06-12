@@ -7,6 +7,7 @@ import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationTokenService;
 import com.uid2.shared.attest.IAttestationTokenService;
 import com.uid2.shared.attest.JwtService;
+import com.uid2.shared.audit.Audit;
 import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.auth.IAuthorizableProvider;
 import com.uid2.shared.auth.OperatorKey;
@@ -274,6 +275,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                     r.setQueryParam(IDENTITY_HASH, identityHash);
                     r.setQueryParam(ADVERTISING_ID, advertisingId);
                     r.headers().set("Authorization", "Bearer " + internalApiKey);
+                    r.headers().set(Audit.UID_INSTANCE_ID_HEADER, this.replicaWriteClient.getInstanceId());
                     return r;
                 }).onComplete(ar -> {
                     final String maskedId1 = Utils.maskPii(identityHash);
