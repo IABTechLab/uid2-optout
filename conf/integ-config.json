@@ -11,5 +11,6 @@
   "operators_metadata_path": "http://localhost:8088/operators/refresh",
   "core_attest_url": "http://localhost:8088/attest",
   "core_api_token": "trusted-partner-key",
-  "enforceJwt": false
+  "enforceJwt": false,
+  "uid_instance_id_prefix": "local-optout"
 }

@@ -31,5 +31,6 @@
   "operators_metadata_path": null,
   "partners_metadata_path": null,
   "partners_config_path": "partners/config.json",
-  "operator_type": "public"
+  "operator_type": "public",
+  "uid_instance_id_prefix": "local-optout"
 }
