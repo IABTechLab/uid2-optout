@@ -1,5 +1,6 @@
 package com.uid2.optout.web;
 
+import com.uid2.shared.audit.UidInstanceIdProvider;
 import io.netty.handler.codec.http.HttpMethod;
 import io.vertx.core.Vertx;
 import io.vertx.ext.unit.TestContext;
@@ -18,11 +19,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class RetryingWebClientTest {
 
     private Vertx vertx;
+    private UidInstanceIdProvider uidInstanceIdProvider;
 
     @Before
     public void setup(TestContext ctx) {
         vertx = Vertx.vertx();
         Random rand = new Random();
+        uidInstanceIdProvider = new UidInstanceIdProvider("test-instance", "id");
 
         vertx.createHttpServer()
             .requestHandler(req -> {
@@ -62,7 +65,7 @@ public class RetryingWebClientTest {
     }
 
     private void expectSuccess(TestContext ctx, HttpMethod testMethod) {
-        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/200", testMethod, 0, 0);
+        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/200", testMethod, 0, 0, uidInstanceIdProvider);
         c.send((URI uri, HttpMethod method) -> {
             return HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build();
         }, resp -> {
@@ -83,7 +86,7 @@ public class RetryingWebClientTest {
 
     private void expectRetryFailure_zeroBackoff(TestContext ctx, HttpMethod testMethod) {
         AtomicInteger totalAttempts = new AtomicInteger(0);
-        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", testMethod, 3, 0);
+        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", testMethod, 3, 0, uidInstanceIdProvider);
         c.send((URI uri, HttpMethod method) -> {
             return HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build();
         }, resp -> {
@@ -106,7 +109,7 @@ public class RetryingWebClientTest {
 
     private void expectRetryFailure_withBackoff(TestContext ctx, HttpMethod testMethod) {
         AtomicInteger totalAttempts = new AtomicInteger(0);
-        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", testMethod, 3, 1);
+        RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", testMethod, 3, 1, uidInstanceIdProvider);
         c.send((URI uri, HttpMethod method) -> {
             return HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build();
         }, resp -> {
@@ -134,7 +137,7 @@ public class RetryingWebClientTest {
         for (int i = 0; i < 10; ++i) {
             AtomicInteger totalAttempts = new AtomicInteger(0);
             RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/random/500_500_500_200",
-                testMethod, 100, 1);
+                testMethod, 100, 1, uidInstanceIdProvider);
             c.send((URI uri, HttpMethod method) -> {
                 return HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build();
             }, resp -> {
@@ -160,7 +163,7 @@ public class RetryingWebClientTest {
     private void expectImmediateFailure_withNonRetryErrors(TestContext ctx, HttpMethod testMethod) {
         for (int i = 0; i < 10; ++i) {
             AtomicInteger totalAttempts = new AtomicInteger(0);
-            RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", testMethod, 100, 1);
+            RetryingWebClient c = new RetryingWebClient(vertx, "http://localhost:18082/404", testMethod, 100, 1, uidInstanceIdProvider);
             c.send((URI uri, HttpMethod method) -> {
                 return HttpRequest.newBuilder().uri(uri).method(method.toString(), HttpRequest.BodyPublishers.noBody()).build();
             }, resp -> {

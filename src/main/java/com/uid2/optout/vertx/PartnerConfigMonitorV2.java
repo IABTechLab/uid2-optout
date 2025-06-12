@@ -4,6 +4,7 @@ import com.uid2.optout.Const;
 import com.uid2.optout.partner.EndpointConfig;
 import com.uid2.optout.partner.PartnersConfig;
 import com.uid2.shared.Utils;
+import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.auth.ClientKey;
 import com.uid2.shared.cloud.DownloadCloudStorage;
 import com.uid2.shared.cloud.ICloudStorage;
@@ -35,15 +36,17 @@ public class PartnerConfigMonitorV2 implements IMetadataVersionedStore {
     private final String partnersMetadataPath;
     private final String eventCloudDownloaded;
     private final AtomicReference<Map<String, String>> senderDeploymentIds = new AtomicReference<>();
+    private final UidInstanceIdProvider uidInstanceIdProvider;
 
     public PartnerConfigMonitorV2(Vertx vertx, JsonObject globalConfig, DownloadCloudStorage metadataStorage,
-                                  DownloadCloudStorage contentStorage, String eventCloudDownloaded) {
+                                  DownloadCloudStorage contentStorage, String eventCloudDownloaded, UidInstanceIdProvider uidInstanceIdProvider) {
         this.vertx = vertx;
         this.globalConfig = globalConfig;
         this.metadataStorage = metadataStorage;
         this.contentStorage = contentStorage;
         this.partnersMetadataPath = globalConfig.getString(Const.Config.PartnersMetadataPathProp);;
         this.eventCloudDownloaded = eventCloudDownloaded;
+        this.uidInstanceIdProvider = uidInstanceIdProvider;
     }
 
     @Override
@@ -107,7 +110,7 @@ public class PartnerConfigMonitorV2 implements IMetadataVersionedStore {
 
             for (EndpointConfig ef : remoteEndpoints) {
                 LOGGER.info("Deploying OptOutSender: " + ef.name() + ", url: " + ef.url());
-                OptOutSender sender = new OptOutSender(globalConfig, vertx, ef, this.eventCloudDownloaded);
+                OptOutSender sender = new OptOutSender(globalConfig, vertx, ef, this.eventCloudDownloaded, this.uidInstanceIdProvider);
                 vertx.deployVerticle(sender, dr -> {
                     if (dr.succeeded()) {
                         newDeployIdMap.put(ef.name(), dr.result());
