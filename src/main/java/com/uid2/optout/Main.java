@@ -270,7 +270,7 @@ public class Main {
         }
 
         Supplier<Verticle> svcSupplier = () -> {
-            OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config);
+            OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config, this.uidInstanceIdProvider);
             // configure where OptOutService receives the latest cloud paths
             cs.registerNewCloudPathsHandler(ps -> svc.setCloudPaths(ps));
             return svc;

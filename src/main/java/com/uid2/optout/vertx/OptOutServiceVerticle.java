@@ -7,6 +7,7 @@ import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationTokenService;
 import com.uid2.shared.attest.IAttestationTokenService;
 import com.uid2.shared.attest.JwtService;
+import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.auth.IAuthorizableProvider;
 import com.uid2.shared.auth.OperatorKey;
 import com.uid2.shared.auth.Role;
@@ -63,7 +64,8 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     public OptOutServiceVerticle(Vertx vertx,
                                  IAuthorizableProvider clientKeyProvider,
                                  ICloudStorage cloudStorage,
-                                 JsonObject jsonConfig) {
+                                 JsonObject jsonConfig,
+                                 UidInstanceIdProvider uidInstanceIdProvider) {
         this.healthComponent.setHealthStatus(false, "not started");
 
         this.cloudStorage = cloudStorage;
@@ -93,7 +95,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             this.replicaWriteClient = null;
         } else {
             String[] replicaUris = replicaUrisConfig.split(",");
-            this.replicaWriteClient = new QuorumWebClient(vertx, replicaUris);
+            this.replicaWriteClient = new QuorumWebClient(vertx, replicaUris, uidInstanceIdProvider);
         }
 
         this.defaultDeliveryOptions = new DeliveryOptions();

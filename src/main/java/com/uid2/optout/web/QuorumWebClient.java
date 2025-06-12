@@ -1,5 +1,6 @@
 package com.uid2.optout.web;
 
+import com.uid2.shared.audit.UidInstanceIdProvider;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -17,11 +18,12 @@ import java.util.function.Function;
 
 public class QuorumWebClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(QuorumWebClient.class);
+    private final UidInstanceIdProvider uidInstanceIdProvider;
 
     final URI[] uris;
     final WebClient[] clients;
 
-    public QuorumWebClient(Vertx vertx, String[] uris) {
+    public QuorumWebClient(Vertx vertx, String[] uris, UidInstanceIdProvider uidInstanceIdProvider) {
         this.uris = new URI[uris.length];
         this.clients = new WebClient[uris.length];
         for (int i = 0; i < uris.length; ++i) {
@@ -29,6 +31,7 @@ public class QuorumWebClient {
             this.uris[i] = URI.create(uris[i]);
             this.clients[i] = WebClient.create(vertx);
         }
+        this.uidInstanceIdProvider = uidInstanceIdProvider;
     }
 
     public Future<HttpResponse<Buffer>[]> get(Function<HttpRequest<Buffer>, HttpRequest<Buffer>> requestCreator) {
