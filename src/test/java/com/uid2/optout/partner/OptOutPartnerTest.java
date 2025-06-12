@@ -1,6 +1,7 @@
 package com.uid2.optout.partner;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.uid2.shared.audit.Audit;
 import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.optout.OptOutEntry;
 import io.vertx.core.Handler;
@@ -107,8 +108,11 @@ public class OptOutPartnerTest {
                 ctx.assertEquals(tsExpected, ts);
 
                 String hExpected = "Bearer 111-1111111";
+                String hServiceIdExpected = "test-instance-id";
                 String h = req.getHeader("Authorization");
+                String hServiceId = req.getHeader(Audit.UID_INSTANCE_ID_HEADER);
                 ctx.assertEquals(hExpected, h);
+                ctx.assertEquals(hServiceIdExpected, hServiceId);
                 async.complete();
             });
         }
