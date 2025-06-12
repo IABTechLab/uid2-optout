@@ -1,6 +1,7 @@
 package com.uid2.optout.partner;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.optout.OptOutEntry;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
@@ -21,6 +22,7 @@ import java.util.InvalidPropertiesFormatException;
 public class OptOutPartnerTest {
     private static final String PARAM_UID2 = "uid2";
     private static final String PARAM_TIMESTAMP = "timestamp";
+    private final UidInstanceIdProvider uidInstanceIdProvider = new UidInstanceIdProvider("test-instance", "id");
 
     private Vertx vertx;
 
@@ -111,7 +113,7 @@ public class OptOutPartnerTest {
             });
         }
 
-        OptOutPartnerEndpoint remote = new OptOutPartnerEndpoint(vertx, partnerConfig);
+        OptOutPartnerEndpoint remote = new OptOutPartnerEndpoint(vertx, partnerConfig, uidInstanceIdProvider);
         remote.send(entry).onComplete(ctx.asyncAssertSuccess());
     }
 
