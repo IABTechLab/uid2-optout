@@ -3,6 +3,7 @@ package com.uid2.optout.vertx;
 import com.uid2.optout.Const;
 import com.uid2.optout.TestUtils;
 import com.uid2.optout.web.QuorumWebClient;
+import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
 import com.uid2.shared.vertx.VertxUtils;
@@ -30,6 +31,7 @@ public class OptOutServiceVerticleTest {
     private static final String INTERNAL_TEST_KEY = "test-operator-key";
     private static final String INTERNAL_OPTOUT_KEY = "test-optout-operator-key";
     private static Vertx vertx;
+    private static final UidInstanceIdProvider uidInstanceIdProvider = new UidInstanceIdProvider("test-instance", "id");
 
     @BeforeClass
     public static void suiteSetup(TestContext context) throws Exception {
@@ -68,7 +70,7 @@ public class OptOutServiceVerticleTest {
 
     private static Future<String> deployService(TestContext context, JsonObject config) throws Exception {
         Promise<String> promise = Promise.promise();
-        OptOutServiceVerticle svc = TestUtils.createOptOutService(vertx, config);
+        OptOutServiceVerticle svc = TestUtils.createOptOutService(vertx, config, uidInstanceIdProvider);
         vertx.deployVerticle(svc, ar -> {
             // set an empty cloud paths
             svc.setCloudPaths(new ArrayList<>());
@@ -144,7 +146,7 @@ public class OptOutServiceVerticleTest {
             uris[i] = String.format("http://127.0.0.1:%d%s", Const.Port.ServicePortForOptOut, Endpoints.OPTOUT_WRITE);
         }
 
-        QuorumWebClient quorumClient = new QuorumWebClient(vertx, uris);
+        QuorumWebClient quorumClient = new QuorumWebClient(vertx, uris, uidInstanceIdProvider);
         quorumClient.get(req -> {
             req.addQueryParam(OptOutServiceVerticle.IDENTITY_HASH, OptOutEntry.idHashB64FromLong(123));
             req.addQueryParam(OptOutServiceVerticle.ADVERTISING_ID, OptOutEntry.idHashB64FromLong(456));
@@ -161,7 +163,7 @@ public class OptOutServiceVerticleTest {
         }
         uris[2] = "http://httpstat.us/404";
 
-        QuorumWebClient quorumClient = new QuorumWebClient(vertx, uris);
+        QuorumWebClient quorumClient = new QuorumWebClient(vertx, uris, uidInstanceIdProvider);
         quorumClient.get(req -> {
             req.addQueryParam(OptOutServiceVerticle.IDENTITY_HASH, OptOutEntry.idHashB64FromLong(123));
             req.addQueryParam(OptOutServiceVerticle.ADVERTISING_ID, OptOutEntry.idHashB64FromLong(456));
@@ -177,7 +179,7 @@ public class OptOutServiceVerticleTest {
             uris[i] = "http://httpstat.us/404";
         }
 
-        QuorumWebClient quorumClient = new QuorumWebClient(vertx, uris);
+        QuorumWebClient quorumClient = new QuorumWebClient(vertx, uris, uidInstanceIdProvider);
         quorumClient.get(req -> {
             req.addQueryParam(OptOutServiceVerticle.IDENTITY_HASH, OptOutEntry.idHashB64FromLong(123));
             req.addQueryParam(OptOutServiceVerticle.ADVERTISING_ID, OptOutEntry.idHashB64FromLong(456));
