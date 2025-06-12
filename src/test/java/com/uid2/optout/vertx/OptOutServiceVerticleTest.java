@@ -3,6 +3,7 @@ package com.uid2.optout.vertx;
 import com.uid2.optout.Const;
 import com.uid2.optout.TestUtils;
 import com.uid2.optout.web.QuorumWebClient;
+import com.uid2.shared.audit.Audit;
 import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
@@ -234,32 +235,14 @@ public class OptOutServiceVerticleTest {
         int port = Const.Port.ServicePortForOptOut;
         vertx.createHttpClient()
                 .request(HttpMethod.GET, port, "127.0.0.1", pq)
-                .compose(req -> req.putHeader("Authorization", "Bearer " + token)
+                .compose(req -> req
+                        .putHeader("Authorization", "Bearer " + token)
+                        .putHeader(Audit.UID_INSTANCE_ID_HEADER, "test-instance-id")
                         .send()
                         .compose(resp -> {
                             context.assertEquals(status, resp.statusCode());
                             async.complete();
                             promise.complete();
-                            return resp.body();
-                        }));
-        return promise.future();
-    }
-
-    private Future<Void> verifyStatusAndBody(TestContext context, String pq, int status, String body) {
-        Promise<Void> promise = Promise.promise();
-        Async async = context.async();
-        int port = Const.Port.ServicePortForOptOut;
-        vertx.createHttpClient()
-                .request(HttpMethod.GET, port, "127.0.0.1", pq)
-                .compose(req -> req.putHeader("Authorization", "Bearer " + INTERNAL_TEST_KEY)
-                        .send()
-                        .compose(resp -> {
-                            context.assertEquals(status, resp.statusCode());
-                            resp.handler(respBody -> {
-                                context.assertEquals(body, respBody.toString());
-                                async.complete();
-                                promise.complete();
-                            });
                             return resp.body();
                         }));
         return promise.future();
