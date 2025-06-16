@@ -372,7 +372,7 @@ public class Main {
         String partnerConfigPath = config.getString(Const.Config.PartnersConfigPathProp);
         if (partnerConfigPath == null || partnerConfigPath.length() == 0)
             return Future.succeededFuture();
-        PartnerConfigMonitor configMon = new PartnerConfigMonitor(vertx, config, fsPartnerConfig, eventCloudSyncDownloaded, this.uidInstanceIdProvider);
+        PartnerConfigMonitor configMon = new PartnerConfigMonitor(vertx, config, fsPartnerConfig, eventCloudSyncDownloaded);
         RotatingStoreVerticle rotatingStore = new RotatingStoreVerticle("partners", 10000, configMon);
         return this.deploySingleInstance(rotatingStore);
     }
@@ -387,7 +387,7 @@ public class Main {
             fsContent = this.fsOperatorKeyConfig;
         }
 
-        PartnerConfigMonitorV2 configMon = new PartnerConfigMonitorV2(vertx, config, fsMetadata, fsContent, eventCloudSyncDownloaded, this.uidInstanceIdProvider);
+        PartnerConfigMonitorV2 configMon = new PartnerConfigMonitorV2(vertx, config, fsMetadata, fsContent, eventCloudSyncDownloaded);
         RotatingStoreVerticle rotatingStore = new RotatingStoreVerticle("partners", 10000, configMon);
         return this.deploySingleInstance(rotatingStore);
     }

@@ -4,7 +4,6 @@ import com.uid2.optout.web.RetryingWebClient;
 import com.uid2.optout.web.UnexpectedStatusCodeException;
 import com.uid2.shared.Utils;
 import com.uid2.shared.audit.Audit;
-import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
 import io.netty.handler.codec.http.HttpMethod;
@@ -34,9 +33,9 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
     private final EndpointConfig config;
     private final RetryingWebClient retryingClient;
 
-    public OptOutPartnerEndpoint(Vertx vertx, EndpointConfig config, UidInstanceIdProvider uidInstanceIdProvider) {
+    public OptOutPartnerEndpoint(Vertx vertx, EndpointConfig config) {
         this.config = config;
-        this.retryingClient = new RetryingWebClient(vertx, config.url(), config.method(), config.retryCount(), config.retryBackoffMs(), uidInstanceIdProvider);
+        this.retryingClient = new RetryingWebClient(vertx, config.url(), config.method(), config.retryCount(), config.retryBackoffMs());
     }
 
     @Override
@@ -70,7 +69,6 @@ public class OptOutPartnerEndpoint implements IOptOutPartnerEndpoint {
                         .uri(uriWithParams)
                         .method(method.toString(), HttpRequest.BodyPublishers.noBody());
 
-                builder.header(Audit.UID_INSTANCE_ID_HEADER, this.retryingClient.getInstanceId());
                 for (String additionalHeader : this.config.additionalHeaders()) {
                     int indexOfColonSign = additionalHeader.indexOf(':');
                     String headerName = additionalHeader.substring(0, indexOfColonSign);

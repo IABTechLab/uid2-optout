@@ -1,7 +1,6 @@
 package com.uid2.optout.web;
 
 import com.google.common.base.Stopwatch;
-import com.uid2.shared.audit.UidInstanceIdProvider;
 import io.netty.handler.codec.http.HttpMethod;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
@@ -25,22 +24,16 @@ public class RetryingWebClient {
     private final int retryCount;
     private final int retryBackoffMs;
     private final HttpClient httpClient;
-    private final UidInstanceIdProvider uidInstanceIdProvider;
     private Vertx vertx;
 
-    public RetryingWebClient(Vertx vertx, String uri, HttpMethod method, int retryCount, int retryBackoffMs, UidInstanceIdProvider uidInstanceIdProvider) {
+    public RetryingWebClient(Vertx vertx, String uri, HttpMethod method, int retryCount, int retryBackoffMs) {
         this.vertx = vertx;
         this.uri = URI.create(uri);
         this.method = method;
         this.httpClient = HttpClient.newHttpClient();
-        this.uidInstanceIdProvider = uidInstanceIdProvider;
 
         this.retryCount = retryCount;
         this.retryBackoffMs = retryBackoffMs;
-    }
-
-    public String getInstanceId() {
-        return this.uidInstanceIdProvider.getInstanceId();
     }
 
     public Future<Void> send(BiFunction<URI, HttpMethod, HttpRequest> requestCreator, Function<HttpResponse, Boolean> responseValidator) {

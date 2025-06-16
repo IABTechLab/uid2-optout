@@ -1,8 +1,6 @@
 package com.uid2.optout.vertx;
 
 import com.uid2.optout.Const;
-import com.uid2.shared.audit.UidInstanceIdProvider;
-import com.uid2.shared.cloud.CloudStorageException;
 import com.uid2.shared.cloud.DownloadCloudStorage;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
@@ -26,7 +24,6 @@ public class PartnerConfigMonitorV2Test {
     private final String filePath = "/tmp/uid2/optout";
     private final JsonObject config = new JsonObject();
     private final String eventBusName = "testEventBus";
-    private final UidInstanceIdProvider uidInstanceIdProvider = new UidInstanceIdProvider("test-instance", "id");
 
     @Mock
     private DownloadCloudStorage metadataStorage;
@@ -41,7 +38,7 @@ public class PartnerConfigMonitorV2Test {
 
         setupConfig();
 
-        partnerConfigMonitorV2 = new PartnerConfigMonitorV2(vertx, config, metadataStorage, contentStorage, eventBusName, uidInstanceIdProvider);
+        partnerConfigMonitorV2 = new PartnerConfigMonitorV2(vertx, config, metadataStorage, contentStorage, eventBusName);
         testContext.completeNow();
     }
 
