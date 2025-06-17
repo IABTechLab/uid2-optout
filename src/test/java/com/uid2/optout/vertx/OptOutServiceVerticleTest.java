@@ -3,7 +3,6 @@ package com.uid2.optout.vertx;
 import com.uid2.optout.Const;
 import com.uid2.optout.TestUtils;
 import com.uid2.optout.web.QuorumWebClient;
-import com.uid2.shared.audit.Audit;
 import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
@@ -24,8 +23,6 @@ import org.junit.runner.RunWith;
 
 import java.util.ArrayList;
 import java.util.List;
-
-import static com.uid2.optout.vertx.Endpoints.OPTOUT_WRITE;
 
 @RunWith(VertxUnitRunner.class)
 public class OptOutServiceVerticleTest {
@@ -237,7 +234,6 @@ public class OptOutServiceVerticleTest {
                 .request(HttpMethod.GET, port, "127.0.0.1", pq)
                 .compose(req -> req
                         .putHeader("Authorization", "Bearer " + token)
-                        .putHeader(Audit.UID_INSTANCE_ID_HEADER, "test-instance-id")
                         .send()
                         .compose(resp -> {
                             context.assertEquals(status, resp.statusCode());
