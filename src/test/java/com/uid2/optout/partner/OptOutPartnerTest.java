@@ -1,6 +1,7 @@
 package com.uid2.optout.partner;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.uid2.shared.audit.Audit;
 import com.uid2.shared.optout.OptOutEntry;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;

@@ -1,7 +1,6 @@
 package com.uid2.optout.vertx;
 
 import com.uid2.optout.Const;
-import com.uid2.shared.cloud.CloudStorageException;
 import com.uid2.shared.cloud.DownloadCloudStorage;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;

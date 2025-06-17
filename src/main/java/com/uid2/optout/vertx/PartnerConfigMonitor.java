@@ -4,6 +4,7 @@ import com.uid2.optout.Const;
 import com.uid2.optout.partner.EndpointConfig;
 import com.uid2.optout.partner.PartnersConfig;
 import com.uid2.shared.Utils;
+import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.store.reader.IMetadataVersionedStore;
 import io.vertx.core.CompositeFuture;

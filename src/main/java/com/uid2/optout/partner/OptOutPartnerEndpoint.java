@@ -3,6 +3,7 @@ package com.uid2.optout.partner;
 import com.uid2.optout.web.RetryingWebClient;
 import com.uid2.optout.web.UnexpectedStatusCodeException;
 import com.uid2.shared.Utils;
+import com.uid2.shared.audit.Audit;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
 import io.netty.handler.codec.http.HttpMethod;

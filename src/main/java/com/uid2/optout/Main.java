@@ -6,6 +6,7 @@ import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationResponseHandler;
 import com.uid2.shared.attest.NoAttestationProvider;
 import com.uid2.shared.attest.UidCoreClient;
+import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.auth.RotatingOperatorKeyProvider;
 import com.uid2.shared.cloud.*;
 import com.uid2.shared.health.HealthManager;
@@ -63,6 +64,7 @@ public class Main {
     private final ICloudStorage fsPartnerConfig;
     private final RotatingOperatorKeyProvider operatorKeyProvider;
     private final boolean observeOnly;
+    private final UidInstanceIdProvider uidInstanceIdProvider;
 
     public Main(Vertx vertx, JsonObject config) throws Exception {
         this.vertx = vertx;
@@ -71,6 +73,7 @@ public class Main {
         if (this.observeOnly) {
             LOGGER.warn("Running Observe ONLY mode: no producer, no sender");
         }
+        this.uidInstanceIdProvider = new UidInstanceIdProvider(config);
 
         boolean useStorageMock = config.getBoolean(Const.Config.StorageMockProp, false);
         if (useStorageMock) {
@@ -119,8 +122,8 @@ public class Main {
             if (coreApiToken == null || coreApiToken.isBlank()) {
                 LOGGER.warn("Core Attest URL set, but the API Token is not set");
             }
-            var tokenRetriever = new AttestationResponseHandler(vertx, coreAttestUrl, coreApiToken, "public", appVersion, new NoAttestationProvider(), null, CloudUtils.defaultProxy);
-            UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreApiToken, tokenRetriever);
+            var tokenRetriever = new AttestationResponseHandler(vertx, coreAttestUrl, coreApiToken, "public", appVersion, new NoAttestationProvider(), null, CloudUtils.defaultProxy, this.uidInstanceIdProvider);
+            UidCoreClient uidCoreClient = UidCoreClient.createNoAttest(coreApiToken, tokenRetriever, this.uidInstanceIdProvider);
             if (useStorageMock) uidCoreClient.setAllowContentFromLocalFileSystem(true);
             this.fsOperatorKeyConfig = uidCoreClient;
             contentStorage = uidCoreClient.getContentStorage();
@@ -267,7 +270,7 @@ public class Main {
         }
 
         Supplier<Verticle> svcSupplier = () -> {
-            OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config);
+            OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config, this.uidInstanceIdProvider);
             // configure where OptOutService receives the latest cloud paths
             cs.registerNewCloudPathsHandler(ps -> svc.setCloudPaths(ps));
             return svc;
