@@ -16,7 +16,7 @@
         <vertx.version>4.5.13</vertx.version>
         <!-- check micrometer.version vertx-micrometer-metrics consumes before bumping up -->
         <micrometer.version>1.1.0</micrometer.version>
-        <uid2-shared.version>10.4.0</uid2-shared.version>
+        <uid2-shared.version>10.5.0</uid2-shared.version>
         <image.version>${project.version}</image.version>
         <junit-jupiter.version>5.10.1</junit-jupiter.version>
         <junit-vintage.version>5.10.1</junit-vintage.version>
@@ -138,12 +138,6 @@
             <artifactId>mockito-junit-jupiter</artifactId>
             <version>5.12.0</version>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.uid2</groupId>
-            <artifactId>uid2-shared</artifactId>
-            <version>10.0.0</version>
-            <scope>compile</scope>
         </dependency>
     </dependencies>
 
