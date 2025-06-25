@@ -60,7 +60,7 @@ public class OptOutLogProducer extends AbstractVerticle {
         .description("counter for how many optout delta files are produced")
         .register(Metrics.globalRegistry);
     private Counter counterPartitionProduced = Counter
-        .builder("uid2_optout_partition_produced_total\n")
+        .builder("uid2_optout_partition_produced_total")
         .description("counter for how many optout partition files are produced")
         .register(Metrics.globalRegistry);
     private ByteBuffer buffer;
