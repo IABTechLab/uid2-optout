@@ -64,7 +64,7 @@ public class OptOutLogTool {
             try {
                 tool.run(args);
             } catch (Exception e) {
-                e.printStackTrace();
+                LOGGER.error("Failed to run OptOutLogTool", e);
                 vertx.close();
                 System.exit(1);
             } finally {
