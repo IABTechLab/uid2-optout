@@ -50,13 +50,13 @@ public class OptOutLogTool {
         Vertx vertx = Vertx.vertx(options);
         final String vertxConfigPath = System.getProperty(Const.Config.VERTX_CONFIG_PATH_PROP);
         if (vertxConfigPath != null) {
-            System.out.format("Running CUSTOM CONFIG mode, config: %s\n", vertxConfigPath);
+            LOGGER.info("Running CUSTOM CONFIG mode, config: {}", vertxConfigPath);
         }
         else if (!Utils.isProductionEnvironment()) {
-            System.out.format("Running LOCAL DEBUG mode, config: %s\n", Const.Config.LOCAL_CONFIG_PATH);
+            LOGGER.info("Running LOCAL DEBUG mode, config: {}", Const.Config.LOCAL_CONFIG_PATH);
             System.setProperty(Const.Config.VERTX_CONFIG_PATH_PROP, Const.Config.LOCAL_CONFIG_PATH);
         } else {
-            System.out.format("Running PRODUCTION mode, config: %s\n", Const.Config.OVERRIDE_CONFIG_PATH);
+            LOGGER.info("Running PRODUCTION mode, config: {}", Const.Config.OVERRIDE_CONFIG_PATH);
         }
 
         VertxUtils.createConfigRetriever(vertx).getConfig(ar -> {
@@ -64,7 +64,7 @@ public class OptOutLogTool {
             try {
                 tool.run(args);
             } catch (Exception e) {
-                e.printStackTrace();
+                LOGGER.error("Failed to run OptOutLogTool", e);
                 vertx.close();
                 System.exit(1);
             } finally {
@@ -97,7 +97,7 @@ public class OptOutLogTool {
 
         String command = cli.getArgumentValue("command");
         if (!supportedCommands.contains(command)) {
-            System.err.println("Unknown command: " + command);
+            LOGGER.error("Unknown command: {}", command);
         } else if ("sync".equals(command)) {
             String dataDir = cli.getOptionValue("datadir");
             checkOptionExistence(dataDir, command, "datadir");
@@ -266,8 +266,7 @@ public class OptOutLogTool {
                         Files.copy(inputStream, Paths.get(l), StandardCopyOption.REPLACE_EXISTING);
                         LOGGER.trace("Saved " + d + " to " + l);
                     } catch (Exception e) {
-                        System.err.println("Unable to download " + d + ": " + e.getMessage());
-                        e.printStackTrace(System.err);
+                        LOGGER.error("Unable to download {}: {}", d, e.getMessage(), e);
                         exceptionList.add(e);
                     }
                 }
@@ -278,15 +277,14 @@ public class OptOutLogTool {
                         Files.delete(Paths.get(d));
                         LOGGER.info("Deleted " + d);
                     } catch (IOException e) {
-                        System.err.println("Unable to delete " + d + ": " + e.getMessage());
-                        e.printStackTrace(System.err);
+                        LOGGER.error("Unable to delete {}: {}", d, e.getMessage(), e);
                         exceptionList.add(e);
                     }
                 }
             });
 
         if (exceptionList.size() > 0) {
-            System.err.println("Total " + exceptionList.size() + " errors during sync");
+            LOGGER.error("Total {} errors during sync", exceptionList.size());
             System.exit(1);
         }
     }
@@ -415,7 +413,7 @@ public class OptOutLogTool {
         int counter = 0;
         if (filesToDelete.size() < 1000) {
             if (!this.isVerbose && filesToDelete.size() > 0) {
-                System.out.print("Deleting from cloud storage: ");
+                LOGGER.info("Deleting from cloud storage:");
             }
 
             for (String fileToDelete : filesToDelete) {
@@ -457,11 +455,11 @@ public class OptOutLogTool {
             URL request = new URL(url + queryString);
             String body = Utils.readToEnd(request.openStream());
             if (entry.timestamp != (long)Long.valueOf(body)) {
-                System.err.format("Verification failed: %s expect optout time %d, api returned %s\n",
-                    entry.idHashToB64(), entry.timestamp, body);
+                LOGGER.error("Verification failed: {} expect optout time {}, api returned {}",
+                        entry.idHashToB64(), entry.timestamp, body);
                 ++foundErrors;
             } else {
-                System.out.format("Verified: %s optout time %d\n", entry.idHashToB64(), entry.timestamp);
+                LOGGER.info("Verified: {} optout time {}", entry.idHashToB64(), entry.timestamp);
             }
         }
 
