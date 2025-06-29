@@ -394,20 +394,20 @@ public class Main {
 
     private void createAppStatusMetric() {
         String version = Optional.ofNullable(System.getenv("IMAGE_VERSION")).orElse("unknown");
-        Gauge.builder("app.status", () -> 1)
+        Gauge.builder("app_status", () -> 1)
             .description("application version and status")
             .tag("version", version)
             .register(Metrics.globalRegistry);
     }
 
     private void createVertxInstancesMetric() {
-        Gauge.builder("uid2.vertx_service_instances", () -> config.getInteger("service_instances"))
+        Gauge.builder("uid2_vertx_service_instances", () -> config.getInteger("service_instances"))
             .description("gauge for number of vertx service instances requested")
             .register(Metrics.globalRegistry);
     }
 
     private void createVertxEventLoopsMetric() {
-        Gauge.builder("uid2.vertx_event_loop_threads", () -> VertxOptions.DEFAULT_EVENT_LOOP_POOL_SIZE)
+        Gauge.builder("uid2_vertx_event_loop_threads", () -> VertxOptions.DEFAULT_EVENT_LOOP_POOL_SIZE)
             .description("gauge for number of vertx event loop threads")
             .register(Metrics.globalRegistry);
     }
