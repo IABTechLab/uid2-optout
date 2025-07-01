@@ -119,12 +119,12 @@ public class OptOutSender extends AbstractVerticle {
         this.pendingFilesCount = pendingFilesCountMap.computeIfAbsent(remotePartner.name(), s -> new AtomicInteger(0));
         this.lastEntrySent = lastEntrySentMap.computeIfAbsent(remotePartner.name(), s -> new AtomicLong(0));
 
-        Gauge.builder("uid2.optout.last_entry_sent", () -> this.lastEntrySent.get())
+        Gauge.builder("uid2_optout_last_entry_sent", () -> this.lastEntrySent.get())
             .description("gauge for last entry send epoch seconds, per each remote partner")
             .tag("remote_partner", remotePartner.name())
             .register(Metrics.globalRegistry);
 
-        Gauge.builder("uid2.optout.pending_deltas_to_send", () -> this.pendingFilesCount.get())
+        Gauge.builder("uid2_optout_pending_deltas_to_send", () -> this.pendingFilesCount.get())
             .description("gauge for remaining delta files to send to remote, per each remote partner")
             .tag("remote_partner", remotePartner.name())
             .register(Metrics.globalRegistry);
@@ -404,7 +404,7 @@ public class OptOutSender extends AbstractVerticle {
 
     private void recordEntryReplayStatus(String status) {
         this.entryReplayStatusCounters.computeIfAbsent(new Tuple.Tuple2<>(remotePartner.name(), status), pair -> Counter
-                .builder("uid2.optout.entries_sent")
+                .builder("uid2_optout_entries_sent_total")
                 .description("Counter for entry replay status")
                 .tags("remote_partner", String.valueOf(pair.getItem1()), "status", String.valueOf(pair.getItem2()))
                 .register(Metrics.globalRegistry)).increment();
