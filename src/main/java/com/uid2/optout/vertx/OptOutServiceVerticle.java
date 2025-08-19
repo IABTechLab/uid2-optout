@@ -168,13 +168,6 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .allowedHeader("Access-Control-Allow-Headers")
                 .allowedHeader("Content-Type"));
 
-        router.route().failureHandler(ctx -> {
-            Throwable t = ctx.failure();
-            if (t != null) {
-                LOGGER.error("Unhandled exception in route", t);
-            }
-        });
-
         router.route(Endpoints.OPTOUT_WRITE.toString())
                 .handler(internalAuth.handleWithAudit(this::handleWrite));
         router.route(Endpoints.OPTOUT_REPLICATE.toString())
