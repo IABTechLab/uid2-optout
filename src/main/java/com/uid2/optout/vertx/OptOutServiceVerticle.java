@@ -172,7 +172,22 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             if (ctx.failure() != null) {
                 LOGGER.error("Exception in router", ctx.failure());
             } else {
-                LOGGER.warn("Router failure handler invoked with no Throwable, statusCode={}", ctx.statusCode());
+                LOGGER.error("Router failure handler invoked with no Throwable, statusCode={}", ctx.statusCode());
+                LOGGER.error("Method: {}, Path: {}, Query: {}, RemoteAddress: {}, Headers: {}, QueryParams: {}",
+                        ctx.request().method(),
+                        ctx.request().path(),
+                        ctx.request().query(),
+                        ctx.request().remoteAddress(),
+                        ctx.request().headers(),
+                        ctx.request().params()
+                );
+
+                if (ctx.user() != null) {
+                    LOGGER.error("Authenticated user: {}", ctx.user().principal());
+                } else {
+                    LOGGER.error("Unauthenticated request");
+                }
+
             }
         });
 
