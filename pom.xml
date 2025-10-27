@@ -6,7 +6,7 @@
 
     <groupId>com.uid2</groupId>
     <artifactId>uid2-optout</artifactId>
-    <version>4.3.18</version>
+    <version>4.3.19-alpha-99-SNAPSHOT</version>
     <name>uid2-optout</name>
     <url>https://github.com/IABTechLab/uid2-optout</url>
 
