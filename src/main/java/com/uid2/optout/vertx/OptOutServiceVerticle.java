@@ -117,18 +117,32 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.sqsEnabled = jsonConfig.getBoolean(Const.Config.OptOutSqsEnabledProp, false);
         this.sqsQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
         
+        LOGGER.info("=== SQS Configuration ===");
+        LOGGER.info("SQS Enabled: " + this.sqsEnabled);
+        LOGGER.info("SQS Queue URL: " + this.sqsQueueUrl);
+        LOGGER.info("AWS_REGION env: " + System.getenv("AWS_REGION"));
+        LOGGER.info("aws_region config: " + jsonConfig.getString("aws_region"));
+        
+        SqsClient tempSqsClient = null;
         if (this.sqsEnabled) {
             if (this.sqsQueueUrl == null || this.sqsQueueUrl.isEmpty()) {
                 LOGGER.warn("SQS enabled but queue URL not configured");
-                this.sqsClient = null;
             } else {
-                this.sqsClient = SqsClient.builder().build();
-                LOGGER.info("SQS client initialized for queue: " + this.sqsQueueUrl);
+                try {
+                    tempSqsClient = SqsClient.builder().build();
+                    LOGGER.info("SQS client initialized successfully");
+                    LOGGER.info("SQS client region: " + tempSqsClient.serviceClientConfiguration().region());
+                    LOGGER.info("SQS queue URL configured: " + this.sqsQueueUrl);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to initialize SQS client: " + e.getMessage(), e);
+                    tempSqsClient = null;
+                }
             }
         } else {
-            this.sqsClient = null;
             LOGGER.info("SQS integration disabled");
         }
+        this.sqsClient = tempSqsClient;
+        LOGGER.info("=== End SQS Configuration ===");
     }
 
     public static void sendStatus(int statusCode, HttpServerResponse response) {
@@ -378,36 +392,65 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         }
 
         try {
+            final String maskedId1 = Utils.maskPii(identityHash);
+            final String maskedId2 = Utils.maskPii(advertisingId);
+            
+            LOGGER.info("=== Processing SQS Queue Request ===");
+            LOGGER.info("Identity Hash (masked): " + maskedId1);
+            LOGGER.info("Advertising ID (masked): " + maskedId2);
+            LOGGER.info("SQS Client null? " + (this.sqsClient == null));
+            LOGGER.info("Queue URL: " + this.sqsQueueUrl);
+            
             // Create message body as JSON
             JsonObject messageBody = new JsonObject()
                     .put(IDENTITY_HASH, identityHash)
                     .put(ADVERTISING_ID, advertisingId)
                     .put("timestamp", OptOutUtils.nowEpochSeconds());
 
+            LOGGER.info("Message body: " + messageBody.encode());
+
             // Send message to SQS queue
             vertx.executeBlocking(promise -> {
                 try {
+                    LOGGER.info("About to send message to SQS...");
+                    LOGGER.info("SQS Client region in worker thread: " + this.sqsClient.serviceClientConfiguration().region());
+                    
                     SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
                             .queueUrl(this.sqsQueueUrl)
                             .messageBody(messageBody.encode())
                             .build();
                     
+                    LOGGER.info("SendMessageRequest created, calling sendMessage...");
                     SendMessageResponse response = this.sqsClient.sendMessage(sendMsgRequest);
+                    
+                    LOGGER.info("SQS sendMessage succeeded, messageId: " + response.messageId());
                     promise.complete(response.messageId());
                 } catch (Exception e) {
-                    LOGGER.error("Failed to send message to SQS", e);
+                    LOGGER.error("!!! Exception in SQS sendMessage !!!");
+                    LOGGER.error("Exception type: " + e.getClass().getName());
+                    LOGGER.error("Exception message: " + e.getMessage());
+                    LOGGER.error("Full stack trace:", e);
+                    
+                    // Log additional SQS-specific details if available
+                    if (e.getCause() != null) {
+                        LOGGER.error("Caused by: " + e.getCause().getClass().getName());
+                        LOGGER.error("Cause message: " + e.getCause().getMessage());
+                    }
+                    
                     promise.fail(e);
                 }
             }, res -> {
-                final String maskedId1 = Utils.maskPii(identityHash);
-                final String maskedId2 = Utils.maskPii(advertisingId);
-                
                 if (res.failed()) {
+                    LOGGER.error("=== SQS Queue Request FAILED ===");
                     LOGGER.error("Failed to queue optout request - identity_hash: " + maskedId1 + 
-                                ", advertising_id: " + maskedId2, res.cause());
-                    this.sendInternalServerError(resp, "Failed to queue message");
+                                ", advertising_id: " + maskedId2);
+                    LOGGER.error("Failure cause: " + res.cause().getMessage());
+                    LOGGER.error("Full error:", res.cause());
+                    
+                    this.sendInternalServerError(resp, "Failed to queue message: " + res.cause().getMessage());
                 } else {
                     String messageId = (String) res.result();
+                    LOGGER.info("=== SQS Queue Request SUCCEEDED ===");
                     LOGGER.info("Queued optout request - identity_hash: " + maskedId1 + 
                                ", advertising_id: " + maskedId2 + 
                                ", messageId: " + messageId);
@@ -425,7 +468,8 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 }
             });
         } catch (Exception ex) {
-            LOGGER.error("Error processing queue request", ex);
+            LOGGER.error("=== Exception in handleQueue wrapper ===");
+            LOGGER.error("Error processing queue request: " + ex.getMessage(), ex);
             this.sendInternalServerError(resp, ex.getMessage());
         }
     }
