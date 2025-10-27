@@ -33,6 +33,9 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
+import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
 
 import java.net.URL;
 import java.time.Instant;
@@ -61,6 +64,9 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final boolean enableOptOutPartnerMock;
     private final String internalApiKey;
     private final InternalAuthMiddleware internalAuth;
+    private final SqsClient sqsClient;
+    private final String sqsQueueUrl;
+    private final boolean sqsEnabled;
 
     public OptOutServiceVerticle(Vertx vertx,
                                  IAuthorizableProvider clientKeyProvider,
@@ -106,6 +112,23 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.internalApiKey = jsonConfig.getString(Const.Config.OptOutInternalApiTokenProp);
         this.internalAuth = new InternalAuthMiddleware(this.internalApiKey, "optout");
         this.enableOptOutPartnerMock = jsonConfig.getBoolean(Const.Config.OptOutPartnerEndpointMockProp);
+
+        // Initialize SQS client
+        this.sqsEnabled = jsonConfig.getBoolean(Const.Config.OptOutSqsEnabledProp, false);
+        this.sqsQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
+        
+        if (this.sqsEnabled) {
+            if (this.sqsQueueUrl == null || this.sqsQueueUrl.isEmpty()) {
+                LOGGER.warn("SQS enabled but queue URL not configured");
+                this.sqsClient = null;
+            } else {
+                this.sqsClient = SqsClient.builder().build();
+                LOGGER.info("SQS client initialized for queue: " + this.sqsQueueUrl);
+            }
+        } else {
+            this.sqsClient = null;
+            LOGGER.info("SQS integration disabled");
+        }
     }
 
     public static void sendStatus(int statusCode, HttpServerResponse response) {
@@ -136,6 +159,14 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     @Override
     public void stop() {
         LOGGER.info("Shutting down OptOutServiceVerticle");
+        if (this.sqsClient != null) {
+            try {
+                this.sqsClient.close();
+                LOGGER.info("SQS client closed");
+            } catch (Exception e) {
+                LOGGER.error("Error closing SQS client", e);
+            }
+        }
     }
 
     public void setCloudPaths(Collection<String> paths) {
@@ -172,6 +203,8 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .handler(internalAuth.handleWithAudit(this::handleWrite));
         router.route(Endpoints.OPTOUT_REPLICATE.toString())
                 .handler(auth.handleWithAudit(this::handleReplicate, Arrays.asList(Role.OPTOUT)));
+        router.route(Endpoints.OPTOUT_QUEUE.toString())
+                .handler(auth.handleWithAudit(this::handleQueue, Arrays.asList(Role.OPTOUT)));
         router.route(Endpoints.OPTOUT_REFRESH.toString())
                 .handler(auth.handleWithAudit(attest.handle(this::handleRefresh, Role.OPERATOR), Arrays.asList(Role.OPERATOR)));
         router.get(Endpoints.OPS_HEALTHCHECK.toString())
@@ -307,6 +340,93 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 LOGGER.error("error creating requests for remote optout/write call:", ex);
                 this.sendInternalServerError(resp, ex.getMessage());
             }
+        }
+    }
+
+    private void handleQueue(RoutingContext routingContext) {
+        HttpServerRequest req = routingContext.request();
+        MultiMap params = req.params();
+        String identityHash = req.getParam(IDENTITY_HASH);
+        String advertisingId = req.getParam(ADVERTISING_ID);
+        JsonObject body = routingContext.body().asJsonObject();
+
+        HttpServerResponse resp = routingContext.response();
+        
+        // Validate parameters - same as replicate endpoint
+        if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
+            this.sendBadRequestError(resp);
+            return;
+        }
+        if (advertisingId == null || params.getAll(ADVERTISING_ID).size() != 1) {
+            this.sendBadRequestError(resp);
+            return;
+        }
+
+        if (!this.isGetOrPost(req)) {
+            this.sendBadRequestError(resp);
+            return;
+        }
+        if (body != null) {
+            this.sendBadRequestError(resp);
+            return;
+        }
+        
+        // Check if SQS is enabled and configured
+        if (!this.sqsEnabled || this.sqsClient == null) {
+            this.sendServiceUnavailableError(resp, "SQS integration not enabled or configured");
+            return;
+        }
+
+        try {
+            // Create message body as JSON
+            JsonObject messageBody = new JsonObject()
+                    .put(IDENTITY_HASH, identityHash)
+                    .put(ADVERTISING_ID, advertisingId)
+                    .put("timestamp", OptOutUtils.nowEpochSeconds());
+
+            // Send message to SQS queue
+            vertx.executeBlocking(promise -> {
+                try {
+                    SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
+                            .queueUrl(this.sqsQueueUrl)
+                            .messageBody(messageBody.encode())
+                            .build();
+                    
+                    SendMessageResponse response = this.sqsClient.sendMessage(sendMsgRequest);
+                    promise.complete(response.messageId());
+                } catch (Exception e) {
+                    LOGGER.error("Failed to send message to SQS", e);
+                    promise.fail(e);
+                }
+            }, res -> {
+                final String maskedId1 = Utils.maskPii(identityHash);
+                final String maskedId2 = Utils.maskPii(advertisingId);
+                
+                if (res.failed()) {
+                    LOGGER.error("Failed to queue optout request - identity_hash: " + maskedId1 + 
+                                ", advertising_id: " + maskedId2, res.cause());
+                    this.sendInternalServerError(resp, "Failed to queue message");
+                } else {
+                    String messageId = (String) res.result();
+                    LOGGER.info("Queued optout request - identity_hash: " + maskedId1 + 
+                               ", advertising_id: " + maskedId2 + 
+                               ", messageId: " + messageId);
+                    
+                    // Return success with message ID
+                    JsonObject responseJson = new JsonObject()
+                            .put("messageId", messageId)
+                            .put("status", "queued");
+                    
+                    resp.setStatusCode(200)
+                            .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                            .setChunked(true)
+                            .write(responseJson.encode());
+                    resp.end();
+                }
+            });
+        } catch (Exception ex) {
+            LOGGER.error("Error processing queue request", ex);
+            this.sendInternalServerError(resp, ex.getMessage());
         }
     }
 

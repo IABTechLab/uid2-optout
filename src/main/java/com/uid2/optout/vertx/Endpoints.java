@@ -9,6 +9,7 @@ public enum Endpoints {
     OPTOUT_REFRESH("/optout/refresh"),
     OPTOUT_WRITE("/optout/write"),
     OPTOUT_REPLICATE("/optout/replicate"),
+    OPTOUT_QUEUE("/optout/queue"),
     OPTOUT_PARTNER_MOCK("/optout/partner_mock");
     private final String path;
 
