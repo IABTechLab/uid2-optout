@@ -19,6 +19,11 @@ public class Const extends com.uid2.shared.Const {
         public static final String PartnersMetadataPathProp = "partners_metadata_path";
         public static final String OptOutSqsQueueUrlProp = "optout_sqs_queue_url";
         public static final String OptOutSqsEnabledProp = "optout_sqs_enabled";
+        public static final String OptOutSqsS3FolderProp = "optout_sqs_s3_folder"; // Default: "sqs-delta" - folder within same S3 bucket as regular optout
+        public static final String OptOutSqsDeltaWindowSecondsProp = "optout_sqs_delta_window_seconds"; // interval for each delta file
+        public static final String OptOutSqsPollIntervalMsProp = "optout_sqs_poll_interval_ms"; // interval for polling SQS
+        public static final String OptOutSqsMaxMessagesPerPollProp = "optout_sqs_max_messages_per_poll"; // max messages per poll
+        public static final String OptOutSqsVisibilityTimeoutProp = "optout_sqs_visibility_timeout"; // visibility timeout for messages
     }
 
     public static class Event {

@@ -217,8 +217,6 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .handler(internalAuth.handleWithAudit(this::handleWrite));
         router.route(Endpoints.OPTOUT_REPLICATE.toString())
                 .handler(auth.handleWithAudit(this::handleReplicate, Arrays.asList(Role.OPTOUT)));
-        router.route(Endpoints.OPTOUT_QUEUE.toString())
-                .handler(auth.handleWithAudit(this::handleQueue, Arrays.asList(Role.OPTOUT)));
         router.route(Endpoints.OPTOUT_REFRESH.toString())
                 .handler(auth.handleWithAudit(attest.handle(this::handleRefresh, Role.OPERATOR), Arrays.asList(Role.OPERATOR)));
         router.get(Endpoints.OPS_HEALTHCHECK.toString())
@@ -293,6 +291,11 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     }
 
     private void handleReplicate(RoutingContext routingContext) {
+
+        if(this.sqsEnabled){
+            this.handleQueue(routingContext);
+        }
+
         HttpServerRequest req = routingContext.request();
         MultiMap params = req.params();
         String identityHash = req.getParam(IDENTITY_HASH);

@@ -64,6 +64,7 @@ public class Main {
     private final ICloudStorage fsPartnerConfig;
     private final RotatingOperatorKeyProvider operatorKeyProvider;
     private final boolean observeOnly;
+    private final boolean sqsEnabled;
     private final UidInstanceIdProvider uidInstanceIdProvider;
 
     public Main(Vertx vertx, JsonObject config) throws Exception {
@@ -73,6 +74,7 @@ public class Main {
         if (this.observeOnly) {
             LOGGER.warn("Running Observe ONLY mode: no producer, no sender");
         }
+        this.sqsEnabled = config.getBoolean(Const.Config.OptOutSqsEnabledProp, false);
         this.uidInstanceIdProvider = new UidInstanceIdProvider(config);
 
         boolean useStorageMock = config.getBoolean(Const.Config.StorageMockProp, false);
@@ -267,6 +269,27 @@ public class Main {
 
             // upload last delta produced and potentially not uploaded yet
             futs.add((this.uploadLastDelta(cs, logProducer, cloudSyncVerticle.eventUpload(), cloudSyncVerticle.eventRefresh())));
+            
+            // Deploy SQS producer if enabled
+            if (this.sqsEnabled) {
+                LOGGER.info("SQS enabled, deploying OptOutSqsLogProducer");
+                try {
+                    // Create SQS-specific cloud sync with custom folder (default: "sqs-delta")
+                    // Uses same S3 bucket as regular optout (fsOptOut) but different folder
+                    String sqsFolder = this.config.getString(Const.Config.OptOutSqsS3FolderProp, "sqs-delta");
+                    JsonObject sqsConfig = new JsonObject().mergeIn(this.config)
+                        .put(Const.Config.OptOutS3FolderProp, sqsFolder);
+                    OptOutCloudSync sqsCs = new OptOutCloudSync(sqsConfig, true);
+                    
+                    // Deploy SQS log producer - reuses fsOptOut for S3 access
+                    OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, this.fsOptOut, sqsCs);
+                    futs.add(this.deploySingleInstance(sqsLogProducer));
+                    
+                    LOGGER.info("SQS log producer deployed - same bucket as optout, folder: {}", sqsFolder);
+                } catch (IOException e) {
+                    LOGGER.error("Failed to initialize SQS log producer: " + e.getMessage(), e);
+                }
+            }
         }
 
         Supplier<Verticle> svcSupplier = () -> {
