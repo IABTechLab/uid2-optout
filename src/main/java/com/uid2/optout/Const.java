@@ -17,6 +17,8 @@ public class Const extends com.uid2.shared.Const {
         public static final String OptOutDeleteExpiredProp = "optout_delete_expired";
         public static final String PartnersConfigPathProp = "partners_config_path";
         public static final String PartnersMetadataPathProp = "partners_metadata_path";
+        public static final String OptOutSqsQueueUrlProp = "optout_sqs_queue_url";
+        public static final String OptOutSqsEnabledProp = "optout_enqueue_sqs_enabled";
     }
 
     public static class Event {

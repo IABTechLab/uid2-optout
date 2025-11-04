@@ -33,6 +33,9 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
+import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
 
 import java.net.URL;
 import java.time.Instant;
@@ -61,6 +64,9 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final boolean enableOptOutPartnerMock;
     private final String internalApiKey;
     private final InternalAuthMiddleware internalAuth;
+    private final SqsClient sqsClient;
+    private final String sqsQueueUrl;
+    private final boolean sqsEnabled;
 
     public OptOutServiceVerticle(Vertx vertx,
                                  IAuthorizableProvider clientKeyProvider,
@@ -106,6 +112,29 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.internalApiKey = jsonConfig.getString(Const.Config.OptOutInternalApiTokenProp);
         this.internalAuth = new InternalAuthMiddleware(this.internalApiKey, "optout");
         this.enableOptOutPartnerMock = jsonConfig.getBoolean(Const.Config.OptOutPartnerEndpointMockProp);
+
+        this.sqsEnabled = jsonConfig.getBoolean(Const.Config.OptOutSqsEnabledProp, false);
+        this.sqsQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
+
+        SqsClient tempSqsClient = null;
+        if (this.sqsEnabled) {
+            if (this.sqsQueueUrl == null || this.sqsQueueUrl.isEmpty()) {
+                LOGGER.warn("SQS enabled but queue URL not configured");
+            } else {
+                try {
+                    tempSqsClient = SqsClient.builder().build();
+                    LOGGER.info("SQS client initialized successfully");
+                    LOGGER.info("SQS client region: " + tempSqsClient.serviceClientConfiguration().region());
+                    LOGGER.info("SQS queue URL configured: " + this.sqsQueueUrl);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to initialize SQS client: " + e.getMessage(), e);
+                    tempSqsClient = null;
+                }
+            }
+        } else {
+            LOGGER.info("SQS integration disabled");
+        }
+        this.sqsClient = tempSqsClient;
     }
 
     public static void sendStatus(int statusCode, HttpServerResponse response) {
@@ -136,6 +165,14 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     @Override
     public void stop() {
         LOGGER.info("Shutting down OptOutServiceVerticle");
+        if (this.sqsClient != null) {
+            try {
+                this.sqsClient.close();
+                LOGGER.info("SQS client closed");
+            } catch (Exception e) {
+                LOGGER.error("Error closing SQS client", e);
+            }
+        }
     }
 
     public void setCloudPaths(Collection<String> paths) {
@@ -246,6 +283,11 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     }
 
     private void handleReplicate(RoutingContext routingContext) {
+        
+        if(this.sqsEnabled){
+            this.handleQueue(routingContext);
+        }
+
         HttpServerRequest req = routingContext.request();
         MultiMap params = req.params();
         String identityHash = req.getParam(IDENTITY_HASH);
@@ -307,6 +349,77 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 LOGGER.error("error creating requests for remote optout/write call:", ex);
                 this.sendInternalServerError(resp, ex.getMessage());
             }
+        }
+    }
+    
+    private void handleQueue(RoutingContext routingContext) {
+        HttpServerRequest req = routingContext.request();
+        MultiMap params = req.params();
+        String identityHash = req.getParam(IDENTITY_HASH);
+        String advertisingId = req.getParam(ADVERTISING_ID);
+        JsonObject body = routingContext.body().asJsonObject();
+        String traceId = req.getHeader("UID-Trace-Id");
+        String clientIp = body.getString("client_ip");
+        String email = body.getString("email");
+        String phone = body.getString("phone");
+
+        HttpServerResponse resp = routingContext.response();
+
+        // Validate parameters - same as replicate
+        if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
+            this.sendBadRequestError(resp);
+            return;
+        }
+        if (advertisingId == null || params.getAll(ADVERTISING_ID).size() != 1) {
+            this.sendBadRequestError(resp);
+            return;
+        }
+
+        if (!this.isGetOrPost(req)) {
+            this.sendBadRequestError(resp);
+            return;
+        }
+
+        try {
+            JsonObject messageBody = new JsonObject()
+                    .put(IDENTITY_HASH, identityHash)
+                    .put(ADVERTISING_ID, advertisingId)
+                    .put("trace_id", traceId)
+                    .put("client_ip", clientIp)
+                    .put("email", email)
+                    .put("phone", phone);
+
+            // Send message to SQS queue
+            vertx.executeBlocking(promise -> {
+                try {
+                    SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
+                            .queueUrl(this.sqsQueueUrl)
+                            .messageBody(messageBody.encode())
+                            .build();
+
+                    SendMessageResponse response = this.sqsClient.sendMessage(sendMsgRequest);
+                    promise.complete(response.messageId());
+                } catch (Exception e) {
+                    promise.fail(e);
+                }
+            }, res -> {
+                if (res.failed()) {
+                    // this.sendInternalServerError(resp, "Failed to queue message: " + res.cause().getMessage());
+                } else {
+                    String messageId = (String) res.result();
+
+                    JsonObject responseJson = new JsonObject()
+                            .put("status", "queued");
+
+                    // resp.setStatusCode(200)
+                    //         .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                    //         .setChunked(true)
+                    //         .write(responseJson.encode());
+                    // resp.end();
+                }
+            });
+        } catch (Exception ex) {
+            // this.sendInternalServerError(resp, ex.getMessage());
         }
     }
 
