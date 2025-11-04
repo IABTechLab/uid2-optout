@@ -48,6 +48,10 @@ import java.util.stream.Collectors;
 public class OptOutServiceVerticle extends AbstractVerticle {
     public static final String IDENTITY_HASH = "identity_hash";
     public static final String ADVERTISING_ID = "advertising_id";
+    public static final String UID_TRACE_ID = "UID-Trace-Id";
+    public static final String CLIENT_IP = "client_ip";
+    public static final String EMAIL = "email";
+    public static final String PHONE = "phone";
     public static final long MAX_REQUEST_BODY_SIZE = 1 << 20; // 1MB
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OptOutServiceVerticle.class);
@@ -358,10 +362,10 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         String identityHash = req.getParam(IDENTITY_HASH);
         String advertisingId = req.getParam(ADVERTISING_ID);
         JsonObject body = routingContext.body().asJsonObject();
-        String traceId = req.getHeader("UID-Trace-Id");
-        String clientIp = body.getString("client_ip");
-        String email = body.getString("email");
-        String phone = body.getString("phone");
+        String traceId = req.getHeader(UID_TRACE_ID);
+        String clientIp = body.getString(CLIENT_IP);
+        String email = body.getString(EMAIL);
+        String phone = body.getString(PHONE);
 
         HttpServerResponse resp = routingContext.response();
 
