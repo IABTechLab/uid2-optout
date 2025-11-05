@@ -288,7 +288,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
     private void handleReplicate(RoutingContext routingContext) {
         
-        if(this.sqsEnabled){
+        if(this.sqsEnabled && this.sqsClient != null){
             this.handleQueue(routingContext);
         }
 
