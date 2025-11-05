@@ -367,18 +367,20 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
         HttpServerResponse resp = routingContext.response();
 
+        // while old delta production is enabled, response is handled by replicate logic
+
         // Validate parameters - same as replicate
         if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
-            this.sendBadRequestError(resp);
+            // this.sendBadRequestError(resp);
             return;
         }
         if (advertisingId == null || params.getAll(ADVERTISING_ID).size() != 1) {
-            this.sendBadRequestError(resp);
+            // this.sendBadRequestError(resp);
             return;
         }
 
         if (!this.isGetOrPost(req)) {
-            this.sendBadRequestError(resp);
+            // this.sendBadRequestError(resp);
             return;
         }
 
