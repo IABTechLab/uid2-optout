@@ -361,9 +361,9 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         String advertisingId = req.getParam(ADVERTISING_ID);
         JsonObject body = routingContext.body().asJsonObject();
         String traceId = req.getHeader(UID_TRACE_ID);
-        String clientIp = body.getString(CLIENT_IP);
-        String email = body.getString(EMAIL);
-        String phone = body.getString(PHONE);
+        String clientIp = body != null ? body.getString(CLIENT_IP) : null;
+        String email = body != null ? body.getString(EMAIL) : null;
+        String phone = body != null ? body.getString(PHONE) : null;
 
         HttpServerResponse resp = routingContext.response();
 
