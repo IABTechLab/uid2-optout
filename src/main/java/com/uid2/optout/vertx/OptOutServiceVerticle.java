@@ -409,11 +409,14 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             }, res -> {
                 if (res.failed()) {
                     // this.sendInternalServerError(resp, "Failed to queue message: " + res.cause().getMessage());
+                    LOGGER.error("Failed to queue message: " + res.cause().getMessage());
                 } else {
                     String messageId = (String) res.result();
 
                     JsonObject responseJson = new JsonObject()
                             .put("status", "queued");
+
+                    LOGGER.info("Message queued successfully: " + messageId);
 
                     // resp.setStatusCode(200)
                     //         .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
