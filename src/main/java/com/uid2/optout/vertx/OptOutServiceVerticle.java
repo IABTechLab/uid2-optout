@@ -427,6 +427,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             });
         } catch (Exception ex) {
             // this.sendInternalServerError(resp, ex.getMessage());
+            LOGGER.error("Error processing queue request: " + ex.getMessage(), ex);
         }
     }
 
