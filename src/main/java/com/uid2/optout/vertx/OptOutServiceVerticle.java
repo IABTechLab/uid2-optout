@@ -310,8 +310,6 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
         if (!this.isGetOrPost(req)) {
             this.sendBadRequestError(resp);
-        } else if (body != null) {
-            this.sendBadRequestError(resp);
         } else if (this.replicaWriteClient == null) {
             this.sendInternalServerError(resp, "optout replicas not configured");
         }
