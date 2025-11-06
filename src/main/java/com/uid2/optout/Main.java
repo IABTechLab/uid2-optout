@@ -64,6 +64,7 @@ public class Main {
     private final ICloudStorage fsPartnerConfig;
     private final RotatingOperatorKeyProvider operatorKeyProvider;
     private final boolean observeOnly;
+    private final boolean enqueueSqsEnabled;
     private final UidInstanceIdProvider uidInstanceIdProvider;
 
     public Main(Vertx vertx, JsonObject config) throws Exception {
@@ -73,6 +74,7 @@ public class Main {
         if (this.observeOnly) {
             LOGGER.warn("Running Observe ONLY mode: no producer, no sender");
         }
+        this.enqueueSqsEnabled = config.getBoolean(Const.Config.OptOutSqsEnabledProp, false);
         this.uidInstanceIdProvider = new UidInstanceIdProvider(config);
 
         boolean useStorageMock = config.getBoolean(Const.Config.StorageMockProp, false);
