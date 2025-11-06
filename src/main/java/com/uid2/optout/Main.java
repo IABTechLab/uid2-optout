@@ -271,6 +271,26 @@ public class Main {
             futs.add((this.uploadLastDelta(cs, logProducer, cloudSyncVerticle.eventUpload(), cloudSyncVerticle.eventRefresh())));
         }
 
+        // Deploy SQS producer if enabled
+        if (this.enqueueSqsEnabled) {
+            LOGGER.info("SQS enabled, deploying OptOutSqsLogProducer");
+            try {
+                // Create SQS-specific cloud sync with custom folder (default: "sqs-delta")
+                String sqsFolder = this.config.getString(Const.Config.OptOutSqsS3FolderProp, "sqs-delta");
+                JsonObject sqsConfig = new JsonObject().mergeIn(this.config)
+                    .put(Const.Config.OptOutS3FolderProp, sqsFolder);
+                OptOutCloudSync sqsCs = new OptOutCloudSync(sqsConfig, true);
+
+                // Deploy SQS log producer - reuses fsOptOut for S3 access
+                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, this.fsOptOut, sqsCs);
+                futs.add(this.deploySingleInstance(sqsLogProducer));
+
+                LOGGER.info("SQS log producer deployed - same bucket as optout, folder: {}", sqsFolder);
+            } catch (IOException e) {
+                LOGGER.error("Failed to initialize SQS log producer: " + e.getMessage(), e);
+            }
+        }
+
         Supplier<Verticle> svcSupplier = () -> {
             OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config, this.uidInstanceIdProvider);
             // configure where OptOutService receives the latest cloud paths
