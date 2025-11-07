@@ -62,6 +62,11 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     }
 
     public OptOutSqsLogProducer(JsonObject jsonConfig, ICloudStorage cloudStorage, OptOutCloudSync cloudSync, String eventDeltaProduced) throws IOException {
+        this(jsonConfig, cloudStorage, cloudSync, eventDeltaProduced, null);
+    }
+
+    // Constructor for testing - allows injecting mock SqsClient
+    public OptOutSqsLogProducer(JsonObject jsonConfig, ICloudStorage cloudStorage, OptOutCloudSync cloudSync, String eventDeltaProduced, SqsClient sqsClient) throws IOException {
         this.eventDeltaProduced = eventDeltaProduced;
         this.replicaId = OptOutUtils.getReplicaId(jsonConfig);
         this.cloudStorage = cloudStorage;
@@ -73,7 +78,8 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             throw new IOException("SQS queue URL not configured");
         }
 
-        this.sqsClient = SqsClient.builder().build();
+        // Use injected client for testing, or create new one
+        this.sqsClient = sqsClient != null ? sqsClient : SqsClient.builder().build();
         LOGGER.info("SQS client initialized for queue: " + this.queueUrl);
 
         // SQS Configuration
