@@ -281,11 +281,24 @@ public class Main {
                     .put(Const.Config.OptOutS3FolderProp, sqsFolder);
                 OptOutCloudSync sqsCs = new OptOutCloudSync(sqsConfig, true);
 
-                // Deploy SQS log producer - reuses fsOptOut for S3 access
-                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, this.fsOptOut, sqsCs);
+                // Create SQS-specific cloud storage instance (same bucket, different folder handling)
+                ICloudStorage fsSqs;
+                boolean useStorageMock = this.config.getBoolean(Const.Config.StorageMockProp, false);
+                if (useStorageMock) {
+                    // Reuse the same LocalStorageMock for testing
+                    fsSqs = this.fsOptOut;
+                } else {
+                    // Create fresh CloudStorage for SQS (no path conversion wrapper)
+                    String optoutBucket = this.config.getString(Const.Config.OptOutS3BucketProp);
+                    fsSqs = CloudUtils.createStorage(optoutBucket, sqsConfig);
+                }
+
+                // Deploy SQS log producer with its own storage instance
+                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, sqsCs);
                 futs.add(this.deploySingleInstance(sqsLogProducer));
 
-                LOGGER.info("SQS log producer deployed - same bucket as optout, folder: {}", sqsFolder);
+                LOGGER.info("SQS log producer deployed - bucket: {}, folder: {}", 
+                    this.config.getString(Const.Config.OptOutS3BucketProp), sqsFolder);
             } catch (IOException e) {
                 LOGGER.error("Failed to initialize SQS log producer: " + e.getMessage(), e);
             }
