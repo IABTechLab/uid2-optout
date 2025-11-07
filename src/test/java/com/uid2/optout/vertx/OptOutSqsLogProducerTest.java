@@ -69,6 +69,7 @@ public class OptOutSqsLogProducerTest {
         // Deploy verticle
         Async async = context.async();
         vertx.deployVerticle(producer, context.asyncAssertSuccess(v -> async.complete()));
+        async.awaitSuccess(10000); // Wait up to 10 seconds for deployment to complete
     }
     
     @After
