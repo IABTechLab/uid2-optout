@@ -271,6 +271,42 @@ public class Main {
             futs.add((this.uploadLastDelta(cs, logProducer, cloudSyncVerticle.eventUpload(), cloudSyncVerticle.eventRefresh())));
         }
 
+        // Deploy SQS producer if enabled
+        if (this.enqueueSqsEnabled) {
+            LOGGER.info("SQS enabled, deploying OptOutSqsLogProducer");
+            try {
+                // Create SQS-specific cloud sync with custom folder (default: "sqs-delta")
+                String sqsFolder = this.config.getString(Const.Config.OptOutSqsS3FolderProp, "sqs-delta");
+                LOGGER.info("SQS Config - optout_sqs_s3_folder: {}, will override optout_s3_folder to: {}", 
+                    sqsFolder, sqsFolder);
+                JsonObject sqsConfig = new JsonObject().mergeIn(this.config)
+                    .put(Const.Config.OptOutS3FolderProp, sqsFolder);
+                LOGGER.info("SQS Config after merge - optout_s3_folder: {}", sqsConfig.getString(Const.Config.OptOutS3FolderProp));
+                OptOutCloudSync sqsCs = new OptOutCloudSync(sqsConfig, true);
+
+                // Create SQS-specific cloud storage instance (same bucket, different folder handling)
+                ICloudStorage fsSqs;
+                boolean useStorageMock = this.config.getBoolean(Const.Config.StorageMockProp, false);
+                if (useStorageMock) {
+                    // Reuse the same LocalStorageMock for testing
+                    fsSqs = this.fsOptOut;
+                } else {
+                    // Create fresh CloudStorage for SQS (no path conversion wrapper)
+                    String optoutBucket = this.config.getString(Const.Config.OptOutS3BucketProp);
+                    fsSqs = CloudUtils.createStorage(optoutBucket, sqsConfig);
+                }
+
+                // Deploy SQS log producer with its own storage instance
+                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, sqsCs);
+                futs.add(this.deploySingleInstance(sqsLogProducer));
+
+                LOGGER.info("SQS log producer deployed - bucket: {}, folder: {}", 
+                    this.config.getString(Const.Config.OptOutS3BucketProp), sqsFolder);
+            } catch (IOException e) {
+                LOGGER.error("Failed to initialize SQS log producer: " + e.getMessage(), e);
+            }
+        }
+
         Supplier<Verticle> svcSupplier = () -> {
             OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config, this.uidInstanceIdProvider);
             // configure where OptOutService receives the latest cloud paths
