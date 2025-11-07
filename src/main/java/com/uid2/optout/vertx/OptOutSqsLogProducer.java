@@ -323,25 +323,25 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
      * Writes the start-of-delta entry with null hash and window start timestamp.
      */
     private void writeStartOfDelta(ByteArrayOutputStream stream, long windowStart) throws IOException {
-        LOGGER.debug("writeStartOfDelta: windowStart={}, buffer pos={} limit={} cap={}", 
+        LOGGER.info("writeStartOfDelta: windowStart={}, buffer pos={} limit={} cap={}", 
             windowStart, buffer.position(), buffer.limit(), buffer.capacity());
         
         this.checkBufferSize(OptOutConst.EntrySize);
         
-        LOGGER.debug("After checkBufferSize: buffer pos={} limit={} cap={}", 
+        LOGGER.info("After checkBufferSize: buffer pos={} limit={} cap={}", 
             buffer.position(), buffer.limit(), buffer.capacity());
         
         buffer.put(OptOutUtils.nullHashBytes);
         buffer.put(OptOutUtils.nullHashBytes);
         buffer.putLong(windowStart);
         
-        LOGGER.debug("After writes: buffer pos={}", buffer.position());
+        LOGGER.info("After writes: buffer pos={}", buffer.position());
         
         buffer.flip();
         byte[] entry = new byte[buffer.remaining()];
         buffer.get(entry);
         
-        LOGGER.debug("Writing {} bytes to stream, first 8 bytes of timestamp: {}", 
+        LOGGER.info("Writing {} bytes to stream, first 8 bytes of timestamp: {}", 
             entry.length, String.format("%02x %02x %02x %02x %02x %02x %02x %02x", 
             entry[32], entry[33], entry[34], entry[35], entry[36], entry[37], entry[38], entry[39]));
         
