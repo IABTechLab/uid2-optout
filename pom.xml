@@ -6,7 +6,7 @@
 
     <groupId>com.uid2</groupId>
     <artifactId>uid2-optout</artifactId>
-    <version>4.4.6-alpha-112-SNAPSHOT</version>
+    <version>4.4.0</version>
     <name>uid2-optout</name>
     <url>https://github.com/IABTechLab/uid2-optout</url>
 
@@ -116,6 +116,12 @@
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <version>5.10.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-inline</artifactId>
+            <version>5.2.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
