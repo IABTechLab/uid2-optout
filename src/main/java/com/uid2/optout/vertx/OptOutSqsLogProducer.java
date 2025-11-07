@@ -375,8 +375,8 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             byte[] deltaData = deltaStream.toByteArray();
             String s3Path = this.cloudSync.toCloudPath(deltaName);
 
-            LOGGER.info("Uploading delta to S3: {} ({} bytes, {} messages, window: [{}, {}))",
-                s3Path, deltaData.length, messages.size(), windowStart, endTimestamp);
+            LOGGER.info("SQS Delta Upload - fileName: {}, s3Path: {}, size: {} bytes, messages: {}, window: [{}, {})",
+                deltaName, s3Path, deltaData.length, messages.size(), windowStart, endTimestamp);
 
             boolean uploadSucceeded = false;
             try (ByteArrayInputStream inputStream = new ByteArrayInputStream(deltaData)) {

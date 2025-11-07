@@ -277,8 +277,11 @@ public class Main {
             try {
                 // Create SQS-specific cloud sync with custom folder (default: "sqs-delta")
                 String sqsFolder = this.config.getString(Const.Config.OptOutSqsS3FolderProp, "sqs-delta");
+                LOGGER.info("SQS Config - optout_sqs_s3_folder: {}, will override optout_s3_folder to: {}", 
+                    sqsFolder, sqsFolder);
                 JsonObject sqsConfig = new JsonObject().mergeIn(this.config)
                     .put(Const.Config.OptOutS3FolderProp, sqsFolder);
+                LOGGER.info("SQS Config after merge - optout_s3_folder: {}", sqsConfig.getString(Const.Config.OptOutS3FolderProp));
                 OptOutCloudSync sqsCs = new OptOutCloudSync(sqsConfig, true);
 
                 // Create SQS-specific cloud storage instance (same bucket, different folder handling)
