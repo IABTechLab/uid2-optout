@@ -16,6 +16,7 @@ import org.junit.runner.RunWith;
 
 import java.time.Instant;
 import java.util.InvalidPropertiesFormatException;
+import java.util.Random;
 
 @RunWith(VertxUnitRunner.class)
 public class OptOutPartnerTest {
@@ -36,10 +37,11 @@ public class OptOutPartnerTest {
 
     @Test
     public void internalSite_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
+        int port = 10000 + new Random().nextInt(50000);
         String partnerConfigStr = "{" +
                 "      \"name\": \"ttd\",\n" +
                 //UID2-3697 intentionally added some upper cases to make sure the url is the same as what's provided by DSP originally
-                "      \"url\": \"http://localhost:18083/AdServer/uid2optout\",\n" +
+                "      \"url\": \"http://localhost:" + port + "/AdServer/uid2optout\",\n" +
                 "      \"method\": \"GET\",\n" +
                 "      \"query_params\": [\n" +
                 "        \"uid2=${ADVERTISING_ID}\",\n" +
@@ -51,15 +53,16 @@ public class OptOutPartnerTest {
                 "      \"retry_count\": 600,\n" +
                 "      \"retry_backoff_ms\": 6000" +
                 "}";
-        testConfig_expectSuccess(ctx, partnerConfigStr, true);
+        testConfig_expectSuccess(ctx, partnerConfigStr, true, port);
     }
 
     @Test
     public void simpleHttpEndpoint_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
         // Test a simple HTTP endpoint with minimal configuration
+        int port = 10000 + new Random().nextInt(50000);
         String partnerConfigStr = "{" +
                 "      \"name\": \"simple-partner\",\n" +
-                "      \"url\": \"http://localhost:18084/optout\",\n" +
+                "      \"url\": \"http://localhost:" + port + "/optout\",\n" +
                 "      \"method\": \"GET\",\n" +
                 "      \"query_params\": [\n" +
                 "        \"id=${ADVERTISING_ID}\"\n" +
@@ -85,7 +88,7 @@ public class OptOutPartnerTest {
                     req.response().setStatusCode(200).end();
                     async.complete();
                 })
-                .listen(18084, ctx.asyncAssertSuccess());
+                .listen(port, ctx.asyncAssertSuccess());
 
         EndpointConfig partnerConfig = EndpointConfig.fromJsonString(partnerConfigStr);
         OptOutPartnerEndpoint remote = new OptOutPartnerEndpoint(vertx, partnerConfig);
@@ -95,9 +98,10 @@ public class OptOutPartnerTest {
     @Test
     public void customPathAndHeaders_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
         // Test an endpoint with custom path and headers
+        int port = 10000 + new Random().nextInt(50000);
         String partnerConfigStr = "{" +
                 "      \"name\": \"custom-partner\",\n" +
-                "      \"url\": \"http://localhost:18085/api/v1/optout\",\n" +
+                "      \"url\": \"http://localhost:" + port + "/api/v1/optout\",\n" +
                 "      \"method\": \"GET\",\n" +
                 "      \"query_params\": [\n" +
                 "        \"user_id=${ADVERTISING_ID}\",\n" +
@@ -134,14 +138,14 @@ public class OptOutPartnerTest {
                     req.response().setStatusCode(200).end();
                     async.complete();
                 })
-                .listen(18085, ctx.asyncAssertSuccess());
+                .listen(port, ctx.asyncAssertSuccess());
 
         EndpointConfig partnerConfig = EndpointConfig.fromJsonString(partnerConfigStr);
         OptOutPartnerEndpoint remote = new OptOutPartnerEndpoint(vertx, partnerConfig);
         remote.send(entry).onComplete(ctx.asyncAssertSuccess());
     }
 
-    private void testConfig_expectSuccess(TestContext ctx, String partnerConfigStr, boolean createInternalTestServer) throws JsonProcessingException, InvalidPropertiesFormatException {
+    private void testConfig_expectSuccess(TestContext ctx, String partnerConfigStr, boolean createInternalTestServer, int port) throws JsonProcessingException, InvalidPropertiesFormatException {
 
         EndpointConfig partnerConfig = EndpointConfig.fromJsonString(partnerConfigStr);
 
@@ -152,7 +156,7 @@ public class OptOutPartnerTest {
 
         if (createInternalTestServer) {
             Async async = ctx.async();
-            this.createTestServer(ctx, req -> {
+            this.createTestServer(ctx, port, req -> {
                 ctx.assertEquals("/AdServer/uid2optout", req.path());
 
                 String uid2Expected = OptOutEntry.idHashB64FromLong(1234);
@@ -174,12 +178,12 @@ public class OptOutPartnerTest {
         remote.send(entry).onComplete(ctx.asyncAssertSuccess());
     }
 
-    private HttpServer createTestServer(TestContext ctx, Handler<HttpServerRequest> requestValidator) {
+    private HttpServer createTestServer(TestContext ctx, int port, Handler<HttpServerRequest> requestValidator) {
         return vertx.createHttpServer()
                 .requestHandler(req -> {
                     requestValidator.handle(req);
                     req.response().setStatusCode(200).end();
                 })
-                .listen(18083, ctx.asyncAssertSuccess());
+                .listen(port, ctx.asyncAssertSuccess());
     }
 }
