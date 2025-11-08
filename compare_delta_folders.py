@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compare opt-out records between regular delta and SQS delta folders for a given date.
+Compare opt-out records between regular delta and SQS delta folders for given date(s).
 
 This script downloads all delta files from both folders and verifies that all opt-out
 records in the regular delta folder are present in the SQS delta folder.
@@ -9,6 +9,7 @@ Delta file format: Each entry is 72 bytes (32-byte hash + 32-byte ID + 8-byte ti
 
 Usage:
     python3 compare_delta_folders.py --bucket my-bucket --date 2025-11-07
+    python3 compare_delta_folders.py --bucket my-bucket --date 2025-11-07 --date 2025-11-08
     python3 compare_delta_folders.py --bucket my-bucket --date 2025-11-07 \\
         --regular-prefix optout-v2/delta --sqs-prefix sqs-delta/delta
 """
@@ -29,9 +30,9 @@ except ImportError:
 
 
 class OptOutRecord:
-    """Represents a single opt-out record (hash + id + timestamp)"""
+    """Represents a single opt-out record (hash + id + timestamp + metadata)"""
 
-    ENTRY_SIZE = 72  # 32 (identity_hash) + 32 (advertising_id) + 8 (timestamp)
+    ENTRY_SIZE = 72  # 32 (identity_hash) + 32 (advertising_id) + 7 (timestamp) + 1 (metadata)
 
     def __init__(self, identity_hash: bytes, advertising_id: bytes, timestamp: int):
         self.identity_hash = identity_hash
@@ -44,16 +45,15 @@ class OptOutRecord:
                 self.identity_hash == b'\xff' * 32)
 
     def __hash__(self):
-        """Return hash for set/dict operations"""
-        return hash((self.identity_hash, self.advertising_id, self.timestamp))
+        """Return hash for set/dict operations (only hash+id, not timestamp)"""
+        return hash((self.identity_hash, self.advertising_id))
 
     def __eq__(self, other):
-        """Compare two OptOutRecord instances for equality"""
+        """Compare two OptOutRecord instances for equality (only hash+id, not timestamp)"""
         if not isinstance(other, OptOutRecord):
             return False
         return (self.identity_hash == other.identity_hash and
-                self.advertising_id == other.advertising_id and
-                self.timestamp == other.timestamp)
+                self.advertising_id == other.advertising_id)
 
     def __repr__(self):
         """Return string representation of the opt-out record"""
@@ -68,22 +68,36 @@ class OptOutRecord:
 
 
 def parse_records_from_file(data: bytes) -> List[OptOutRecord]:
-    """Parse opt-out records from a delta file, skipping sentinels"""
+    """Parse opt-out records from a delta file, skipping sentinels and invalid records"""
     records = []
     offset = 0
     entry_size = OptOutRecord.ENTRY_SIZE  # 72 bytes: 32 + 32 + 8
 
+    # Valid timestamp range: Jan 1, 2020 to Jan 1, 2100
+    MIN_VALID_TIMESTAMP = 1577836800  # 2020-01-01
+    MAX_VALID_TIMESTAMP = 4102444800  # 2100-01-01
+
     while offset + entry_size <= len(data):
         identity_hash = data[offset:offset + 32]         # 32 bytes
         advertising_id = data[offset + 32:offset + 64]   # 32 bytes
-        timestamp = struct.unpack('<Q', data[offset + 64:offset + 72])[0]  # 8 bytes
+        # Read 8 bytes but mask to 7 bytes (56 bits) - last byte is metadata
+        timestamp_raw = struct.unpack('<Q', data[offset + 64:offset + 72])[0]
+        timestamp = timestamp_raw & 0xFFFFFFFFFFFFFF  # Mask to 56 bits (7 bytes)
 
         record = OptOutRecord(identity_hash, advertising_id, timestamp)
 
-        # Only add data records, skip sentinels
-        if not record.is_sentinel():
-            records.append(record)
+        # Skip sentinels
+        if record.is_sentinel():
+            offset += entry_size
+            continue
 
+        # Skip records with invalid timestamps (corrupted data)
+        if timestamp < MIN_VALID_TIMESTAMP or timestamp > MAX_VALID_TIMESTAMP:
+            print(f"\n   ⚠️  Skipping record with invalid timestamp: {timestamp}")
+            offset += entry_size
+            continue
+
+        records.append(record)
         offset += entry_size
 
     return records
@@ -121,7 +135,7 @@ def list_files_in_folder(bucket: str, prefix: str) -> List[str]:
 
 
 def load_records_from_folder(
-        bucket: str, prefix: str, date_folder: str
+        bucket: str, prefix: str, date_folder: str, quiet: bool = False
 ) -> Tuple[Set[OptOutRecord], dict]:
     """Load all opt-out records from all files in a folder"""
     full_prefix = f"{prefix}{date_folder}/"
@@ -140,7 +154,8 @@ def load_records_from_folder(
 
     for i, file_key in enumerate(files, 1):
         filename = file_key.split('/')[-1]
-        print(f"   [{i}/{len(files)}] Downloading {filename}...", end='', flush=True)
+        if not quiet:
+            print(f"   [{i}/{len(files)}] Downloading {filename}...", end='', flush=True)
 
         try:
             data = download_from_s3(bucket, file_key)
@@ -155,12 +170,30 @@ def load_records_from_folder(
                 'file_key': file_key
             }
 
-            print(f" {len(records)} records")
+            if not quiet:
+                print(f" {len(records)} records")
         except (ClientError, struct.error, ValueError) as error:
             print(f" ERROR: {error}")
             continue
 
     return all_records, file_stats
+
+
+def load_records_from_multiple_folders(
+        bucket: str, prefix: str, date_folders: List[str], quiet: bool = False
+) -> Tuple[Set[OptOutRecord], dict]:
+    """Load and aggregate records from multiple date folders"""
+    all_records = set()
+    all_stats = {}
+
+    print(f"\n📅 Loading records from {len(date_folders)} date folder(s)")
+
+    for date_folder in date_folders:
+        records, stats = load_records_from_folder(bucket, prefix, date_folder, quiet)
+        all_records.update(records)
+        all_stats.update(stats)
+
+    return all_records, all_stats
 
 
 def analyze_differences(regular_records: Set[OptOutRecord],
@@ -241,6 +274,9 @@ Examples:
   # Compare folders for a specific date
   python3 compare_delta_folders.py --bucket my-bucket --date 2025-11-07
   
+  # Compare across multiple dates (handles rollover)
+  python3 compare_delta_folders.py --bucket my-bucket --date 2025-11-07 --date 2025-11-08
+  
   # Use custom prefixes
   python3 compare_delta_folders.py --bucket my-bucket --date 2025-11-07 \\
       --regular-prefix optout-v2/delta --sqs-prefix sqs-delta/delta
@@ -249,32 +285,40 @@ Examples:
 
     parser.add_argument('--bucket', required=True,
                         help='S3 bucket name')
-    parser.add_argument('--date', required=True,
-                        help='Date folder to compare (e.g., 2025-11-07)')
+    parser.add_argument('--date', required=True, action='append', dest='dates',
+                        help='Date folder to compare (e.g., 2025-11-07). Can be specified multiple times.')
     parser.add_argument('--regular-prefix', default='optout/delta/',
                         help='S3 prefix for regular delta files (default: optout/delta/)')
     parser.add_argument('--sqs-prefix', default='sqs-delta/delta/',
                         help='S3 prefix for SQS delta files (default: sqs-delta/delta/)')
     parser.add_argument('--show-samples', type=int, default=10,
                         help='Number of sample records to show for differences (default: 10)')
+    parser.add_argument('--quiet', '-q', action='store_true',
+                        help='Suppress download progress output')
 
     args = parser.parse_args()
 
+    # Display dates being compared
+    date_display = ', '.join(args.dates) if len(args.dates) > 1 else args.dates[0]
+
     print("=" * 80)
-    print(f"🔍 Comparing Opt-Out Delta Files for {args.date}")
+    print(f"🔍 Comparing Opt-Out Delta Files for {date_display}")
     print("=" * 80)
     print(f"Bucket: {args.bucket}")
     print(f"Regular prefix: {args.regular_prefix}")
     print(f"SQS prefix: {args.sqs_prefix}")
+    print(f"Date folders: {len(args.dates)}")
+    for date_folder in args.dates:
+        print(f"  - {date_folder}")
 
     try:
-        # Load all records from both folders
-        regular_records, regular_stats = load_records_from_folder(
-            args.bucket, args.regular_prefix, args.date
+        # Load all records from both folders (aggregating across multiple dates)
+        regular_records, regular_stats = load_records_from_multiple_folders(
+            args.bucket, args.regular_prefix, args.dates, args.quiet
         )
 
-        sqs_records, sqs_stats = load_records_from_folder(
-            args.bucket, args.sqs_prefix, args.date
+        sqs_records, sqs_stats = load_records_from_multiple_folders(
+            args.bucket, args.sqs_prefix, args.dates, args.quiet
         )
 
         if not regular_records and not sqs_records:

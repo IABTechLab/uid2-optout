@@ -8,38 +8,40 @@ REGULAR_PREFIX="${REGULAR_PREFIX:-optout/delta/}"
 SQS_PREFIX="${SQS_PREFIX:-sqs-delta/delta/}"
 
 show_usage() {
-    echo "Usage: $0 <date> [options]"
-    echo "   OR: $0 --date <date> [options]"
+    echo "Usage: $0 <date> [date2] [date3] ... [options]"
+    echo "   OR: $0 --date <date> [--date <date2>] ... [options]"
     echo ""
-    echo "Compare opt-out records between regular and SQS delta folders for a specific date."
+    echo "Compare opt-out records between regular and SQS delta folders for specific date(s)."
+    echo "Multiple dates can be specified to handle records that roll over midnight."
     echo ""
     echo "Arguments:"
-    echo "  <date>                    Date folder to compare (e.g., 2025-11-07)"
+    echo "  <date>                    Date folder(s) to compare (e.g., 2025-11-07)"
     echo ""
     echo "Options:"
-    echo "  --date <date>             Date folder (alternative to positional arg)"
+    echo "  --date <date>             Date folder (can be specified multiple times)"
     echo "  --bucket <name>           S3 bucket name (or set OPTOUT_S3_BUCKET env var)"
     echo "  --regular-prefix <path>   Regular delta prefix (default: optout/delta/)"
     echo "  --sqs-prefix <path>       SQS delta prefix (default: sqs-delta/delta/)"
     echo "  --show-samples <n>        Number of sample differences to show (default: 10)"
+    echo "  --quiet, -q               Suppress download progress output"
     echo ""
     echo "Examples:"
-    echo "  # Positional date with env variable"
+    echo "  # Single date with env variable"
     echo "  export OPTOUT_S3_BUCKET=my-bucket"
     echo "  $0 2025-11-07"
     echo ""
-    echo "  # Using --date flag"
-    echo "  $0 --date 2025-11-07 --bucket my-bucket"
+    echo "  # Multiple dates to handle rollover (recommended)"
+    echo "  $0 --date 2025-11-07 --date 2025-11-08 --bucket my-bucket"
     echo ""
-    echo "  # Mixed style"
-    echo "  $0 --bucket my-bucket 2025-11-07"
+    echo "  # Positional dates"
+    echo "  $0 2025-11-07 2025-11-08 --bucket my-bucket"
     echo ""
     echo "  # Custom prefixes"
     echo "  $0 --date 2025-11-07 --bucket my-bucket --regular-prefix optout-v2/delta --sqs-prefix sqs-delta/delta"
 }
 
 # Parse arguments
-DATE=""
+DATES=()
 EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -53,7 +55,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --date)
-            DATE="$2"
+            DATES+=("$2")
             shift 2
             ;;
         --regular-prefix)
@@ -70,29 +72,30 @@ while [[ $# -gt 0 ]]; do
             EXTRA_ARGS+=("--show-samples" "$2")
             shift 2
             ;;
+        --quiet|-q)
+            EXTRA_ARGS+=("--quiet")
+            shift
+            ;;
         -*)
             echo "Error: Unknown option: $1"
             show_usage
             exit 1
             ;;
         *)
-            if [ -z "$DATE" ]; then
-                DATE="$1"
-            else
-                echo "Error: Unknown argument: $1"
-                show_usage
-                exit 1
-            fi
+            # Positional date argument
+            DATES+=("$1")
             shift
             ;;
     esac
 done
 
-# Strip trailing slash from date if present
-DATE="${DATE%/}"
+# Strip trailing slashes from dates if present
+for i in "${!DATES[@]}"; do
+    DATES[$i]="${DATES[$i]%/}"
+done
 
-if [ -z "$DATE" ]; then
-    echo "Error: Date argument is required"
+if [ ${#DATES[@]} -eq 0 ]; then
+    echo "Error: At least one date argument is required"
     echo ""
     show_usage
     exit 1
@@ -112,10 +115,16 @@ if [ ! -f "compare_delta_folders.py" ]; then
     exit 1
 fi
 
+# Build date arguments for Python script
+DATE_ARGS=()
+for date in "${DATES[@]}"; do
+    DATE_ARGS+=("--date" "$date")
+done
+
 # Run the comparison
 python3 compare_delta_folders.py \
     --bucket "$BUCKET" \
-    --date "$DATE" \
+    "${DATE_ARGS[@]}" \
     --regular-prefix "$REGULAR_PREFIX" \
     --sqs-prefix "$SQS_PREFIX" \
     "${EXTRA_ARGS[@]}"
