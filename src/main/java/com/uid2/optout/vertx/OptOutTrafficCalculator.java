@@ -165,13 +165,13 @@ public class OptOutTrafficCalculator {
                 return TrafficStatus.DEFAULT;
             }
             
-            // Find t = newest optout record timestamp from newest delta file
-            long t = findNewestTimestamp(deltaS3Paths);
-            LOGGER.info("Traffic calculation starting with t={} (newest optout)", t);
+            // Find t = oldest SQS queue message timestamp
+            long t = findOldestQueueTimestamp(sqsMessages);
+            LOGGER.info("Traffic calculation starting with t={} (oldest SQS message)", t);
             
             // Define time windows
-            long currentWindowStart = t - (HOURS_24-300) - getTotalWhitelistDuration(); // for range [t-23h55m, t+5m]
-            long pastWindowStart = currentWindowStart - HOURS_24 - getTotalWhitelistDuration(); // for range [t-47h55m, t-23h55m]
+            long currentWindowStart = t - (HOURS_24-300) - getWhitelistDuration(t, t - (HOURS_24-300)); // for range [t-23h55m, t+5m]
+            long pastWindowStart = currentWindowStart - HOURS_24 - getWhitelistDuration(currentWindowStart, currentWindowStart - HOURS_24); // for range [t-47h55m, t-23h55m]
             
             // Evict old cache entries (older than past window start)
             evictOldCacheEntries(pastWindowStart);
@@ -304,27 +304,38 @@ public class OptOutTrafficCalculator {
         }
     }
 
-    private long getTotalWhitelistDuration() {
+    private long getWhitelistDuration(long t, long windowStart) {
         long totalDuration = 0;
         for (List<Long> range : this.whitelistRanges) {
-            totalDuration += range.get(1) - range.get(0);
+            long start = range.get(0);
+            long end = range.get(1);
+            if (start < windowStart) {
+                start = windowStart;
+            }
+            if (end > t) {
+                end = t;
+            }
+            totalDuration += end - start;
         }
         return totalDuration;
     }
     
     /**
-     * Get the newest optout record timestamp from newest delta file
+     * Find the oldest SQS queue message timestamp
      */
-    private long findNewestTimestamp(List<String> deltaS3Paths) throws IOException {
-        long newest = 0;
+    private long findOldestQueueTimestamp(List<Message> sqsMessages) throws IOException {
+        long oldest = System.currentTimeMillis() / 1000;
         
-        if (!deltaS3Paths.isEmpty()) {
-            List<Long> timestamps = getTimestampsFromFile(deltaS3Paths.get(0));
-            if (!timestamps.isEmpty()) {
-                newest = Collections.max(timestamps);
+        if (sqsMessages != null && !sqsMessages.isEmpty()) {
+            for (Message msg : sqsMessages) {
+                Long ts = extractTimestampFromMessage(msg);
+                if (ts != null && ts < oldest) {
+                    oldest = ts;
+                }
             }
         }
-        return newest;
+        
+        return oldest;
     }
     
     /**
