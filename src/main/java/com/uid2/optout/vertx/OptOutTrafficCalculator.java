@@ -67,7 +67,8 @@ public class OptOutTrafficCalculator {
      * 
      * @param config JsonObject containing configuration
      * @param cloudStorage Cloud storage for reading delta files and whitelist from S3
-     * @param cloudSync Cloud sync for path conversion
+     * @param s3DeltaPrefix S3 prefix for delta files
+     * @param trafficCalcConfigS3Path S3 path for traffic calc config
      */
     public OptOutTrafficCalculator(JsonObject config, ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficCalcConfigS3Path) {
         this.cloudStorage = cloudStorage;
