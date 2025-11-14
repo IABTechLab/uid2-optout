@@ -82,7 +82,7 @@ public class OptOutTrafficCalculatorTest {
         when(cloudStorage.download(WHITELIST_S3_PATH)).thenThrow(new CloudStorageException("Not found"));
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             config, cloudStorage, S3_DELTA_PREFIX, WHITELIST_S3_PATH);
-        calculator.reloadWhitelist();
+        calculator.reloadTrafficCalcConfig();
 
         // Assert - whitelist should be empty
         assertFalse(calculator.isInWhitelist(1000L));
@@ -696,7 +696,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     // ============================================================================
-    // SECTION 6: Whitelist Reload Tests
+    // SECTION 6: S3 Config Reload Tests
     // ============================================================================
 
     @Test
@@ -728,7 +728,7 @@ public class OptOutTrafficCalculatorTest {
             .thenReturn(new ByteArrayInputStream(newWhitelistJson.getBytes()));
 
         // Act - reload the whitelist
-        calculator.reloadWhitelist();
+        calculator.reloadTrafficCalcConfig();
 
         // Assert - verify new whitelist is loaded
         assertTrue(calculator.isInWhitelist(5500L));
@@ -754,7 +754,7 @@ public class OptOutTrafficCalculatorTest {
         when(cloudStorage.download(WHITELIST_S3_PATH)).thenThrow(new CloudStorageException("Network error"));
 
         // Act - should not throw exception
-        calculator.reloadWhitelist();
+        calculator.reloadTrafficCalcConfig();
 
         // Assert
         assertFalse(calculator.isInWhitelist(1500L));
@@ -1242,7 +1242,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testCalculateStatus_imestampsCached() throws Exception {
+    void testCalculateStatus_timestampsCached() throws Exception {
         // Setup - create delta files with some entries
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
@@ -1269,5 +1269,125 @@ public class OptOutTrafficCalculatorTest {
         Map<String, Object> stats = calculator.getCacheStats();
         assertEquals(2, stats.get("total_cached_timestamps"));
     }
-}
 
+    @Test
+    void testCalculateStatus_whitelistReducesPreviousWindowBaseline_customWindows() throws Exception {
+        // Setup - test with custom 3-hour evaluation windows
+        // Whitelist in previous window reduces baseline, causing DELAYED_PROCESSING
+        long currentTime = System.currentTimeMillis() / 1000;
+        long t = currentTime;
+        long threeHours = 3 * 3600; // 10800 seconds
+        
+        // Whitelist covering most of the PREVIOUS window (t-6h to t-4h)
+        // This reduces the baseline count in the previous window
+        String whitelistJson = String.format("""
+            {
+                "traffic_calc_current_evaluation_window_seconds": %d,
+                "traffic_calc_previous_evaluation_window_seconds": %d,
+                "traffic_calc_whitelist_ranges": [
+                    [%d, %d]
+                ]
+            }
+            """, threeHours, threeHours, t - 6*3600, t - 4*3600);
+        
+        List<Long> timestamps = new ArrayList<>();
+        
+        // Previous window (t-6h to t-3h): Add 100 entries
+        // 80 of these will be whitelisted (between t-6h and t-4h)
+        // Only 20 will count toward baseline
+        for (int i = 0; i < 80; i++) {
+            timestamps.add(t - 6*3600 + i); // Whitelisted entries in previous window
+        }
+        for (int i = 0; i < 20; i++) {
+            timestamps.add(t - 4*3600 + i); // Non-whitelisted entries in previous window
+        }
+        
+        // Current window (t-3h to t): Add 120 entries (none whitelisted)
+        // This creates a spike: 120 + 1 SQS >= 5 * 20 = 100
+        for (int i = 0; i < 120; i++) {
+            timestamps.add(t - threeHours + i); // Current window entries
+        }
+        
+        byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
+        
+        when(cloudStorage.download(WHITELIST_S3_PATH))
+            .thenReturn(new ByteArrayInputStream(whitelistJson.getBytes()));
+        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
+        when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
+            .thenReturn(new ByteArrayInputStream(deltaFileBytes));
+
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            config, cloudStorage, S3_DELTA_PREFIX, WHITELIST_S3_PATH);
+
+        // Act
+        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages);
+
+        // Assert - DELAYED_PROCESSING
+        // With 3-hour evaluation windows:
+        // Previous window (t-6h to t-3h): 100 total entries, 80 whitelisted → 20 counted
+        // Current window (t-3h to t): 120 entries (none whitelisted) + 1 SQS = 121
+        // 121 >= 5 * 20 = 100, so DELAYED_PROCESSING
+        assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
+    }
+
+    @Test
+    void testCalculateStatus_whitelistReducesCurrentWindowBaseline_customWindows() throws Exception {
+        // Setup - test with custom 3-hour evaluation windows
+        // Whitelist in previous window reduces baseline, causing DELAYED_PROCESSING
+        long currentTime = System.currentTimeMillis() / 1000;
+        long t = currentTime;
+        long threeHours = 3 * 3600; // 10800 seconds
+        
+        // Whitelist covering most of the CURRENT window (t-3h to t+5m)
+        // This reduces the baseline count in the previous window
+        String whitelistJson = String.format("""
+            {
+                "traffic_calc_current_evaluation_window_seconds": %d,
+                "traffic_calc_previous_evaluation_window_seconds": %d,
+                "traffic_calc_whitelist_ranges": [
+                    [%d, %d]
+                ]
+            }
+            """, threeHours, threeHours, t - 3*3600, t - 1*3600);
+        
+        List<Long> timestamps = new ArrayList<>();
+        
+        // Current window (t-3h to t+5m): Add 100 entries
+        // 80 of these will be whitelisted (between t-3h and t-1h)
+        // Only 20 will count toward baseline
+        for (int i = 0; i < 80; i++) {
+            timestamps.add(t - 3*3600 + i); // Whitelisted entries in current window
+        }
+        for (int i = 0; i < 20; i++) {
+            timestamps.add(t - 1*3600 + i); // Non-whitelisted entries in current window
+        }
+        
+        // Previous window (t-6h to t-3h): Add 10 entries (none whitelisted)
+        for (int i = 0; i < 10; i++) {
+            timestamps.add(t - 6*3600 + i); // Non-whitelisted entries in previous window
+        }
+        
+        byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
+        
+        when(cloudStorage.download(WHITELIST_S3_PATH))
+            .thenReturn(new ByteArrayInputStream(whitelistJson.getBytes()));
+        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
+        when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
+            .thenReturn(new ByteArrayInputStream(deltaFileBytes));
+
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            config, cloudStorage, S3_DELTA_PREFIX, WHITELIST_S3_PATH);
+
+        // Act
+        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages);
+
+        // Assert - DEFAULT
+        // With 3-hour evaluation windows:
+        // Previous window (t-6h to t-3h): 10 entries (none whitelisted)
+        // Current window (t-3h to t): 20 entries (non-whitelisted) + 1 SQS = 21
+        // 21 < 5 * 10 = 50, so DEFAULT
+        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
+    }
+}

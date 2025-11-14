@@ -36,7 +36,9 @@ public class OptOutTrafficCalculator {
     private final int thresholdMultiplier;
     private final ICloudStorage cloudStorage;
     private final String s3DeltaPrefix;  // (e.g. "optout-v2/delta/")
-    private final String whitelistS3Path;  // (e.g. "optout-breaker/traffic-filter-config.json")
+    private final String trafficCalcConfigS3Path;  // (e.g. "optout-breaker/traffic-filter-config.json")
+    private int currentEvaluationWindowSeconds;
+    private int previousEvaluationWindowSeconds;
     private List<List<Long>> whitelistRanges;
     
     public enum TrafficStatus {
@@ -67,24 +69,27 @@ public class OptOutTrafficCalculator {
      * @param cloudStorage Cloud storage for reading delta files and whitelist from S3
      * @param cloudSync Cloud sync for path conversion
      */
-    public OptOutTrafficCalculator(JsonObject config, ICloudStorage cloudStorage, String s3DeltaPrefix, String whitelistS3Path) {
+    public OptOutTrafficCalculator(JsonObject config, ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficCalcConfigS3Path) {
         this.cloudStorage = cloudStorage;
         this.thresholdMultiplier = config.getInteger("traffic_calc_threshold_multiplier", DEFAULT_THRESHOLD_MULTIPLIER);
         this.s3DeltaPrefix = s3DeltaPrefix;
-        this.whitelistS3Path = whitelistS3Path;
-        
+        this.trafficCalcConfigS3Path = trafficCalcConfigS3Path;
+        this.currentEvaluationWindowSeconds = HOURS_24 - 300; //23h55m (includes 5m queue window)
+        this.previousEvaluationWindowSeconds = HOURS_24; //24h
         // Initial whitelist load
         this.whitelistRanges = Collections.emptyList();  // Start empty
-        reloadWhitelist();  // Load from S3
+        reloadTrafficCalcConfig();  // Load from S3
         
         LOGGER.info("OptOutTrafficCalculator initialized: s3DeltaPrefix={}, whitelistPath={}, threshold={}x", 
-                   s3DeltaPrefix, whitelistS3Path, thresholdMultiplier);
+                   s3DeltaPrefix, trafficCalcConfigS3Path, thresholdMultiplier);
     }
     
     /**
-     * Reload whitelist ranges from S3.
+     * Reload traffic calc config from S3.
      * Expected format:
      * {
+     *   "traffic_calc_current_evaluation_window_seconds": 86400,
+     *   "traffic_calc_previous_evaluation_window_seconds": 86400,
      *   "traffic_calc_whitelist_ranges": [
      *     [startTimestamp1, endTimestamp1],
      *     [startTimestamp2, endTimestamp2]
@@ -93,19 +98,23 @@ public class OptOutTrafficCalculator {
      * 
      * Can be called periodically to pick up config changes without restarting.
      */
-    public void reloadWhitelist() {
-        LOGGER.info("Reloading whitelist from S3: {}", whitelistS3Path);
-        try (InputStream is = cloudStorage.download(whitelistS3Path)) {
+    public void reloadTrafficCalcConfig() {
+        LOGGER.info("Reloading traffic calc config from S3: {}", trafficCalcConfigS3Path);
+        try (InputStream is = cloudStorage.download(trafficCalcConfigS3Path)) {
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             JsonObject whitelistConfig = new JsonObject(content);
+
+            this.currentEvaluationWindowSeconds = whitelistConfig.getInteger("traffic_calc_current_evaluation_window_seconds", HOURS_24 - 300);
+            this.previousEvaluationWindowSeconds = whitelistConfig.getInteger("traffic_calc_previous_evaluation_window_seconds", HOURS_24);
             
             List<List<Long>> ranges = parseWhitelistRanges(whitelistConfig);
             this.whitelistRanges = ranges;
             
-            LOGGER.info("Successfully loaded {} whitelist ranges from S3", ranges.size());
+            LOGGER.info("Successfully loaded traffic calc config from S3: currentEvaluationWindowSeconds={}, previousEvaluationWindowSeconds={}, whitelistRanges={}",
+                       this.currentEvaluationWindowSeconds, this.previousEvaluationWindowSeconds, ranges.size());
             
         } catch (Exception e) {
-            LOGGER.warn("No whitelist found at: {}", whitelistS3Path, e);
+            LOGGER.warn("No traffic calc config found at: {}", trafficCalcConfigS3Path, e);
             this.whitelistRanges = Collections.emptyList();
         }
     }
@@ -170,8 +179,8 @@ public class OptOutTrafficCalculator {
             LOGGER.info("Traffic calculation starting with t={} (oldest SQS message)", t);
             
             // Define time windows
-            long currentWindowStart = t - (HOURS_24-300) - getWhitelistDuration(t, t - (HOURS_24-300)); // for range [t-23h55m, t+5m]
-            long pastWindowStart = currentWindowStart - HOURS_24 - getWhitelistDuration(currentWindowStart, currentWindowStart - HOURS_24); // for range [t-47h55m, t-23h55m]
+            long currentWindowStart = t - this.currentEvaluationWindowSeconds - getWhitelistDuration(t, t - this.currentEvaluationWindowSeconds); // for range [t-23h55m, t+5m]
+            long pastWindowStart = currentWindowStart - this.previousEvaluationWindowSeconds - getWhitelistDuration(currentWindowStart, currentWindowStart - this.previousEvaluationWindowSeconds); // for range [t-47h55m, t-23h55m]
             
             // Evict old cache entries (older than past window start)
             evictOldCacheEntries(pastWindowStart);
