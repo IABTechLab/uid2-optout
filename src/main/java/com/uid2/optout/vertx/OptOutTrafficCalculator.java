@@ -113,7 +113,7 @@ public class OptOutTrafficCalculator {
     /**
      * Parse whitelist ranges from JSON config
      */
-    private List<List<Long>> parseWhitelistRanges(JsonObject config) {
+    List<List<Long>> parseWhitelistRanges(JsonObject config) {
         List<List<Long>> ranges = new ArrayList<>();
         
         try {
@@ -192,7 +192,7 @@ public class OptOutTrafficCalculator {
                     }
                     
                     // skip records in whitelisted ranges
-                    if (isInWhitelist(ts, this.whitelistRanges)) {
+                    if (isInWhitelist(ts)) {
                         continue;
                     }
                     
@@ -304,18 +304,27 @@ public class OptOutTrafficCalculator {
         }
     }
 
-    private long getWhitelistDuration(long t, long windowStart) {
+    /**
+     * Calculate total duration of whitelist ranges that overlap with the given time window.
+     */
+    long getWhitelistDuration(long t, long windowStart) {
         long totalDuration = 0;
         for (List<Long> range : this.whitelistRanges) {
             long start = range.get(0);
             long end = range.get(1);
+            
+            // Clip range to window boundaries
             if (start < windowStart) {
                 start = windowStart;
             }
             if (end > t) {
                 end = t;
             }
-            totalDuration += end - start;
+            
+            // Only add duration if there's actual overlap (start < end)
+            if (start < end) {
+                totalDuration += end - start;
+            }
         }
         return totalDuration;
     }
@@ -370,7 +379,7 @@ public class OptOutTrafficCalculator {
                 continue;
             }
             
-            if (isInWhitelist(ts, this.whitelistRanges)) {
+            if (isInWhitelist(ts)) {
                 continue;
             }
             count++;
@@ -384,7 +393,7 @@ public class OptOutTrafficCalculator {
     /**
      * Check if a timestamp falls within any whitelist range
      */
-    private boolean isInWhitelist(long timestamp, List<List<Long>> whitelistRanges) {
+    boolean isInWhitelist(long timestamp) {
         if (whitelistRanges == null || whitelistRanges.isEmpty()) {
             return false;
         }
@@ -425,7 +434,7 @@ public class OptOutTrafficCalculator {
     /**
      * Determine traffic status based on current vs past counts
      */
-    private TrafficStatus determineStatus(int sumCurrent, int sumPast) {
+    TrafficStatus determineStatus(int sumCurrent, int sumPast) {
         if (sumPast == 0) {
             // Avoid division by zero - if no baseline traffic, return DEFAULT status
             LOGGER.warn("sumPast is 0, cannot detect thresholdcrossing. Returning DEFAULT status.");
