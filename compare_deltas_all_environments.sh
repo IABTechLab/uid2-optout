@@ -35,10 +35,15 @@ extract_stats() {
     
     if [ -n "$regular_files" ] && [ -n "$sqs_files" ]; then
         echo "  $env_name: Regular $regular_files files/$regular_entries entries, SQS $sqs_files files/$sqs_entries entries"
-        TOTAL_REGULAR_FILES=$((TOTAL_REGULAR_FILES + regular_files))
-        TOTAL_REGULAR_ENTRIES=$((TOTAL_REGULAR_ENTRIES + regular_entries))
-        TOTAL_SQS_FILES=$((TOTAL_SQS_FILES + sqs_files))
-        TOTAL_SQS_ENTRIES=$((TOTAL_SQS_ENTRIES + sqs_entries))
+        # Remove commas from numbers before arithmetic
+        regular_files_clean=${regular_files//,/}
+        regular_entries_clean=${regular_entries//,/}
+        sqs_files_clean=${sqs_files//,/}
+        sqs_entries_clean=${sqs_entries//,/}
+        TOTAL_REGULAR_FILES=$((TOTAL_REGULAR_FILES + regular_files_clean))
+        TOTAL_REGULAR_ENTRIES=$((TOTAL_REGULAR_ENTRIES + regular_entries_clean))
+        TOTAL_SQS_FILES=$((TOTAL_SQS_FILES + sqs_files_clean))
+        TOTAL_SQS_ENTRIES=$((TOTAL_SQS_ENTRIES + sqs_entries_clean))
     fi
 }
 

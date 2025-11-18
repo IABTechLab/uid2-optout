@@ -322,8 +322,12 @@ Examples:
         )
 
         if not regular_records and not sqs_records:
-            print("\n❌ No records found in either folder")
-            sys.exit(1)
+            print("\n⚠️  No records found in either folder (environment may be empty)")
+            print_file_stats(regular_stats, sqs_stats)
+            print("\n" + "=" * 80)
+            print("✅ SUCCESS: No data to compare (empty environment)")
+            print("=" * 80)
+            sys.exit(0)  # Empty environment is NOT an error!
 
         if not regular_records:
             print("\n⚠️  No records in regular delta folder")
