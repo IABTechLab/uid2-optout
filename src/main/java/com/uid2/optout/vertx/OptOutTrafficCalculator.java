@@ -12,6 +12,8 @@ import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 
 import java.nio.charset.StandardCharsets;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.io.InputStream;
 import java.io.IOException;
 import java.util.*;
@@ -31,12 +33,12 @@ public class OptOutTrafficCalculator {
     
     private static final int HOURS_24 = 24 * 3600;  // 24 hours in seconds
     private static final int DEFAULT_THRESHOLD_MULTIPLIER = 5;
+    private static final String TRAFFIC_CONFIG_PATH = "/app/conf/traffic-config.json";
     
     private final Map<String, FileRecordCache> deltaFileCache = new ConcurrentHashMap<>();
     private final int thresholdMultiplier;
     private final ICloudStorage cloudStorage;
     private final String s3DeltaPrefix;  // (e.g. "optout-v2/delta/")
-    private final String trafficCalcConfigS3Path;  // (e.g. "optout-breaker/traffic-filter-config.json")
     private int currentEvaluationWindowSeconds;
     private int previousEvaluationWindowSeconds;
     private List<List<Long>> whitelistRanges;
@@ -70,23 +72,22 @@ public class OptOutTrafficCalculator {
      * @param s3DeltaPrefix S3 prefix for delta files
      * @param trafficCalcConfigS3Path S3 path for traffic calc config
      */
-    public OptOutTrafficCalculator(JsonObject config, ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficCalcConfigS3Path) {
+    public OptOutTrafficCalculator(JsonObject config, ICloudStorage cloudStorage, String s3DeltaPrefix) {
         this.cloudStorage = cloudStorage;
         this.thresholdMultiplier = config.getInteger("traffic_calc_threshold_multiplier", DEFAULT_THRESHOLD_MULTIPLIER);
         this.s3DeltaPrefix = s3DeltaPrefix;
-        this.trafficCalcConfigS3Path = trafficCalcConfigS3Path;
         this.currentEvaluationWindowSeconds = HOURS_24 - 300; //23h55m (includes 5m queue window)
         this.previousEvaluationWindowSeconds = HOURS_24; //24h
         // Initial whitelist load
         this.whitelistRanges = Collections.emptyList();  // Start empty
-        reloadTrafficCalcConfig();  // Load from S3
+        reloadTrafficCalcConfig();  // Load ConfigMap
         
-        LOGGER.info("OptOutTrafficCalculator initialized: s3DeltaPrefix={}, whitelistPath={}, threshold={}x", 
-                   s3DeltaPrefix, trafficCalcConfigS3Path, thresholdMultiplier);
+        LOGGER.info("OptOutTrafficCalculator initialized: s3DeltaPrefix={}, threshold={}x", 
+                   s3DeltaPrefix, thresholdMultiplier);
     }
     
     /**
-     * Reload traffic calc config from S3.
+     * Reload traffic calc config from ConfigMap.
      * Expected format:
      * {
      *   "traffic_calc_current_evaluation_window_seconds": 86400,
@@ -100,8 +101,8 @@ public class OptOutTrafficCalculator {
      * Can be called periodically to pick up config changes without restarting.
      */
     public void reloadTrafficCalcConfig() {
-        LOGGER.info("Reloading traffic calc config from S3: {}", trafficCalcConfigS3Path);
-        try (InputStream is = cloudStorage.download(trafficCalcConfigS3Path)) {
+        LOGGER.info("Loading traffic calc config from ConfigMap");
+        try (InputStream is = Files.newInputStream(Paths.get(TRAFFIC_CONFIG_PATH))) {
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             JsonObject whitelistConfig = new JsonObject(content);
 
@@ -111,11 +112,11 @@ public class OptOutTrafficCalculator {
             List<List<Long>> ranges = parseWhitelistRanges(whitelistConfig);
             this.whitelistRanges = ranges;
             
-            LOGGER.info("Successfully loaded traffic calc config from S3: currentEvaluationWindowSeconds={}, previousEvaluationWindowSeconds={}, whitelistRanges={}",
+            LOGGER.info("Successfully loaded traffic calc config from ConfigMap: currentEvaluationWindowSeconds={}, previousEvaluationWindowSeconds={}, whitelistRanges={}",
                        this.currentEvaluationWindowSeconds, this.previousEvaluationWindowSeconds, ranges.size());
             
         } catch (Exception e) {
-            LOGGER.warn("No traffic calc config found at: {}", trafficCalcConfigS3Path, e);
+            LOGGER.warn("No traffic calc config found at: {}", TRAFFIC_CONFIG_PATH, e);
             this.whitelistRanges = Collections.emptyList();
         }
     }
