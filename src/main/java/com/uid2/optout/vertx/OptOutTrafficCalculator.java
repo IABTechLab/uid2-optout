@@ -33,12 +33,12 @@ public class OptOutTrafficCalculator {
     
     private static final int HOURS_24 = 24 * 3600;  // 24 hours in seconds
     private static final int DEFAULT_THRESHOLD_MULTIPLIER = 5;
-    private static final String TRAFFIC_CONFIG_PATH = "/app/conf/traffic-config.json";
     
     private final Map<String, FileRecordCache> deltaFileCache = new ConcurrentHashMap<>();
-    private final int thresholdMultiplier;
     private final ICloudStorage cloudStorage;
     private final String s3DeltaPrefix;  // (e.g. "optout-v2/delta/")
+    private final String trafficConfigPath;
+    private int thresholdMultiplier;
     private int currentEvaluationWindowSeconds;
     private int previousEvaluationWindowSeconds;
     private List<List<Long>> whitelistRanges;
@@ -67,16 +67,16 @@ public class OptOutTrafficCalculator {
     /**
      * Constructor for OptOutTrafficCalculator
      * 
-     * @param config JsonObject containing configuration
      * @param cloudStorage Cloud storage for reading delta files and whitelist from S3
      * @param s3DeltaPrefix S3 prefix for delta files
      * @param trafficCalcConfigS3Path S3 path for traffic calc config
      */
-    public OptOutTrafficCalculator(JsonObject config, ICloudStorage cloudStorage, String s3DeltaPrefix) {
+    public OptOutTrafficCalculator(ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficConfigPath) {
         this.cloudStorage = cloudStorage;
-        this.thresholdMultiplier = config.getInteger("traffic_calc_threshold_multiplier", DEFAULT_THRESHOLD_MULTIPLIER);
+        this.thresholdMultiplier = DEFAULT_THRESHOLD_MULTIPLIER;
         this.s3DeltaPrefix = s3DeltaPrefix;
-        this.currentEvaluationWindowSeconds = HOURS_24 - 300; //23h55m (includes 5m queue window)
+        this.trafficConfigPath = trafficConfigPath;
+        this.currentEvaluationWindowSeconds = HOURS_24 - 300; //23h55m (5m queue window)
         this.previousEvaluationWindowSeconds = HOURS_24; //24h
         // Initial whitelist load
         this.whitelistRanges = Collections.emptyList();  // Start empty
@@ -95,17 +95,19 @@ public class OptOutTrafficCalculator {
      *   "traffic_calc_whitelist_ranges": [
      *     [startTimestamp1, endTimestamp1],
      *     [startTimestamp2, endTimestamp2]
-     *   ]
+     *   ],
+     *   "traffic_calc_threshold_multiplier": 5
      * }
      * 
      * Can be called periodically to pick up config changes without restarting.
      */
     public void reloadTrafficCalcConfig() {
         LOGGER.info("Loading traffic calc config from ConfigMap");
-        try (InputStream is = Files.newInputStream(Paths.get(TRAFFIC_CONFIG_PATH))) {
+        try (InputStream is = Files.newInputStream(Paths.get(trafficConfigPath))) {
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             JsonObject whitelistConfig = new JsonObject(content);
 
+            this.thresholdMultiplier = whitelistConfig.getInteger("traffic_calc_threshold_multiplier", DEFAULT_THRESHOLD_MULTIPLIER);
             this.currentEvaluationWindowSeconds = whitelistConfig.getInteger("traffic_calc_current_evaluation_window_seconds", HOURS_24 - 300);
             this.previousEvaluationWindowSeconds = whitelistConfig.getInteger("traffic_calc_previous_evaluation_window_seconds", HOURS_24);
             
@@ -116,7 +118,7 @@ public class OptOutTrafficCalculator {
                        this.currentEvaluationWindowSeconds, this.previousEvaluationWindowSeconds, ranges.size());
             
         } catch (Exception e) {
-            LOGGER.warn("No traffic calc config found at: {}", TRAFFIC_CONFIG_PATH, e);
+            LOGGER.warn("No traffic calc config found at: {}", trafficConfigPath, e);
             this.whitelistRanges = Collections.emptyList();
         }
     }
