@@ -1,5 +1,6 @@
 package com.uid2.optout.vertx;
 
+import com.uid2.optout.util.SqsUtils;
 import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.optout.OptOutCollection;
 import com.uid2.shared.optout.OptOutEntry;
@@ -8,7 +9,6 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.sqs.model.Message;
-import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 
 import java.nio.charset.StandardCharsets;
 
@@ -350,7 +350,7 @@ public class OptOutTrafficCalculator {
         
         if (sqsMessages != null && !sqsMessages.isEmpty()) {
             for (Message msg : sqsMessages) {
-                Long ts = extractTimestampFromMessage(msg);
+                Long ts = SqsUtils.extractTimestampFromMessage(msg);
                 if (ts != null && ts < oldest) {
                     oldest = ts;
                 }
@@ -361,24 +361,6 @@ public class OptOutTrafficCalculator {
     }
     
     /**
-     * Extract timestamp from SQS message (from SentTimestamp attribute)
-     */
-    private Long extractTimestampFromMessage(Message msg) {
-        // Get SentTimestamp attribute (milliseconds)
-        String sentTimestamp = msg.attributes().get(MessageSystemAttributeName.SENT_TIMESTAMP);
-        if (sentTimestamp != null) {
-            try {
-                return Long.parseLong(sentTimestamp) / 1000;  // Convert ms to seconds
-            } catch (NumberFormatException e) {
-                LOGGER.debug("Invalid SentTimestamp: {}", sentTimestamp);
-            }
-        }
-        
-        // Fallback: use current time
-        return System.currentTimeMillis() / 1000;
-    }
-    
-    /**
      * Count SQS messages from t to t+5 minutes
      */
     private int countSqsMessages(List<Message> sqsMessages, long t) {
@@ -386,7 +368,7 @@ public class OptOutTrafficCalculator {
         int count = 0;
         
         for (Message msg : sqsMessages) {
-            Long ts = extractTimestampFromMessage(msg);
+            Long ts = SqsUtils.extractTimestampFromMessage(msg);
 
             if (ts < t || ts > t + 5 * 60) {
                 continue;

@@ -34,6 +34,10 @@ public class SqsMessageParser {
                 JsonObject body = new JsonObject(message.body());
                 String identityHash = body.getString("identity_hash");
                 String advertisingId = body.getString("advertising_id");
+                String traceId = body.getString("trace_id");
+                String clientIp = body.getString("client_ip");
+                String email = body.getString("email");
+                String phone = body.getString("phone");
 
                 if (identityHash == null || advertisingId == null) {
                     LOGGER.error("Invalid message format, skipping: {}", message.body());
@@ -48,7 +52,7 @@ public class SqsMessageParser {
                     continue;
                 }
 
-                parsedMessages.add(new SqsParsedMessage(message, hashBytes, idBytes, timestampSeconds));
+                parsedMessages.add(new SqsParsedMessage(message, hashBytes, idBytes, timestampSeconds, email, phone, clientIp, traceId));
             } catch (Exception e) {
                 LOGGER.error("Error parsing SQS message", e);
             }

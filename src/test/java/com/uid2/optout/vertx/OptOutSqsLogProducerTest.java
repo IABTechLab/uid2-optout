@@ -16,6 +16,8 @@ import software.amazon.awssdk.services.sqs.model.*;
 
 import java.io.InputStream;
 import java.util.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -39,6 +41,7 @@ public class OptOutSqsLogProducerTest {
     private static final String TEST_API_KEY = "test-api-key";
     private static final String VALID_HASH_BASE64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
     private static final String VALID_ID_BASE64 = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
+    private static final String TRAFFIC_FILTER_CONFIG_PATH = "./traffic-filter.json";
     
     @Before
     public void setup(TestContext context) throws Exception {
@@ -54,7 +57,8 @@ public class OptOutSqsLogProducerTest {
               .put(Const.Config.OptOutSqsVisibilityTimeoutProp, 240)
               .put(Const.Config.OptOutProducerBufferSizeProp, 65536)
               .put(Const.Config.OptOutProducerReplicaIdProp, 1)
-              .put(Const.Config.OptOutInternalApiTokenProp, TEST_API_KEY);
+              .put(Const.Config.OptOutInternalApiTokenProp, TEST_API_KEY)
+              .put(Const.Config.TrafficFilterConfigPathProp, TRAFFIC_FILTER_CONFIG_PATH);
         
         // Mock cloud sync to return proper S3 paths
         when(cloudSync.toCloudPath(anyString()))
@@ -62,6 +66,20 @@ public class OptOutSqsLogProducerTest {
         
         // Mock S3 upload to succeed by default
         doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
+        
+        
+        try {
+            String traficFilterConfig = """
+                    {
+                        "blacklist_requests": [
+
+                        ]
+                    }
+                    """;
+            createTrafficConfigFile(traficFilterConfig);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
         
         // Create producer with mock SqsClient
         producer = new OptOutSqsLogProducer(config, cloudStorage, cloudSync, Const.Event.DeltaProduce, sqsClient);
@@ -75,6 +93,22 @@ public class OptOutSqsLogProducerTest {
     public void tearDown(TestContext context) {
         if (vertx != null) {
             vertx.close(context.asyncAssertSuccess());
+        }
+        if (Files.exists(Path.of(TRAFFIC_FILTER_CONFIG_PATH))) {
+            try {
+                Files.delete(Path.of(TRAFFIC_FILTER_CONFIG_PATH));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private void createTrafficConfigFile(String content) {
+        try {
+            Path configPath = Path.of(TRAFFIC_FILTER_CONFIG_PATH);
+            Files.writeString(configPath, content);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
     

@@ -1,6 +1,7 @@
 package com.uid2.optout;
 
 import com.uid2.optout.vertx.*;
+import com.uid2.optout.vertx.OptOutTrafficFilter.BlacklistConfigException;
 import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationResponseHandler;
@@ -303,7 +304,9 @@ public class Main {
                 LOGGER.info("SQS log producer deployed - bucket: {}, folder: {}", 
                     this.config.getString(Const.Config.OptOutS3BucketProp), sqsFolder);
             } catch (IOException e) {
-                LOGGER.error("Failed to initialize SQS log producer: " + e.getMessage(), e);
+                LOGGER.error("Failed to initialize SQS log producer, delta production will be disabled: " + e.getMessage(), e);
+            } catch (BlacklistConfigException e) {
+                LOGGER.error("The traffic filter config is malformed, refusing to process messages, delta production will be disabled: " + e.getMessage(), e);
             }
         }
 
