@@ -22,6 +22,7 @@ import org.mockito.quality.Strictness;
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 
+import com.uid2.optout.vertx.OptOutTrafficCalculator.MalformedTrafficCalcConfigException;
 import java.io.ByteArrayInputStream;
 import java.util.*;
 
@@ -104,12 +105,19 @@ public class OptOutTrafficCalculatorTest {
     void testConstructor_whitelistLoadFailure() throws Exception {
         // Setup - whitelist load failure
         createTrafficConfigFile("Invalid JSON");
-        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
-            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
-        calculator.reloadTrafficCalcConfig();
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+                cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+        });
 
-        // Assert - whitelist should be empty
-        assertFalse(calculator.isInWhitelist(1000L));
+        createTrafficConfigFile("{}");
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+                cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        createTrafficConfigFile("Invalid JSON");
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.reloadTrafficCalcConfig();
+        });
     }
 
     // ============================================================================
@@ -175,7 +183,7 @@ public class OptOutTrafficCalculatorTest {
 
     @Test
     void testParseWhitelistRanges_misorderedRange() throws Exception {
-        // Setup - range with end < start should be corrected
+        // Setup - range with end < start is malformed
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
@@ -185,12 +193,26 @@ public class OptOutTrafficCalculatorTest {
         configWithRanges.put("traffic_calc_whitelist_ranges", ranges);
 
         // Act
-        List<List<Long>> result = calculator.parseWhitelistRanges(configWithRanges);
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.parseWhitelistRanges(configWithRanges);
+        });
+    }
 
-        // Assert - should auto-correct to [1000, 2000]
-        assertEquals(1, result.size());
-        assertEquals(1000L, result.get(0).get(0));
-        assertEquals(2000L, result.get(0).get(1));
+    @Test
+    void testParseWhitelistRanges_rangeTooLong() throws Exception {
+        // Setup - range longer than 24 hours is malformed
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        JsonObject configWithRanges = new JsonObject();
+        JsonArray ranges = new JsonArray()
+            .add(new JsonArray().add(2000L).add(200000L)); // Longer than 24 hours
+        configWithRanges.put("traffic_calc_whitelist_ranges", ranges);
+
+        // Act
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.parseWhitelistRanges(configWithRanges);
+        });
     }
 
     @Test
@@ -373,8 +395,8 @@ public class OptOutTrafficCalculatorTest {
 
     @Test
     void testIsInWhitelist_emptyRanges() throws Exception {
-        // Setup - no whitelist loaded (will fail and set empty)
-        createTrafficConfigFile("Invalid JSON");
+        // Setup - no whitelist loaded
+        createTrafficConfigFile("{}");
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -765,10 +787,10 @@ public class OptOutTrafficCalculatorTest {
         createTrafficConfigFile("Invalid JSON");
 
         // Act - should not throw exception
-        calculator.reloadTrafficCalcConfig();
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.reloadTrafficCalcConfig();
+        });
 
-        // Assert
-        assertFalse(calculator.isInWhitelist(1500L));
     }
 
     // ============================================================================
