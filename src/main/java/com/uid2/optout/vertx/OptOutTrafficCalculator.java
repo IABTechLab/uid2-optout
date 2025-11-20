@@ -63,7 +63,15 @@ public class OptOutTrafficCalculator {
             this.newestTimestamp = timestamps.isEmpty() ? 0 : Collections.max(timestamps);
         }
     }
-    
+
+    /**
+     * Exception thrown by malformed traffic calculator config
+     */
+    public static class MalformedTrafficCalcConfigException extends Exception {
+        public MalformedTrafficCalcConfigException(String message) {
+            super(message);
+        }
+    }
     /**
      * Constructor for OptOutTrafficCalculator
      * 
@@ -71,7 +79,7 @@ public class OptOutTrafficCalculator {
      * @param s3DeltaPrefix S3 prefix for delta files
      * @param trafficCalcConfigS3Path S3 path for traffic calc config
      */
-    public OptOutTrafficCalculator(ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficConfigPath) {
+    public OptOutTrafficCalculator(ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficConfigPath) throws MalformedTrafficCalcConfigException {
         this.cloudStorage = cloudStorage;
         this.thresholdMultiplier = DEFAULT_THRESHOLD_MULTIPLIER;
         this.s3DeltaPrefix = s3DeltaPrefix;
@@ -101,7 +109,7 @@ public class OptOutTrafficCalculator {
      * 
      * Can be called periodically to pick up config changes without restarting.
      */
-    public void reloadTrafficCalcConfig() {
+    public void reloadTrafficCalcConfig() throws MalformedTrafficCalcConfigException {
         LOGGER.info("Loading traffic calc config from ConfigMap");
         try (InputStream is = Files.newInputStream(Paths.get(trafficConfigPath))) {
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
@@ -119,14 +127,14 @@ public class OptOutTrafficCalculator {
             
         } catch (Exception e) {
             LOGGER.warn("No traffic calc config found at: {}", trafficConfigPath, e);
-            this.whitelistRanges = Collections.emptyList();
+            throw new MalformedTrafficCalcConfigException("Failed to load traffic calc config: " + e.getMessage());
         }
     }
     
     /**
      * Parse whitelist ranges from JSON config
      */
-    List<List<Long>> parseWhitelistRanges(JsonObject config) {
+    List<List<Long>> parseWhitelistRanges(JsonObject config) throws MalformedTrafficCalcConfigException {
         List<List<Long>> ranges = new ArrayList<>();
         
         try {
@@ -136,12 +144,18 @@ public class OptOutTrafficCalculator {
                     for (int i = 0; i < rangesArray.size(); i++) {
                         var rangeArray = rangesArray.getJsonArray(i);
                         if (rangeArray != null && rangeArray.size() >= 2) {
-                            long val1 = rangeArray.getLong(0);
-                            long val2 = rangeArray.getLong(1);
+                            long start = rangeArray.getLong(0);
+                            long end = rangeArray.getLong(1);
                             
-                            // Ensure start <= end (correct misordered ranges)
-                            long start = Math.min(val1, val2);
-                            long end = Math.max(val1, val2);
+                            if(start >= end) {
+                                LOGGER.error("Invalid whitelist range: start must be less than end: [{}, {}]", start, end);
+                                throw new MalformedTrafficCalcConfigException("Invalid whitelist range at index " + i + ": start must be less than end");
+                            }
+
+                            if (end - start > 86400) {
+                                LOGGER.error("Invalid whitelist range: range must be less than 24 hours: [{}, {}]", start, end);
+                                throw new MalformedTrafficCalcConfigException("Invalid whitelist range at index " + i + ": range must be less than 24 hours");
+                            }
                             
                             List<Long> range = Arrays.asList(start, end);
                             ranges.add(range);
@@ -156,6 +170,7 @@ public class OptOutTrafficCalculator {
             
         } catch (Exception e) {
             LOGGER.error("Failed to parse whitelist ranges", e);
+            throw new MalformedTrafficCalcConfigException("Failed to parse whitelist ranges: " + e.getMessage());
         }
         
         return ranges;
