@@ -184,8 +184,8 @@ public class SqsMessageParserTest {
         
         // Create messages from 10 minutes ago
         long oldTimestamp = System.currentTimeMillis() / 1000 - 600;
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], oldTimestamp, "dummy@email.com", null, "127.0.0.1", "trace-id"));
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], oldTimestamp - 100, "dummy@email.com", null, "127.0.0.1", "trace-id"));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], oldTimestamp));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], oldTimestamp - 100));
 
         long currentTime = System.currentTimeMillis() / 1000;
         List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 300, currentTime);
@@ -200,8 +200,8 @@ public class SqsMessageParserTest {
         
         // Create messages from 1 minute ago (too recent)
         long recentTimestamp = System.currentTimeMillis() / 1000 - 60;
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], recentTimestamp, "dummy@email.com", null, "127.0.0.1", "trace-id"));
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], recentTimestamp + 10, "dummy@email.com", null, "127.0.0.1", "trace-id"));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], recentTimestamp));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], recentTimestamp + 10));
 
         long currentTime = System.currentTimeMillis() / 1000;
         List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 300, currentTime);
@@ -217,13 +217,13 @@ public class SqsMessageParserTest {
         long currentTime = 1000L;
         
         // Old enough (600 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - 600, "dummy@email.com", null, "127.0.0.1", "trace-id"));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - 600));
         
         // Exactly at threshold (300 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - 300, "dummy@email.com", null, "127.0.0.1", "trace-id"));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - 300));
         
         // Too recent (100 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - 100, "dummy@email.com", null, "127.0.0.1", "trace-id"));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - 100));
 
         List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 300, currentTime);
 
@@ -291,13 +291,13 @@ public class SqsMessageParserTest {
         int windowSeconds = 300;
         
         // One second too new (299 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - windowSeconds + 1, "dummy@email.com", null, "127.0.0.1", "trace-id"));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - windowSeconds + 1));
         
         // Exactly at threshold (300 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - windowSeconds, "dummy@email.com", null, "127.0.0.1", "trace-id"));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - windowSeconds));
         
         // One second past threshold (301 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - windowSeconds - 1, "dummy@email.com", null, "127.0.0.1", "trace-id"));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - windowSeconds - 1));
 
         List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, windowSeconds, currentTime);
 
@@ -328,10 +328,10 @@ public class SqsMessageParserTest {
         long currentTime = 1000L;
         
         // Add eligible messages in specific order
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 100, "dummy@email.com", null, "127.0.0.1", "trace-id"));
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 200, "dummy@email.com", null, "127.0.0.1", "trace-id"));
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 300, "dummy@email.com", null, "127.0.0.1", "trace-id"));
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 900, "dummy@email.com", null, "127.0.0.1", "trace-id")); // Too recent
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 100));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 200));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 300));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 900)); // Too recent
 
         List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 300, currentTime);
 
@@ -385,7 +385,7 @@ public class SqsMessageParserTest {
         Message mockMsg = createValidMessage(VALID_HASH_BASE64, VALID_ID_BASE64, TEST_TIMESTAMP_MS);
         
         long currentTime = 1000L;
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime, "dummy@email.com", null, "127.0.0.1", "trace-id"));
+        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime));
 
         List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 0, currentTime);
 
