@@ -495,12 +495,4 @@ public class OptOutTrafficCalculator {
         return stats;
     }
     
-    /**
-     * Clear the cache (for testing or manual reset)
-     */
-    public void clearCache() {
-        int size = deltaFileCache.size();
-        deltaFileCache.clear();
-        LOGGER.info("Cleared cache ({} entries)", size);
-    }
 }
