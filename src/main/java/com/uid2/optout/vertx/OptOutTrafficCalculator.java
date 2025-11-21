@@ -72,6 +72,7 @@ public class OptOutTrafficCalculator {
             super(message);
         }
     }
+    
     /**
      * Constructor for OptOutTrafficCalculator
      * 
