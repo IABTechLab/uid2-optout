@@ -811,20 +811,6 @@ public class OptOutTrafficCalculatorTest {
         assertEquals(0, stats.get("total_cached_timestamps"));
     }
 
-    @Test
-    void testClearCache() throws Exception {
-        // Setup
-        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
-            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
-
-        // Act
-        calculator.clearCache();
-
-        // Assert - should return empty stats
-        Map<String, Object> stats = calculator.getCacheStats();
-        assertEquals(0, stats.get("cached_files"));
-    }
-
     // ============================================================================
     // SECTION 8: Helper Methods for Test Data Creation
     // ============================================================================

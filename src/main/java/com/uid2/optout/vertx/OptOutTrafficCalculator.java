@@ -37,7 +37,7 @@ public class OptOutTrafficCalculator {
     private final Map<String, FileRecordCache> deltaFileCache = new ConcurrentHashMap<>();
     private final ICloudStorage cloudStorage;
     private final String s3DeltaPrefix;  // (e.g. "optout-v2/delta/")
-    private final String trafficConfigPath;
+    private final String trafficCalcConfigPath;
     private int thresholdMultiplier;
     private int currentEvaluationWindowSeconds;
     private int previousEvaluationWindowSeconds;
@@ -79,11 +79,11 @@ public class OptOutTrafficCalculator {
      * @param s3DeltaPrefix S3 prefix for delta files
      * @param trafficCalcConfigS3Path S3 path for traffic calc config
      */
-    public OptOutTrafficCalculator(ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficConfigPath) throws MalformedTrafficCalcConfigException {
+    public OptOutTrafficCalculator(ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficCalcConfigPath) throws MalformedTrafficCalcConfigException {
         this.cloudStorage = cloudStorage;
         this.thresholdMultiplier = DEFAULT_THRESHOLD_MULTIPLIER;
         this.s3DeltaPrefix = s3DeltaPrefix;
-        this.trafficConfigPath = trafficConfigPath;
+        this.trafficCalcConfigPath = trafficCalcConfigPath;
         this.currentEvaluationWindowSeconds = HOURS_24 - 300; //23h55m (5m queue window)
         this.previousEvaluationWindowSeconds = HOURS_24; //24h
         // Initial whitelist load
@@ -111,7 +111,7 @@ public class OptOutTrafficCalculator {
      */
     public void reloadTrafficCalcConfig() throws MalformedTrafficCalcConfigException {
         LOGGER.info("Loading traffic calc config from ConfigMap");
-        try (InputStream is = Files.newInputStream(Paths.get(trafficConfigPath))) {
+        try (InputStream is = Files.newInputStream(Paths.get(trafficCalcConfigPath))) {
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             JsonObject whitelistConfig = new JsonObject(content);
 
@@ -126,7 +126,7 @@ public class OptOutTrafficCalculator {
                        this.currentEvaluationWindowSeconds, this.previousEvaluationWindowSeconds, ranges.size());
             
         } catch (Exception e) {
-            LOGGER.warn("No traffic calc config found at: {}", trafficConfigPath, e);
+            LOGGER.warn("No traffic calc config found at: {}", trafficCalcConfigPath, e);
             throw new MalformedTrafficCalcConfigException("Failed to load traffic calc config: " + e.getMessage());
         }
     }
@@ -477,12 +477,4 @@ public class OptOutTrafficCalculator {
         return stats;
     }
     
-    /**
-     * Clear the cache (for testing or manual reset)
-     */
-    public void clearCache() {
-        int size = deltaFileCache.size();
-        deltaFileCache.clear();
-        LOGGER.info("Cleared cache ({} entries)", size);
-    }
 }
