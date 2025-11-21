@@ -72,6 +72,7 @@ public class OptOutTrafficCalculator {
             super(message);
         }
     }
+
     /**
      * Constructor for OptOutTrafficCalculator
      * 
@@ -126,7 +127,7 @@ public class OptOutTrafficCalculator {
                        this.currentEvaluationWindowSeconds, this.previousEvaluationWindowSeconds, ranges.size());
             
         } catch (Exception e) {
-            LOGGER.warn("No traffic calc config found at: {}", trafficCalcConfigPath, e);
+            LOGGER.warn("Failed to load traffic calc config. Config is malformed or missing: {}", trafficCalcConfigPath, e);
             throw new MalformedTrafficCalcConfigException("Failed to load traffic calc config: " + e.getMessage());
         }
     }
