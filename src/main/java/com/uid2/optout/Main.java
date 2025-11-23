@@ -1,7 +1,8 @@
 package com.uid2.optout;
 
 import com.uid2.optout.vertx.*;
-import com.uid2.optout.vertx.OptOutTrafficFilter.BlacklistConfigException;
+import com.uid2.optout.vertx.OptOutTrafficFilter.MalformedTrafficFilterConfigException;
+import com.uid2.optout.vertx.OptOutTrafficCalculator.MalformedTrafficCalcConfigException;
 import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationResponseHandler;
@@ -28,7 +29,6 @@ import io.micrometer.prometheus.PrometheusRenameFilter;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpServerOptions;
-import io.vertx.core.http.impl.HttpUtils;
 import io.vertx.core.json.JsonObject;
 import io.vertx.micrometer.MetricsDomain;
 import org.slf4j.Logger;
@@ -297,16 +297,22 @@ public class Main {
                     fsSqs = CloudUtils.createStorage(optoutBucket, sqsConfig);
                 }
 
-                // Deploy SQS log producer with its own storage instance
-                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, sqsCs);
+                // Create SQS-specific cloud storage instance for dropped requests (different bucket)
+                String optoutBucketDroppedRequests = this.config.getString(Const.Config.OptOutS3BucketDroppedRequestsProp);
+                ICloudStorage fsSqsDroppedRequests = CloudUtils.createStorage(optoutBucketDroppedRequests, config);
+
+                // Deploy SQS log producer with its own storage instance    
+                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(config, fsSqs, fsSqsDroppedRequests, sqsCs, Const.Event.DeltaProduce, null);
                 futs.add(this.deploySingleInstance(sqsLogProducer));
 
                 LOGGER.info("SQS log producer deployed - bucket: {}, folder: {}", 
                     this.config.getString(Const.Config.OptOutS3BucketProp), sqsFolder);
             } catch (IOException e) {
                 LOGGER.error("Failed to initialize SQS log producer, delta production will be disabled: " + e.getMessage(), e);
-            } catch (BlacklistConfigException e) {
+            } catch (MalformedTrafficFilterConfigException e) {
                 LOGGER.error("The traffic filter config is malformed, refusing to process messages, delta production will be disabled: " + e.getMessage(), e);
+            } catch (MalformedTrafficCalcConfigException e) {
+                LOGGER.error("The traffic calc config is malformed, refusing to process messages, delta production will be disabled: " + e.getMessage(), e);
             }
         }
 
