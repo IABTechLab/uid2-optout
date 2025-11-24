@@ -351,7 +351,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                 currentDeltaStream = new ByteArrayOutputStream();
                 
                 droppedRequestStream = new JsonArray();
-                currentDroppedRequestName = String.format("%s%03d_%s_%08x.dat", "optout-dropped-", replicaId, Instant.now().truncatedTo(ChronoUnit.SECONDS).toString().replace(':', '.'), OptOutUtils.rand.nextInt());
+                currentDroppedRequestName = String.format("%s%03d_%s_%08x.json", "optout-dropped-", replicaId, Instant.now().truncatedTo(ChronoUnit.SECONDS).toString().replace(':', '.'), OptOutUtils.rand.nextInt());
 
                 this.writeStartOfDelta(currentDeltaStream, currentDeltaWindowStart);
 
