@@ -53,7 +53,7 @@ public class OptOutSqsLogProducerTest {
     private static final String TRAFFIC_FILTER_CONFIG_PATH = "./traffic-filter.json";
     private static final String TRAFFIC_CALC_CONFIG_PATH = "./traffic-calc.json";
     private static final String MANUAL_OVERRIDE_S3_PATH = "manual-override.json";
-    private static final String S3_DELTA_PREFIX = "optout-v2/delta/";
+    private static final String S3_DELTA_PREFIX = "sqs-delta";
     
     @Before
     public void setup(TestContext context) throws Exception {
@@ -74,7 +74,8 @@ public class OptOutSqsLogProducerTest {
               .put(Const.Config.TrafficFilterConfigPathProp, TRAFFIC_FILTER_CONFIG_PATH)
               .put(Const.Config.TrafficCalcConfigPathProp, TRAFFIC_CALC_CONFIG_PATH)
               .put(Const.Config.ManualOverrideS3PathProp, MANUAL_OVERRIDE_S3_PATH)
-              .put(Const.Config.OptOutS3BucketDroppedRequestsProp, TEST_BUCKET_DROPPED_REQUESTS);
+              .put(Const.Config.OptOutS3BucketDroppedRequestsProp, TEST_BUCKET_DROPPED_REQUESTS)
+              .put(Const.Config.OptOutSqsS3FolderProp, S3_DELTA_PREFIX);
         
         // Mock cloud sync to return proper S3 paths
         when(cloudSync.toCloudPath(anyString()))
@@ -825,10 +826,10 @@ public class OptOutSqsLogProducerTest {
         
         // Mock S3 operations for this test
         // Use doAnswer to create fresh streams on each call (streams are consumed on read)
-        doReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
-                .when(cloudStorage).list(S3_DELTA_PREFIX);
+        doReturn(Arrays.asList("sqs-delta/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
+                .when(cloudStorage).list("sqs-delta");
         doAnswer(inv -> new ByteArrayInputStream(deltaFileBytes))
-                .when(cloudStorage).download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat");
+                .when(cloudStorage).download("sqs-delta/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat");
         doAnswer(inv -> new java.io.ByteArrayInputStream(manualOverride.encode().getBytes()))
                 .when(cloudStorage).download("manual-override.json");
         
@@ -896,10 +897,10 @@ public class OptOutSqsLogProducerTest {
         
         // Mock S3 operations for historical data
         // Use doAnswer to create fresh streams on each call
-        doReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_baseline.dat"))
-                .when(cloudStorage).list(S3_DELTA_PREFIX);
+        doReturn(Arrays.asList("sqs-delta/delta/optout-delta--01_2025-11-13T00.00.00Z_baseline.dat"))
+                .when(cloudStorage).list("sqs-delta");
         doAnswer(inv -> new ByteArrayInputStream(deltaFileBytes))
-                .when(cloudStorage).download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_baseline.dat");
+                .when(cloudStorage).download("sqs-delta/delta/optout-delta--01_2025-11-13T00.00.00Z_baseline.dat");
         
         // No manual override set (returns null)
         doReturn(null).when(cloudStorage).download("manual-override.json");

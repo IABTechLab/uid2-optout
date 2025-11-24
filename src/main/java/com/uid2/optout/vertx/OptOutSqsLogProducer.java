@@ -110,9 +110,9 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         int bufferSize = jsonConfig.getInteger(Const.Config.OptOutProducerBufferSizeProp);
         this.buffer = ByteBuffer.allocate(bufferSize).order(ByteOrder.LITTLE_ENDIAN);
 
-        this.trafficFilter = new OptOutTrafficFilter(jsonConfig.getString(Const.Config.TrafficFilterConfigPathProp, "/app/conf/traffic-filter.json"));
-        this.trafficCalculator = new OptOutTrafficCalculator(cloudStorage, "optout-v2/delta/", jsonConfig.getString(Const.Config.TrafficCalcConfigPathProp, "/app/conf/traffic-calc.json"));
-        this.manualOverrideS3Path = jsonConfig.getString(Const.Config.ManualOverrideS3PathProp, "manual-override.json");
+        this.trafficFilter = new OptOutTrafficFilter(jsonConfig.getString(Const.Config.TrafficFilterConfigPathProp));
+        this.trafficCalculator = new OptOutTrafficCalculator(cloudStorage, jsonConfig.getString(Const.Config.OptOutSqsS3FolderProp), jsonConfig.getString(Const.Config.TrafficCalcConfigPathProp));
+        this.manualOverrideS3Path = jsonConfig.getString(Const.Config.ManualOverrideS3PathProp);
     }
 
     @Override
