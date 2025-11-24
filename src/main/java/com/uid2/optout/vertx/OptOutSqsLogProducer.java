@@ -286,6 +286,12 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
 
 
     private DeltaProductionResult produceBatchedDeltas(List<SqsParsedMessage> messages) throws IOException {
+        // Check for manual override at the start of the batch (and then between each delta window)
+        if (getManualOverride().equals("DELAYED_PROCESSING")) {
+            LOGGER.info("Manual override set to DELAYED_PROCESSING, stopping production");
+            return new DeltaProductionResult(0, 0, 0, 0);
+        }
+        
         int deltasProduced = 0;
         int entriesProcessed = 0;
 
@@ -544,14 +550,14 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     }
 
     /**
-     * Upload a JSON conifg file to S3 containig the following:
+     * Upload a JSON config file to S3 containing the following:
      * {"manual_override": "DELAYED_PROCESSING"}
+     * Manual override file is at the root of the S3 bucket
      */
     private void setDelayedProcessingOverride() {
         try {
             JsonObject config = new JsonObject().put("manual_override", "DELAYED_PROCESSING");
-            String s3Path = this.cloudSync.toCloudPath(this.manualOverrideS3Path);
-            this.cloudStorage.upload(new ByteArrayInputStream(config.encode().getBytes()), s3Path);
+            this.cloudStorage.upload(new ByteArrayInputStream(config.encode().getBytes()), this.manualOverrideS3Path);
         } catch (Exception e) {
             LOGGER.error("Error setting delayed processing override", e);
         }
@@ -559,12 +565,11 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
 
     /**
      * Check if there is a manual override set in S3 for DEFAULT or DELAYED_PROCESSING status
+     * Manual override file is at the root of the S3 bucket
      */
-
      private String getManualOverride() {
         try {
-            String s3Path = this.cloudSync.toCloudPath(this.manualOverrideS3Path);
-            InputStream inputStream = this.cloudStorage.download(s3Path);
+            InputStream inputStream = this.cloudStorage.download(this.manualOverrideS3Path);
             JsonObject configJson = Utils.toJsonObject(inputStream);
             return configJson.getString("manual_override", "");
         } catch (Exception e) {
