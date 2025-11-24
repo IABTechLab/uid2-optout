@@ -1,10 +1,7 @@
 package com.uid2.optout.vertx;
 
-import com.uid2.optout.util.SqsUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import software.amazon.awssdk.services.sqs.model.Message;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,8 +42,8 @@ public class OptOutTrafficFilter {
         }
     }
 
-    public static class BlacklistConfigException extends Exception {
-        public BlacklistConfigException(String message) {
+    public static class MalformedTrafficFilterConfigException extends Exception {
+        public MalformedTrafficFilterConfigException(String message) {
             super(message);
         }
     }
@@ -55,9 +52,9 @@ public class OptOutTrafficFilter {
      * Constructor for OptOutTrafficFilter
      * 
      * @param trafficFilterConfigPath S3 path for traffic filter config
-     * @throws BlacklistConfigException if the traffic filter config is invalid
+     * @throws MalformedTrafficFilterConfigException if the traffic filter config is invalid
      */
-    public OptOutTrafficFilter(String trafficFilterConfigPath) throws BlacklistConfigException {
+    public OptOutTrafficFilter(String trafficFilterConfigPath) throws MalformedTrafficFilterConfigException {
         this.trafficFilterConfigPath = trafficFilterConfigPath;
         // Initial filter rules load
         this.filterRules = Collections.emptyList(); // start empty
@@ -80,7 +77,7 @@ public class OptOutTrafficFilter {
      * 
      * Can be called periodically to pick up config changes without restarting.
      */
-    public void reloadTrafficFilterConfig() throws BlacklistConfigException {
+    public void reloadTrafficFilterConfig() throws MalformedTrafficFilterConfigException {
         LOGGER.info("Loading traffic filter config from ConfigMap");
         try (InputStream is = Files.newInputStream(Paths.get(trafficFilterConfigPath))) {
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
@@ -93,20 +90,20 @@ public class OptOutTrafficFilter {
             
         } catch (Exception e) {
             LOGGER.warn("No traffic filter config found at: {}", trafficFilterConfigPath, e);
-            throw new BlacklistConfigException(e.getMessage());
+            throw new MalformedTrafficFilterConfigException(e.getMessage());
         } 
     }
 
     /**
      * Parse request filtering rules from JSON config
      */
-    List<TrafficFilterRule> parseFilterRules(JsonObject config) throws BlacklistConfigException {
+    List<TrafficFilterRule> parseFilterRules(JsonObject config) throws MalformedTrafficFilterConfigException {
         List<TrafficFilterRule> rules = new ArrayList<>();
         try {
             JsonArray blacklistRequests = config.getJsonArray("blacklist_requests");
             if (blacklistRequests == null) {
                 LOGGER.error("Invalid traffic filter config: blacklist_requests is null");
-                throw new BlacklistConfigException("Invalid traffic filter config: blacklist_requests is null");
+                throw new MalformedTrafficFilterConfigException("Invalid traffic filter config: blacklist_requests is null");
             }
             for (int i = 0; i < blacklistRequests.size(); i++) {
                 JsonObject ruleJson = blacklistRequests.getJsonObject(i);
@@ -120,7 +117,7 @@ public class OptOutTrafficFilter {
                     
                     if (start >= end) {
                         LOGGER.error("Invalid traffic filter rule: range start must be less than end: {}", ruleJson.encode());
-                        throw new BlacklistConfigException("Invalid traffic filter rule: range start must be less than end");
+                        throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule: range start must be less than end");
                     }
                     range.add(start);
                     range.add(end);
@@ -138,7 +135,7 @@ public class OptOutTrafficFilter {
                 // log error and throw exception if rule is invalid
                 if (range.size() != 2 || ipAddresses.size() == 0 || range.get(1) - range.get(0) > 86400) { // range must be 24 hours or less
                     LOGGER.error("Invalid traffic filter rule: {}", ruleJson.encode());
-                    throw new BlacklistConfigException("Invalid traffic filter rule");
+                    throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule");
                 }
 
                 TrafficFilterRule rule = new TrafficFilterRule(range, ipAddresses);
@@ -149,7 +146,7 @@ public class OptOutTrafficFilter {
             return rules;
         } catch (Exception e) {
             LOGGER.error("Failed to parse traffic filter rules: config={}, error={}", config.encode(), e.getMessage());
-            throw new BlacklistConfigException(e.getMessage());
+            throw new MalformedTrafficFilterConfigException(e.getMessage());
         }
     }
 

@@ -35,13 +35,16 @@ public class OptOutSqsLogProducerTest {
     
     private SqsClient sqsClient;
     private ICloudStorage cloudStorage;
+    private ICloudStorage cloudStorageDroppedRequests;
     private OptOutCloudSync cloudSync;
     
+    private static final String TEST_BUCKET_DROPPED_REQUESTS = "test-bucket-dropped-requests";
     private static final String TEST_QUEUE_URL = "https://sqs.test.amazonaws.com/123456789/test";
     private static final String TEST_API_KEY = "test-api-key";
     private static final String VALID_HASH_BASE64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
     private static final String VALID_ID_BASE64 = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
     private static final String TRAFFIC_FILTER_CONFIG_PATH = "./traffic-filter.json";
+    private static final String TRAFFIC_CALC_CONFIG_PATH = "./traffic-calc.json";
     
     @Before
     public void setup(TestContext context) throws Exception {
@@ -58,7 +61,9 @@ public class OptOutSqsLogProducerTest {
               .put(Const.Config.OptOutProducerBufferSizeProp, 65536)
               .put(Const.Config.OptOutProducerReplicaIdProp, 1)
               .put(Const.Config.OptOutInternalApiTokenProp, TEST_API_KEY)
-              .put(Const.Config.TrafficFilterConfigPathProp, TRAFFIC_FILTER_CONFIG_PATH);
+              .put(Const.Config.TrafficFilterConfigPathProp, TRAFFIC_FILTER_CONFIG_PATH)
+              .put(Const.Config.TrafficCalcConfigPathProp, TRAFFIC_CALC_CONFIG_PATH)
+              .put(Const.Config.OptOutS3BucketDroppedRequestsProp, TEST_BUCKET_DROPPED_REQUESTS);
         
         // Mock cloud sync to return proper S3 paths
         when(cloudSync.toCloudPath(anyString()))
@@ -77,12 +82,19 @@ public class OptOutSqsLogProducerTest {
                     }
                     """;
             createTrafficConfigFile(traficFilterConfig);
+            
+            String trafficCalcConfig = """
+                    {
+                        "traffic_calc_whitelist_ranges": []
+                    }
+                    """;
+            createTrafficCalcConfigFile(trafficCalcConfig);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
         
         // Create producer with mock SqsClient
-        producer = new OptOutSqsLogProducer(config, cloudStorage, cloudSync, Const.Event.DeltaProduce, sqsClient);
+        producer = new OptOutSqsLogProducer(config, cloudStorage, cloudStorageDroppedRequests, cloudSync, Const.Event.DeltaProduce, sqsClient);
         
         // Deploy verticle
         Async async = context.async();
@@ -101,11 +113,27 @@ public class OptOutSqsLogProducerTest {
                 throw new RuntimeException(e);
             }
         }
+        if (Files.exists(Path.of(TRAFFIC_CALC_CONFIG_PATH))) {
+            try {
+                Files.delete(Path.of(TRAFFIC_CALC_CONFIG_PATH));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     private void createTrafficConfigFile(String content) {
         try {
             Path configPath = Path.of(TRAFFIC_FILTER_CONFIG_PATH);
+            Files.writeString(configPath, content);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void createTrafficCalcConfigFile(String content) {
+        try {
+            Path configPath = Path.of(TRAFFIC_CALC_CONFIG_PATH);
             Files.writeString(configPath, content);
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -203,7 +231,7 @@ public class OptOutSqsLogProducerTest {
                 })
                 .onComplete(context.asyncAssertSuccess(body -> {
                     JsonObject response = new JsonObject(body.toString());
-                    context.assertEquals("success", response.getString("status"));
+                    context.assertEquals("skipped", response.getString("status"));
                     context.assertEquals(0, response.getInteger("deltas_produced"));
                     context.assertEquals(0, response.getInteger("entries_processed"));
                     
@@ -247,7 +275,7 @@ public class OptOutSqsLogProducerTest {
                 .onComplete(context.asyncAssertSuccess(body -> {
                     JsonObject response = new JsonObject(body.toString());
                     context.assertEquals("skipped", response.getString("status"));
-                    context.assertEquals("All messages too recent", response.getString("reason"));
+                    context.assertEquals("All messages are too recent", response.getString("reason"));
                     
                     // No processing should occur
                     try {
