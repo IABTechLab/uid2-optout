@@ -23,24 +23,24 @@ import java.util.stream.Collectors;
 /**
  * Calculates opt-out traffic patterns to determine DEFAULT or DELAYED_PROCESSING status.
  * 
- * Compares recent ~24h traffic (sumCurrent) against previous ~24h baseline (sumPast).
- * Both sums exclude records in whitelist ranges (surge windows determined by engineers).
+ * Compares recent ~24h traffic (sumCurrent) against a configurable baseline (baselineTraffic) of expected traffic in 24 hours.
+ * The baseline is calculated as baselineTraffic*thresholdMultiplier.
+ * sumCurrent excludes records in whitelist ranges (surge windows determined by engineers).
  * 
- * Returns DELAYED_PROCESSING if sumCurrent >= 5 × sumPast, indicating abnormal traffic spike.
+ * Returns DELAYED_PROCESSING if sumCurrent >= thresholdMultiplier * baselineTraffic, indicating abnormal traffic spike.
  */
 public class OptOutTrafficCalculator {
     private static final Logger LOGGER = LoggerFactory.getLogger(OptOutTrafficCalculator.class);
     
     private static final int HOURS_24 = 24 * 3600;  // 24 hours in seconds
-    private static final int DEFAULT_THRESHOLD_MULTIPLIER = 5;
     
     private final Map<String, FileRecordCache> deltaFileCache = new ConcurrentHashMap<>();
     private final ICloudStorage cloudStorage;
     private final String s3DeltaPrefix;  // (e.g. "optout-v2/delta/")
     private final String trafficCalcConfigPath;
+    private int baselineTraffic;
     private int thresholdMultiplier;
-    private int currentEvaluationWindowSeconds;
-    private int previousEvaluationWindowSeconds;
+    private int evaluationWindowSeconds;
     private List<List<Long>> whitelistRanges;
     
     public enum TrafficStatus {
@@ -82,13 +82,8 @@ public class OptOutTrafficCalculator {
      */
     public OptOutTrafficCalculator(ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficCalcConfigPath) throws MalformedTrafficCalcConfigException {
         this.cloudStorage = cloudStorage;
-        this.thresholdMultiplier = DEFAULT_THRESHOLD_MULTIPLIER;
         this.s3DeltaPrefix = s3DeltaPrefix;
         this.trafficCalcConfigPath = trafficCalcConfigPath;
-        this.currentEvaluationWindowSeconds = HOURS_24 - 300; //23h55m (5m queue window)
-        this.previousEvaluationWindowSeconds = HOURS_24; //24h
-        // Initial whitelist load
-        this.whitelistRanges = Collections.emptyList();  // Start empty
         reloadTrafficCalcConfig();  // Load ConfigMap
         
         LOGGER.info("OptOutTrafficCalculator initialized: s3DeltaPrefix={}, threshold={}x", 
@@ -116,16 +111,33 @@ public class OptOutTrafficCalculator {
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             JsonObject whitelistConfig = new JsonObject(content);
 
-            this.thresholdMultiplier = whitelistConfig.getInteger("traffic_calc_threshold_multiplier", DEFAULT_THRESHOLD_MULTIPLIER);
-            this.currentEvaluationWindowSeconds = whitelistConfig.getInteger("traffic_calc_current_evaluation_window_seconds", HOURS_24 - 300);
-            this.previousEvaluationWindowSeconds = whitelistConfig.getInteger("traffic_calc_previous_evaluation_window_seconds", HOURS_24);
+            // Validate required fields exist
+            if (!whitelistConfig.containsKey("traffic_calc_evaluation_window_seconds")) {
+                throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_evaluation_window_seconds");
+            }
+            if (!whitelistConfig.containsKey("traffic_calc_baseline_traffic")) {
+                throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_baseline_traffic");
+            }
+            if (!whitelistConfig.containsKey("traffic_calc_threshold_multiplier")) {
+                throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_threshold_multiplier");
+            }
+            if (!whitelistConfig.containsKey("traffic_calc_whitelist_ranges")) {
+                throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_whitelist_ranges");
+            }
+
+            this.evaluationWindowSeconds = whitelistConfig.getInteger("traffic_calc_evaluation_window_seconds");
+            this.baselineTraffic = whitelistConfig.getInteger("traffic_calc_baseline_traffic");
+            this.thresholdMultiplier = whitelistConfig.getInteger("traffic_calc_threshold_multiplier");
             
             List<List<Long>> ranges = parseWhitelistRanges(whitelistConfig);
             this.whitelistRanges = ranges;
             
-            LOGGER.info("Successfully loaded traffic calc config from ConfigMap: currentEvaluationWindowSeconds={}, previousEvaluationWindowSeconds={}, whitelistRanges={}",
-                       this.currentEvaluationWindowSeconds, this.previousEvaluationWindowSeconds, ranges.size());
+            LOGGER.info("Successfully loaded traffic calc config from ConfigMap: evaluationWindowSeconds={}, baselineTraffic={}, thresholdMultiplier={}, whitelistRanges={}",
+                       this.evaluationWindowSeconds, this.baselineTraffic, this.thresholdMultiplier, ranges.size());
             
+        } catch (MalformedTrafficCalcConfigException e) {
+            LOGGER.warn("Failed to load traffic calc config. Config is malformed: {}", trafficCalcConfigPath, e);
+            throw e;
         } catch (Exception e) {
             LOGGER.warn("Failed to load traffic calc config. Config is malformed or missing: {}", trafficCalcConfigPath, e);
             throw new MalformedTrafficCalcConfigException("Failed to load traffic calc config: " + e.getMessage());
@@ -139,29 +151,27 @@ public class OptOutTrafficCalculator {
         List<List<Long>> ranges = new ArrayList<>();
         
         try {
-            if (config.containsKey("traffic_calc_whitelist_ranges")) {
-                var rangesArray = config.getJsonArray("traffic_calc_whitelist_ranges");
-                if (rangesArray != null) {
-                    for (int i = 0; i < rangesArray.size(); i++) {
-                        var rangeArray = rangesArray.getJsonArray(i);
-                        if (rangeArray != null && rangeArray.size() >= 2) {
-                            long start = rangeArray.getLong(0);
-                            long end = rangeArray.getLong(1);
-                            
-                            if(start >= end) {
-                                LOGGER.error("Invalid whitelist range: start must be less than end: [{}, {}]", start, end);
-                                throw new MalformedTrafficCalcConfigException("Invalid whitelist range at index " + i + ": start must be less than end");
-                            }
-
-                            if (end - start > 86400) {
-                                LOGGER.error("Invalid whitelist range: range must be less than 24 hours: [{}, {}]", start, end);
-                                throw new MalformedTrafficCalcConfigException("Invalid whitelist range at index " + i + ": range must be less than 24 hours");
-                            }
-                            
-                            List<Long> range = Arrays.asList(start, end);
-                            ranges.add(range);
-                            LOGGER.info("Loaded whitelist range: [{}, {}]", start, end);
+            var rangesArray = config.getJsonArray("traffic_calc_whitelist_ranges");
+            if (rangesArray != null) {
+                for (int i = 0; i < rangesArray.size(); i++) {
+                    var rangeArray = rangesArray.getJsonArray(i);
+                    if (rangeArray != null && rangeArray.size() >= 2) {
+                        long start = rangeArray.getLong(0);
+                        long end = rangeArray.getLong(1);
+                        
+                        if(start >= end) {
+                            LOGGER.error("Invalid whitelist range: start must be less than end: [{}, {}]", start, end);
+                            throw new MalformedTrafficCalcConfigException("Invalid whitelist range at index " + i + ": start must be less than end");
                         }
+
+                        if (end - start > 86400) {
+                            LOGGER.error("Invalid whitelist range: range must be less than 24 hours: [{}, {}]", start, end);
+                            throw new MalformedTrafficCalcConfigException("Invalid whitelist range at index " + i + ": range must be less than 24 hours");
+                        }
+                        
+                        List<Long> range = Arrays.asList(start, end);
+                        ranges.add(range);
+                        LOGGER.info("Loaded whitelist range: [{}, {}]", start, end);
                     }
                 }
             }
@@ -198,16 +208,14 @@ public class OptOutTrafficCalculator {
             long t = findOldestQueueTimestamp(sqsMessages);
             LOGGER.info("Traffic calculation starting with t={} (oldest SQS message)", t);
             
-            // Define time windows
-            long currentWindowStart = t - this.currentEvaluationWindowSeconds - getWhitelistDuration(t, t - this.currentEvaluationWindowSeconds); // for range [t-23h55m, t+5m]
-            long pastWindowStart = currentWindowStart - this.previousEvaluationWindowSeconds - getWhitelistDuration(currentWindowStart, currentWindowStart - this.previousEvaluationWindowSeconds); // for range [t-47h55m, t-23h55m]
+            // define start time of the evaluation window [t-24h, t+5m]
+            long windowStart = t - this.evaluationWindowSeconds - getWhitelistDuration(t, t - this.evaluationWindowSeconds);
             
-            // Evict old cache entries (older than past window start)
-            evictOldCacheEntries(pastWindowStart);
+            // Evict old cache entries (older than window start)
+            evictOldCacheEntries(windowStart);
             
             // Process delta files and count
-            int sumCurrent = 0;
-            int sumPast = 0;
+            int sum = 0;
             
             for (String s3Path : deltaS3Paths) {
                 List<Long> timestamps = getTimestampsFromFile(s3Path);
@@ -215,7 +223,7 @@ public class OptOutTrafficCalculator {
                 boolean shouldStop = false;
                 for (long ts : timestamps) {
                     // Stop condition: record is older than our 48h window
-                    if (ts < pastWindowStart) {
+                    if (ts < windowStart) {
                         LOGGER.debug("Stopping delta file processing at timestamp {} (older than t-48h)", ts);
                         break;
                     }
@@ -225,15 +233,11 @@ public class OptOutTrafficCalculator {
                         continue;
                     }
                     
-                    // Count for sumCurrent: [t-24h, t]
-                    if (ts >= currentWindowStart && ts <= t) {
-                        sumCurrent++;
+                    // Count for sumCurrent: [t-24h, t+5m]
+                    if (ts >= windowStart && ts <= t) {
+                        sum++;
                     }
                     
-                    // Count for sumPast: [t-48h, t-24h]
-                    if (ts >= pastWindowStart && ts < currentWindowStart) {
-                        sumPast++;
-                    }
                 }
                 
                 if (shouldStop) {
@@ -245,14 +249,14 @@ public class OptOutTrafficCalculator {
             if (sqsMessages != null && !sqsMessages.isEmpty()) {
                 int sqsCount = countSqsMessages(
                     sqsMessages, t);
-                sumCurrent += sqsCount;
+                sum += sqsCount;
             }
             
             // Determine status
-            TrafficStatus status = determineStatus(sumCurrent, sumPast);
+            TrafficStatus status = determineStatus(sum, this.baselineTraffic);
             
-            LOGGER.info("Traffic calculation complete: sumCurrent={}, sumPast={}, status={}", 
-                       sumCurrent, sumPast, status);
+            LOGGER.info("Traffic calculation complete: sum={}, baselineTraffic={}, thresholdMultiplier={}, status={}", 
+                       sum, this.baselineTraffic, this.thresholdMultiplier, status);
             
             return status;
             
