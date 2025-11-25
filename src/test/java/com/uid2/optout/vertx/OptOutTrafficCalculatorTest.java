@@ -146,8 +146,8 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testConstructor_whitelistLoadFailure() throws Exception {
-        // Setup - whitelist load failure
+    void testConstructor_trafficCalcConfigLoadFailure() throws Exception {
+        // Setup - traffic calc config load failure
         createTrafficConfigFile("Invalid JSON");
         assertThrows(MalformedTrafficCalcConfigException.class, () -> {
             new OptOutTrafficCalculator(
@@ -166,11 +166,11 @@ public class OptOutTrafficCalculatorTest {
     }
 
     // ============================================================================
-    // SECTION 2: parseWhitelistRanges()
+    // SECTION 2: parseTrafficCalcConfigRanges()
     // ============================================================================
 
     @Test
-    void testParseWhitelistRanges_emptyConfig() throws Exception {
+    void testParseTrafficCalcConfigRanges_emptyConfig() throws Exception {
         // Setup - no config
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -184,7 +184,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testParseWhitelistRanges_singleRange() throws Exception {
+    void testParseTrafficCalcConfigRanges_singleRange() throws Exception {
         // Setup - single range
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -204,7 +204,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testParseWhitelistRanges_multipleRanges() throws Exception {
+    void testParseTrafficCalcConfigRanges_multipleRanges() throws Exception {
         // Setup - multiple ranges
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -227,7 +227,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testParseWhitelistRanges_misorderedRange() throws Exception {
+    void testParseTrafficCalcConfigRanges_misorderedRange() throws Exception {
         // Setup - range with end < start is malformed
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -244,7 +244,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testParseWhitelistRanges_rangeTooLong() throws Exception {
+    void testParseTrafficCalcConfigRanges_rangeTooLong() throws Exception {
         // Setup - range longer than 24 hours is malformed
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -261,7 +261,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testParseWhitelistRanges_sortsByStartTime() throws Exception {
+    void testParseTrafficCalcConfigRanges_sortsByStartTime() throws Exception {
         // Setup - ranges added out of order
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -284,7 +284,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testParseWhitelistRanges_invalidRangeTooFewElements() throws Exception {
+    void testParseTrafficCalcConfigRanges_invalidRangeTooFewElements() throws Exception {
         // Setup - invalid range with only 1 element;
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -304,7 +304,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testParseWhitelistRanges_nullArray() throws Exception {
+    void testParseTrafficCalcConfigRanges_nullArray() throws Exception {
         // Setup - null array
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -320,20 +320,20 @@ public class OptOutTrafficCalculatorTest {
     }
 
     // ============================================================================
-    // SECTION 3: isInWhitelist()
+    // SECTION 3: isInTrafficCalcConfig()
     // ============================================================================
 
     @Test
-    void testIsInWhitelist_withinSingleRange() throws Exception {
-        // Setup - load whitelist with single range [1000, 2000]
-        String whitelistJson = """
+    void testIsInTrafficCalcConfig_withinSingleRange() throws Exception {
+        // Setup - load traffic calc config with single range [1000, 2000]
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000, 2000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -343,16 +343,16 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testIsInWhitelist_exactlyAtStart() throws Exception {
-        // Setup - load whitelist with single range [1000, 2000]
-        String whitelistJson = """
+    void testIsInTrafficCalcConfig_exactlyAtStart() throws Exception {
+        // Setup - load traffic calc config with single range [1000, 2000]
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000, 2000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -362,16 +362,16 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testIsInWhitelist_exactlyAtEnd() throws Exception {
-        // Setup - load whitelist with single range [1000, 2000]
-        String whitelistJson = """
+    void testIsInTrafficCalcConfig_exactlyAtEnd() throws Exception {
+        // Setup - load traffic calc config with single range [1000, 2000]
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000, 2000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -381,16 +381,16 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testIsInWhitelist_beforeRange() throws Exception {
-        // Setup - load whitelist with single range [1000, 2000]
-        String whitelistJson = """
+    void testIsInTrafficCalcConfig_beforeRange() throws Exception {
+        // Setup - load traffic calc config with single range [1000, 2000]
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000, 2000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -400,16 +400,16 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testIsInWhitelist_afterRange() throws Exception {
-        // Setup - load whitelist with single range [1000, 2000]
-        String whitelistJson = """
+    void testIsInTrafficCalcConfig_afterRange() throws Exception {
+        // Setup - load traffic calc config with single range [1000, 2000]
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000, 2000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -419,9 +419,9 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testIsInWhitelist_betweenRanges() throws Exception {
-        // Setup - load whitelist with two ranges [1000, 2000] and [3000, 4000]
-        String whitelistJson = """
+    void testIsInTrafficCalcConfig_betweenRanges() throws Exception {
+        // Setup - load traffic calc config with two ranges [1000, 2000] and [3000, 4000]
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000, 2000],
@@ -429,7 +429,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -439,8 +439,8 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testIsInWhitelist_emptyRanges() throws Exception {
-        // Setup uses default config from setUp() which has empty whitelist
+    void testIsInTrafficCalcConfig_emptyRanges() throws Exception {
+        // Setup uses default config from setUp() which has empty traffic calc config ranges
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
@@ -449,14 +449,14 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testIsInWhitelist_nullRanges() throws Exception {
-        // Setup - no whitelist loaded (will fail and set empty)
-        String whitelistJson = """
+    void testIsInTrafficCalcConfig_nullRanges() throws Exception {
+        // Setup - no traffic calc config ranges loaded (will fail and set empty)
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": null
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -466,9 +466,9 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testIsInWhitelist_invalidRangeSize() throws Exception {
-        // Setup - load whitelist with invalid range (only 1 element) and valid range
-        String whitelistJson = """
+    void testIsInTrafficCalcConfig_invalidRangeSize() throws Exception {
+        // Setup - load traffic calc config with invalid range (only 1 element) and valid range
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000],
@@ -476,7 +476,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -487,9 +487,9 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testIsInWhitelist_multipleRanges() throws Exception {
-        // Setup - load whitelist with multiple ranges
-        String whitelistJson = """
+    void testIsInTrafficCalcConfig_multipleRanges() throws Exception {
+        // Setup - load traffic calc config with multiple ranges
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000, 2000],
@@ -498,7 +498,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -511,11 +511,11 @@ public class OptOutTrafficCalculatorTest {
     }
 
     // ============================================================================
-    // SECTION 4: getWhitelistDuration()
+    // SECTION 4: getTrafficCalcConfigDuration()
     // ============================================================================
 
     @Test
-    void testGetWhitelistDuration_noRanges() throws Exception {
+    void testGetTrafficCalcConfigDuration_noRanges() throws Exception {
         // Setup - no ranges
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -525,16 +525,16 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testGetWhitelistDuration_rangeFullyWithinWindow() throws Exception {
+    void testGetTrafficCalcConfigDuration_rangeFullyWithinWindow() throws Exception {
         // Setup - range fully within window
-        String whitelistJson = """
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [6000, 7000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -547,16 +547,16 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testGetWhitelistDuration_rangePartiallyOverlapsStart() throws Exception {
+    void testGetTrafficCalcConfigDuration_rangePartiallyOverlapsStart() throws Exception {
         // Setup - range partially overlaps start of window
-        String whitelistJson = """
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [3000, 7000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -569,16 +569,16 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testGetWhitelistDuration_rangePartiallyOverlapsEnd() throws Exception {
+    void testGetTrafficCalcConfigDuration_rangePartiallyOverlapsEnd() throws Exception {
         // Setup - range partially overlaps end of window
-        String whitelistJson = """
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [8000, 12000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -591,16 +591,16 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testGetWhitelistDuration_rangeCompletelyOutsideWindow() throws Exception {
+    void testGetTrafficCalcConfigDuration_rangeCompletelyOutsideWindow() throws Exception {
         // Setup - range completely outside window
-        String whitelistJson = """
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000, 2000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -613,9 +613,9 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testGetWhitelistDuration_multipleRanges() throws Exception {
+    void testGetTrafficCalcConfigDuration_multipleRanges() throws Exception {
         // Setup - multiple ranges
-        String whitelistJson = """
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [6000, 7000],
@@ -623,7 +623,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -636,16 +636,16 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testGetWhitelistDuration_rangeSpansEntireWindow() throws Exception {
+    void testGetTrafficCalcConfigDuration_rangeSpansEntireWindow() throws Exception {
         // Setup - range spans entire window
-        String whitelistJson = """
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [3000, 12000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -653,7 +653,7 @@ public class OptOutTrafficCalculatorTest {
         // Act - window [5000, 10000], range [3000, 12000]
         long duration = calculator.getWhitelistDuration(10000L, 5000L);
 
-        // Assert - entire window is whitelisted = 5000
+        // Assert - entire window is in traffic calc config ranges = 5000
         assertEquals(5000L, duration);
     }
 
@@ -779,9 +779,9 @@ public class OptOutTrafficCalculatorTest {
     // ============================================================================
 
     @Test
-    void testReloadWhitelist_success() throws Exception {
-        // Setup - initial whitelist
-        String whitelistJson = """
+    void testReloadTrafficCalcConfig_success() throws Exception {
+        // Setup - initial traffic calc config
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000, 2000],
@@ -789,39 +789,39 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Change the whitelist to a new range
-        String newWhitelistJson = """
+        // Change the traffic calc config to a new range
+        String newTrafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [5000, 6000]
                 ]
             }
             """;
-        createConfigFromPartialJson(newWhitelistJson);
+        createConfigFromPartialJson(newTrafficCalcConfigJson);
 
-        // Act - reload the whitelist
+        // Act - reload the traffic calc config
         calculator.reloadTrafficCalcConfig();
 
-        // Assert - verify new whitelist is loaded
+        // Assert - verify new traffic calc config is loaded
         assertTrue(calculator.isInWhitelist(5500L));
     }
 
     @Test
-    void testReloadWhitelist_failure() throws Exception {
-        // Setup - initial whitelist
-        String whitelistJson = """
+    void testReloadTrafficCalcConfig_failure() throws Exception {
+        // Setup - initial traffic calc config
+        String trafficCalcConfigJson = """
             {
                 "traffic_calc_whitelist_ranges": [
                     [1000, 2000]
                 ]
             }
             """;
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -837,7 +837,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    public void testReloadWhitelist_failure_missingKeys() throws Exception {
+    public void testReloadTrafficCalcConfig_failure_missingKeys() throws Exception {
         // Setup
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -860,7 +860,7 @@ public class OptOutTrafficCalculatorTest {
             calculator.reloadTrafficCalcConfig();
         });
 
-        // Act & Assert missing whitelist ranges
+        // Act & Assert missing traffic calc config ranges
         createTrafficConfigFile("{\"traffic_calc_threshold_multiplier\": 5, \"traffic_calc_evaluation_window_seconds\": 86400, \"traffic_calc_baseline_traffic\": 100}");
         assertThrows(MalformedTrafficCalcConfigException.class, () -> {
             calculator.reloadTrafficCalcConfig();
@@ -868,7 +868,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    public void testReloadWhitelist_failure_misorderedRanges() throws Exception {
+    public void testReloadTrafficCalcConfig_failure_misorderedRanges() throws Exception {
         // Setup - misordered ranges
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -881,7 +881,7 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    public void testReloadWhitelist_failure_rangeTooLong() throws Exception {
+    public void testReloadTrafficCalcConfig_failure_rangeTooLong() throws Exception {
         // Setup - range greater than 24 hours
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -1118,13 +1118,13 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testCalculateStatus_withWhitelist() throws Exception {
+    void testCalculateStatus_withTrafficCalcConfig() throws Exception {
         // Setup - create delta files with some entries
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
         
-        // Whitelist that covers part of window
-        String whitelistJson = String.format("""
+        // Traffic calc config that covers part of window
+        String trafficCalcConfigJson = String.format("""
             {
                 "traffic_calc_whitelist_ranges": [
                     [%d, %d]
@@ -1134,7 +1134,7 @@ public class OptOutTrafficCalculatorTest {
         
         List<Long> timestamps = new ArrayList<>();
         
-        // window - 600 entries (300 in whitelist range, 300 outside)
+        // window - 600 entries (300 in traffic calc config range, 300 outside)
         for (int i = 0; i < 300; i++) {
             timestamps.add(t - 12*3600 + i);
         }
@@ -1144,7 +1144,7 @@ public class OptOutTrafficCalculatorTest {
         
         byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
         
-        createConfigFromPartialJson(whitelistJson);
+        createConfigFromPartialJson(trafficCalcConfigJson);
         when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/delta-001.dat"));
         when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
             .thenReturn(new ByteArrayInputStream(deltaFileBytes));
@@ -1156,8 +1156,8 @@ public class OptOutTrafficCalculatorTest {
         List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
         OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages);
 
-        // Assert - should filter out whitelisted entries
-        // Only 300 from window count (not whitelisted) + 1 SQS = 301
+        // Assert - should filter out entries in traffic calc config ranges
+        // Only 300 from window count (not in traffic calc config ranges) + 1 SQS = 301
         // 301 < 5*100, so DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
     }
