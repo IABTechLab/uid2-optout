@@ -4,6 +4,7 @@ import com.uid2.shared.cloud.CloudStorageException;
 import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.optout.OptOutCollection;
 import com.uid2.shared.optout.OptOutEntry;
+import com.uid2.optout.Const;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import java.nio.file.Files;
@@ -39,11 +40,20 @@ public class OptOutTrafficCalculatorTest {
 
     private static final String S3_DELTA_PREFIX = "optout-v2/delta/";
     private static final String TRAFFIC_CONFIG_PATH = "./traffic-config.json";
+    private static final int BASELINE_TRAFFIC = 100;
+    private static final int THRESHOLD_MULTIPLIER = 5;
+    private static final int EVALUATION_WINDOW_SECONDS = 24 * 3600;
 
     @BeforeEach
     void setUp() {
+        // default config
+        JsonObject config = new JsonObject();
+        config.put(Const.Config.OptOutTrafficCalcBaselineTrafficProp, BASELINE_TRAFFIC);
+        config.put(Const.Config.OptOutTrafficCalcThresholdMultiplierProp, THRESHOLD_MULTIPLIER);
+        config.put(Const.Config.OptOutTrafficCalcEvaluationWindowSecondsProp, EVALUATION_WINDOW_SECONDS);
+        config.put(Const.Config.OptOutTrafficCalcWhitelistRangesProp, new JsonArray());
         try {
-            createTrafficConfigFile("{}");
+            createTrafficConfigFile(config.toString());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -69,6 +79,40 @@ public class OptOutTrafficCalculatorTest {
         }
     }
 
+    /**
+     * Helper to create config by merging partial JSON with defaults
+     */
+    private void createConfigFromPartialJson(String partialJson) {
+        JsonObject partial = new JsonObject(partialJson);
+        JsonObject config = new JsonObject();
+        
+        // Set defaults
+        if (!partial.containsKey(Const.Config.OptOutTrafficCalcBaselineTrafficProp)) {
+            config.put(Const.Config.OptOutTrafficCalcBaselineTrafficProp, BASELINE_TRAFFIC);
+        }
+        if (!partial.containsKey(Const.Config.OptOutTrafficCalcThresholdMultiplierProp)) {
+            config.put(Const.Config.OptOutTrafficCalcThresholdMultiplierProp, THRESHOLD_MULTIPLIER);
+        }
+        if (!partial.containsKey(Const.Config.OptOutTrafficCalcEvaluationWindowSecondsProp)) {
+            config.put(Const.Config.OptOutTrafficCalcEvaluationWindowSecondsProp, EVALUATION_WINDOW_SECONDS);
+        }
+        if (!partial.containsKey(Const.Config.OptOutTrafficCalcWhitelistRangesProp)) {
+            config.put(Const.Config.OptOutTrafficCalcWhitelistRangesProp, new JsonArray());
+        }
+        
+        // Merge in partial config (overrides defaults)
+        partial.forEach(entry -> config.put(entry.getKey(), entry.getValue()));
+        
+        createTrafficConfigFile(config.toString());
+    }
+
+    /**
+     * Helper to create config with custom threshold
+     */
+    private void createConfigWithThreshold(int threshold) {
+        createConfigFromPartialJson("{\"" + Const.Config.OptOutTrafficCalcThresholdMultiplierProp + "\": " + threshold + "}");
+    }
+
     // ============================================================================
     // SECTION 1: Constructor & Initialization Tests
     // ============================================================================
@@ -90,7 +134,7 @@ public class OptOutTrafficCalculatorTest {
     @Test
     void testConstructor_customThreshold() throws Exception {
         // Setup - custom threshold of 10
-        createTrafficConfigFile("{\"traffic_calc_threshold_multiplier\": 10}");
+        createConfigWithThreshold(10);
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
@@ -106,11 +150,12 @@ public class OptOutTrafficCalculatorTest {
         // Setup - whitelist load failure
         createTrafficConfigFile("Invalid JSON");
         assertThrows(MalformedTrafficCalcConfigException.class, () -> {
-            OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            new OptOutTrafficCalculator(
                 cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
         });
 
-        createTrafficConfigFile("{}");
+        // Create valid config to test reload failure
+        createConfigFromPartialJson("{}");
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
                 cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
@@ -288,7 +333,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -307,7 +352,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -326,7 +371,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -345,7 +390,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -364,7 +409,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -384,7 +429,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -395,9 +440,7 @@ public class OptOutTrafficCalculatorTest {
 
     @Test
     void testIsInWhitelist_emptyRanges() throws Exception {
-        // Setup - no whitelist loaded
-        createTrafficConfigFile("{}");
-
+        // Setup uses default config from setUp() which has empty whitelist
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
@@ -413,7 +456,7 @@ public class OptOutTrafficCalculatorTest {
                 "traffic_calc_whitelist_ranges": null
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -433,7 +476,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -455,7 +498,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -491,7 +534,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -513,7 +556,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -535,7 +578,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -557,7 +600,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -580,7 +623,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -602,7 +645,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -707,7 +750,7 @@ public class OptOutTrafficCalculatorTest {
     })
     void testDetermineStatus_variousThresholds(int threshold, int sumCurrent, int sumPast, String expectedStatus) throws Exception {
         // Setup - various thresholds
-        createTrafficConfigFile("{\"traffic_calc_threshold_multiplier\": " + threshold + "}");
+        createConfigWithThreshold(threshold);
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
@@ -746,7 +789,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -759,7 +802,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(newWhitelistJson);
+        createConfigFromPartialJson(newWhitelistJson);
 
         // Act - reload the whitelist
         calculator.reloadTrafficCalcConfig();
@@ -778,7 +821,7 @@ public class OptOutTrafficCalculatorTest {
                 ]
             }
             """;
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
@@ -793,8 +836,65 @@ public class OptOutTrafficCalculatorTest {
 
     }
 
+    @Test
+    public void testReloadWhitelist_failure_missingKeys() throws Exception {
+        // Setup
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        // Act & Assert missing threshold multiplier
+        createTrafficConfigFile("{\"traffic_calc_evaluation_window_seconds\": 86400, \"traffic_calc_baseline_traffic\": 100, \"traffic_calc_whitelist_ranges\": [ [1000, 2000] ]}");
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.reloadTrafficCalcConfig();
+        });
+
+        // Act & Assert missing evaluation window seconds
+        createTrafficConfigFile("{\"traffic_calc_threshold_multiplier\": 5, \"traffic_calc_baseline_traffic\": 100, \"traffic_calc_whitelist_ranges\": [ [1000, 2000] ]}");
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.reloadTrafficCalcConfig();
+        });
+
+        // Act & Assert missing baseline traffic
+        createTrafficConfigFile("{\"traffic_calc_threshold_multiplier\": 5, \"traffic_calc_evaluation_window_seconds\": 86400, \"traffic_calc_whitelist_ranges\": [ [1000, 2000] ]}");
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.reloadTrafficCalcConfig();
+        });
+
+        // Act & Assert missing whitelist ranges
+        createTrafficConfigFile("{\"traffic_calc_threshold_multiplier\": 5, \"traffic_calc_evaluation_window_seconds\": 86400, \"traffic_calc_baseline_traffic\": 100}");
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.reloadTrafficCalcConfig();
+        });
+    }
+
+    @Test
+    public void testReloadWhitelist_failure_misorderedRanges() throws Exception {
+        // Setup - misordered ranges
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+        createConfigFromPartialJson("{\"traffic_calc_whitelist_ranges\": [ [2000, 1000] ]}");
+
+        // Act & Assert 
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.reloadTrafficCalcConfig();
+        });
+    }
+
+    @Test
+    public void testReloadWhitelist_failure_rangeTooLong() throws Exception {
+        // Setup - range greater than 24 hours
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+        createConfigFromPartialJson("{\"traffic_calc_whitelist_ranges\": [ [1000, 200000] ]}");
+
+        // Act & Assert
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.reloadTrafficCalcConfig();
+        });
+    }
+
     // ============================================================================
-    // SECTION 7: Cache Management Tests
+    // SECTION 7: Cache Management Tests (also tested in section 9)
     // ============================================================================
 
     @Test
@@ -886,14 +986,9 @@ public class OptOutTrafficCalculatorTest {
         // Create delta files with timestamps distributed over 48 hours
         List<Long> timestamps = new ArrayList<>();
         
-        // Past window: t-47h to t-25h (add 50 entries)
-        for (int i = 0; i < 50; i++) {
-            timestamps.add(t - 47*3600 + i * 1000);
-        }
-        
-        // Current window: t-23h to t-1h (add 100 entries - 2x past)
-        for (int i = 0; i < 100; i++) {
-            timestamps.add(t - 23*3600 + i * 1000);
+        // add 499 entries in current window
+        for (int i = 0; i < 49; i++) {
+            timestamps.add(t - 23*3600 + i * 60);
         }
         
         byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
@@ -922,14 +1017,9 @@ public class OptOutTrafficCalculatorTest {
         // Create delta files with spike in current window
         List<Long> timestamps = new ArrayList<>();
         
-        // Past window: t-47h to t-25h (add 10 entries)
-        for (int i = 0; i < 10; i++) {
-            timestamps.add(t - 47*3600 + i * 1000);
-        }
-        
-        // Current window: t-23h to t-1h (add 100 entries - 10x past!)
-        for (int i = 0; i < 100; i++) {
-            timestamps.add(t - 23*3600 + i * 1000);
+        // add 500 entries in current window
+        for (int i = 0; i < 500; i++) {
+            timestamps.add(t - 23*3600 + i * 60);
         }
         
         byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
@@ -1002,13 +1092,9 @@ public class OptOutTrafficCalculatorTest {
         long t = currentTime;
         
         List<Long> timestamps = new ArrayList<>();
-        // Past window - 10 entries
-        for (int i = 0; i < 10; i++) {
-            timestamps.add(t - 48*3600 + i * 1000);
-        }
-        // Current window - 20 entries
-        for (int i = 0; i < 20; i++) {
-            timestamps.add(t - 12*3600 + i * 1000);
+        // add 470 entries in window
+        for (int i = 0; i < 470; i++) {
+            timestamps.add(t - 24*3600 + i * 60); 
         }
         
         byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
@@ -1020,10 +1106,9 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - multiple SQS messages, oldest determines t
-        // Add enough SQS messages to push total count over DELAYED_PROCESSING threshold
+        // Add 30 SQS entries in [t, t+5min]
         List<Message> sqsMessages = new ArrayList<>();
-        for (int i = 0; i < 101; i++) {
+        for (int i = 0; i < 30; i++) {
             sqsMessages.add(createSqsMessage(t - i * 10));
         }
         OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages);
@@ -1038,7 +1123,7 @@ public class OptOutTrafficCalculatorTest {
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
         
-        // Whitelist that covers part of current window
+        // Whitelist that covers part of window
         String whitelistJson = String.format("""
             {
                 "traffic_calc_whitelist_ranges": [
@@ -1048,22 +1133,18 @@ public class OptOutTrafficCalculatorTest {
             """, t - 12*3600, t - 6*3600);
         
         List<Long> timestamps = new ArrayList<>();
-        // Past window - 20 entries
-        for (int i = 0; i < 20; i++) {
-            timestamps.add(t - 48*3600 + i * 100);
-        }
         
-        // Current window - 100 entries (50 in whitelist range, 50 outside)
-        for (int i = 0; i < 50; i++) {
-            timestamps.add(t - 12*3600 + i * 100); // In whitelist
+        // window - 600 entries (300 in whitelist range, 300 outside)
+        for (int i = 0; i < 300; i++) {
+            timestamps.add(t - 12*3600 + i);
         }
-        for (int i = 0; i < 50; i++) {
-            timestamps.add(t - 3600 + i * 100); // Outside whitelist
+        for (int i = 0; i < 300; i++) {
+            timestamps.add(t - 3600 + i);
         }
         
         byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
         
-        createTrafficConfigFile(whitelistJson);
+        createConfigFromPartialJson(whitelistJson);
         when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/delta-001.dat"));
         when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
             .thenReturn(new ByteArrayInputStream(deltaFileBytes));
@@ -1076,8 +1157,8 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages);
 
         // Assert - should filter out whitelisted entries
-        // Only ~50 from current window count (not whitelisted) + 1 SQS = 51
-        // 51 < 5 * 20 = 100, so DEFAULT
+        // Only 300 from window count (not whitelisted) + 1 SQS = 301
+        // 301 < 5*100, so DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
     }
 
@@ -1219,20 +1300,18 @@ public class OptOutTrafficCalculatorTest {
     }
 
     @Test
-    void testCalculateStatus_windowBoundaryTimestamps() throws Exception {
-        // Setup - create delta files with some entries
+    void testCalculateStatus_windowBoundaryTimestamp() throws Exception {
+        // Setup - create delta file with timestamps at window boundary
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
-        long currentWindowStart = t - 24*3600 + 300; // t-23h55m
-        long pastWindowStart = currentWindowStart - 24*3600; // t-47h55m
-        
-        List<Long> timestamps = Arrays.asList(
-            t,
-            currentWindowStart,
-            pastWindowStart,
-            t - 24*3600,
-            t - 48*3600
-        );
+        long currentWindowStart = t - 24*3600;
+        List<Long> timestamps = new ArrayList<>();
+        for (int i = 0; i < 250; i++) {
+            timestamps.add(t);
+        }
+        for (int i = 0; i < 250; i++) {
+            timestamps.add(currentWindowStart);
+        }
         byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
         
         when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
@@ -1247,7 +1326,7 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages);
 
         // Assert - DEFAULT
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
+        assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
     }
 
     @Test
@@ -1278,122 +1357,4 @@ public class OptOutTrafficCalculatorTest {
         assertEquals(2, stats.get("total_cached_timestamps"));
     }
 
-    @Test
-    void testCalculateStatus_whitelistReducesPreviousWindowBaseline_customWindows() throws Exception {
-        // Setup - test with custom 3-hour evaluation windows
-        // Whitelist in previous window reduces baseline, causing DELAYED_PROCESSING
-        long currentTime = System.currentTimeMillis() / 1000;
-        long t = currentTime;
-        long threeHours = 3 * 3600; // 10800 seconds
-        
-        // Whitelist covering most of the PREVIOUS window (t-6h to t-4h)
-        // This reduces the baseline count in the previous window
-        String whitelistJson = String.format("""
-            {
-                "traffic_calc_current_evaluation_window_seconds": %d,
-                "traffic_calc_previous_evaluation_window_seconds": %d,
-                "traffic_calc_whitelist_ranges": [
-                    [%d, %d]
-                ]
-            }
-            """, threeHours, threeHours, t - 6*3600, t - 4*3600);
-        
-        List<Long> timestamps = new ArrayList<>();
-        
-        // Previous window (t-6h to t-3h): Add 100 entries
-        // 80 of these will be whitelisted (between t-6h and t-4h)
-        // Only 20 will count toward baseline
-        for (int i = 0; i < 80; i++) {
-            timestamps.add(t - 6*3600 + i); // Whitelisted entries in previous window
-        }
-        for (int i = 0; i < 20; i++) {
-            timestamps.add(t - 4*3600 + i); // Non-whitelisted entries in previous window
-        }
-        
-        // Current window (t-3h to t): Add 120 entries (none whitelisted)
-        // This creates a spike: 120 + 1 SQS >= 5 * 20 = 100
-        for (int i = 0; i < 120; i++) {
-            timestamps.add(t - threeHours + i); // Current window entries
-        }
-        
-        byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
-        
-        createTrafficConfigFile(whitelistJson);
-        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
-        when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
-            .thenReturn(new ByteArrayInputStream(deltaFileBytes));
-
-        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
-            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
-
-        // Act
-        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages);
-
-        // Assert - DELAYED_PROCESSING
-        // With 3-hour evaluation windows:
-        // Previous window (t-6h to t-3h): 100 total entries, 80 whitelisted → 20 counted
-        // Current window (t-3h to t): 120 entries (none whitelisted) + 1 SQS = 121
-        // 121 >= 5 * 20 = 100, so DELAYED_PROCESSING
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
-    }
-
-    @Test
-    void testCalculateStatus_whitelistReducesCurrentWindowBaseline_customWindows() throws Exception {
-        // Setup - test with custom 3-hour evaluation windows
-        // Whitelist in previous window reduces baseline, causing DELAYED_PROCESSING
-        long currentTime = System.currentTimeMillis() / 1000;
-        long t = currentTime;
-        long threeHours = 3 * 3600; // 10800 seconds
-        
-        // Whitelist covering most of the CURRENT window (t-3h to t+5m)
-        // This reduces the baseline count in the previous window
-        String whitelistJson = String.format("""
-            {
-                "traffic_calc_current_evaluation_window_seconds": %d,
-                "traffic_calc_previous_evaluation_window_seconds": %d,
-                "traffic_calc_whitelist_ranges": [
-                    [%d, %d]
-                ]
-            }
-            """, threeHours, threeHours, t - 3*3600, t - 1*3600);
-        
-        List<Long> timestamps = new ArrayList<>();
-        
-        // Current window (t-3h to t+5m): Add 100 entries
-        // 80 of these will be whitelisted (between t-3h and t-1h)
-        // Only 20 will count toward baseline
-        for (int i = 0; i < 80; i++) {
-            timestamps.add(t - 3*3600 + i); // Whitelisted entries in current window
-        }
-        for (int i = 0; i < 20; i++) {
-            timestamps.add(t - 1*3600 + i); // Non-whitelisted entries in current window
-        }
-        
-        // Previous window (t-6h to t-3h): Add 10 entries (none whitelisted)
-        for (int i = 0; i < 10; i++) {
-            timestamps.add(t - 6*3600 + i); // Non-whitelisted entries in previous window
-        }
-        
-        byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
-        
-        createTrafficConfigFile(whitelistJson);
-        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
-        when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
-            .thenReturn(new ByteArrayInputStream(deltaFileBytes));
-
-        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
-            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
-
-        // Act
-        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages);
-
-        // Assert - DEFAULT
-        // With 3-hour evaluation windows:
-        // Previous window (t-6h to t-3h): 10 entries (none whitelisted)
-        // Current window (t-3h to t): 20 entries (non-whitelisted) + 1 SQS = 21
-        // 21 < 5 * 10 = 50, so DEFAULT
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
-    }
 }

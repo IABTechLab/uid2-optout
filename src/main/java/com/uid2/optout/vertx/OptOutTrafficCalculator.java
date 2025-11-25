@@ -4,6 +4,7 @@ import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.optout.OptOutCollection;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
+import com.uid2.optout.Const;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +25,7 @@ import java.util.stream.Collectors;
  * Calculates opt-out traffic patterns to determine DEFAULT or DELAYED_PROCESSING status.
  * 
  * Compares recent ~24h traffic (sumCurrent) against a configurable baseline (baselineTraffic) of expected traffic in 24 hours.
- * The baseline is calculated as baselineTraffic*thresholdMultiplier.
+ * The baseline is multiplied by (thresholdMultiplier) to determine the threshold.
  * sumCurrent excludes records in whitelist ranges (surge windows determined by engineers).
  * 
  * Returns DELAYED_PROCESSING if sumCurrent >= thresholdMultiplier * baselineTraffic, indicating abnormal traffic spike.
@@ -76,7 +77,7 @@ public class OptOutTrafficCalculator {
     /**
      * Constructor for OptOutTrafficCalculator
      * 
-     * @param cloudStorage Cloud storage for reading delta files and whitelist from S3
+     * @param cloudStorage Cloud storage for reading delta files
      * @param s3DeltaPrefix S3 prefix for delta files
      * @param trafficCalcConfigS3Path S3 path for traffic calc config
      */
@@ -94,13 +95,13 @@ public class OptOutTrafficCalculator {
      * Reload traffic calc config from ConfigMap.
      * Expected format:
      * {
-     *   "traffic_calc_current_evaluation_window_seconds": 86400,
-     *   "traffic_calc_previous_evaluation_window_seconds": 86400,
+     *   "traffic_calc_evaluation_window_seconds": 86400,
+     *   "traffic_calc_baseline_traffic": 100,
+     *   "traffic_calc_threshold_multiplier": 5,
      *   "traffic_calc_whitelist_ranges": [
      *     [startTimestamp1, endTimestamp1],
      *     [startTimestamp2, endTimestamp2]
      *   ],
-     *   "traffic_calc_threshold_multiplier": 5
      * }
      * 
      * Can be called periodically to pick up config changes without restarting.
@@ -109,27 +110,27 @@ public class OptOutTrafficCalculator {
         LOGGER.info("Loading traffic calc config from ConfigMap");
         try (InputStream is = Files.newInputStream(Paths.get(trafficCalcConfigPath))) {
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            JsonObject whitelistConfig = new JsonObject(content);
+            JsonObject trafficCalcConfig = new JsonObject(content);
 
             // Validate required fields exist
-            if (!whitelistConfig.containsKey("traffic_calc_evaluation_window_seconds")) {
+            if (!trafficCalcConfig.containsKey(Const.Config.OptOutTrafficCalcEvaluationWindowSecondsProp)) {
                 throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_evaluation_window_seconds");
             }
-            if (!whitelistConfig.containsKey("traffic_calc_baseline_traffic")) {
+            if (!trafficCalcConfig.containsKey(Const.Config.OptOutTrafficCalcBaselineTrafficProp)) {
                 throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_baseline_traffic");
             }
-            if (!whitelistConfig.containsKey("traffic_calc_threshold_multiplier")) {
+            if (!trafficCalcConfig.containsKey(Const.Config.OptOutTrafficCalcThresholdMultiplierProp)) {
                 throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_threshold_multiplier");
             }
-            if (!whitelistConfig.containsKey("traffic_calc_whitelist_ranges")) {
+            if (!trafficCalcConfig.containsKey(Const.Config.OptOutTrafficCalcWhitelistRangesProp)) {
                 throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_whitelist_ranges");
             }
 
-            this.evaluationWindowSeconds = whitelistConfig.getInteger("traffic_calc_evaluation_window_seconds");
-            this.baselineTraffic = whitelistConfig.getInteger("traffic_calc_baseline_traffic");
-            this.thresholdMultiplier = whitelistConfig.getInteger("traffic_calc_threshold_multiplier");
+            this.evaluationWindowSeconds = trafficCalcConfig.getInteger(Const.Config.OptOutTrafficCalcEvaluationWindowSecondsProp);
+            this.baselineTraffic = trafficCalcConfig.getInteger(Const.Config.OptOutTrafficCalcBaselineTrafficProp);
+            this.thresholdMultiplier = trafficCalcConfig.getInteger(Const.Config.OptOutTrafficCalcThresholdMultiplierProp);
             
-            List<List<Long>> ranges = parseWhitelistRanges(whitelistConfig);
+            List<List<Long>> ranges = parseWhitelistRanges(trafficCalcConfig);
             this.whitelistRanges = ranges;
             
             LOGGER.info("Successfully loaded traffic calc config from ConfigMap: evaluationWindowSeconds={}, baselineTraffic={}, thresholdMultiplier={}, whitelistRanges={}",
@@ -151,7 +152,7 @@ public class OptOutTrafficCalculator {
         List<List<Long>> ranges = new ArrayList<>();
         
         try {
-            var rangesArray = config.getJsonArray("traffic_calc_whitelist_ranges");
+            var rangesArray = config.getJsonArray(Const.Config.OptOutTrafficCalcWhitelistRangesProp);
             if (rangesArray != null) {
                 for (int i = 0; i < rangesArray.size(); i++) {
                     var rangeArray = rangesArray.getJsonArray(i);
