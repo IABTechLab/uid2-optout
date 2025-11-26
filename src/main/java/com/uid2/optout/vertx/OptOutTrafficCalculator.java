@@ -468,21 +468,21 @@ public class OptOutTrafficCalculator {
     /**
      * Determine traffic status based on current vs past counts
      */
-    TrafficStatus determineStatus(int sumCurrent, int sumPast) {
-        if (sumPast == 0) {
+    TrafficStatus determineStatus(int sumCurrent, int baselineTraffic) {
+        if (baselineTraffic == 0) {
             // Avoid division by zero - if no baseline traffic, return DEFAULT status
-            LOGGER.warn("sumPast is 0, cannot detect thresholdcrossing. Returning DEFAULT status.");
+            LOGGER.warn("baselineTraffic is 0, cannot detect threshold crossing. Returning DEFAULT status.");
             return TrafficStatus.DEFAULT;
         }
         
-        if (sumCurrent >= thresholdMultiplier * sumPast) {
-            LOGGER.warn("DELAYED_PROCESSING threshold breached: sumCurrent={} >= {}×sumPast={}", 
-                       sumCurrent, thresholdMultiplier, sumPast);
+        if (sumCurrent >= thresholdMultiplier * baselineTraffic) {
+            LOGGER.warn("DELAYED_PROCESSING threshold breached: sumCurrent={} >= {}×baselineTraffic={}", 
+                       sumCurrent, thresholdMultiplier, baselineTraffic);
             return TrafficStatus.DELAYED_PROCESSING;
         }
         
-        LOGGER.info("Traffic within normal range: sumCurrent={} < {}×sumPast={}", 
-                   sumCurrent, thresholdMultiplier, sumPast);
+        LOGGER.info("Traffic within normal range: sumCurrent={} < {}×baselineTraffic={}", 
+                   sumCurrent, thresholdMultiplier, baselineTraffic);
         return TrafficStatus.DEFAULT;
     }
     
