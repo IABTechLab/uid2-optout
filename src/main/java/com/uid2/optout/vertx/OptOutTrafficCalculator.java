@@ -469,9 +469,9 @@ public class OptOutTrafficCalculator {
      * Determine traffic status based on current vs past counts
      */
     TrafficStatus determineStatus(int sumCurrent, int baselineTraffic) {
-        if (baselineTraffic == 0) {
+        if (baselineTraffic == 0 || thresholdMultiplier == 0) {
             // Avoid division by zero - if no baseline traffic, return DEFAULT status
-            LOGGER.warn("baselineTraffic is 0, cannot detect threshold crossing. Returning DEFAULT status.");
+            LOGGER.warn("baselineTraffic is 0 or thresholdMultiplier is 0 returning DEFAULT status.");
             return TrafficStatus.DEFAULT;
         }
         
