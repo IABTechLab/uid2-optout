@@ -223,9 +223,9 @@ public class OptOutTrafficCalculator {
                 
                 boolean shouldStop = false;
                 for (long ts : timestamps) {
-                    // Stop condition: record is older than our 48h window
+                    // Stop condition: record is older than our window
                     if (ts < windowStart) {
-                        LOGGER.debug("Stopping delta file processing at timestamp {} (older than t-48h)", ts);
+                        LOGGER.debug("Stopping delta file processing at timestamp {} (older than window start {})", ts, windowStart);
                         break;
                     }
                     
@@ -234,7 +234,7 @@ public class OptOutTrafficCalculator {
                         continue;
                     }
                     
-                    // Count for sumCurrent: [t-24h, t+5m]
+                    // increment sum if record is in window
                     if (ts >= windowStart && ts <= t) {
                         sum++;
                     }
