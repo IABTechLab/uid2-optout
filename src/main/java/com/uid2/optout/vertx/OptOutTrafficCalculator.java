@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  * 
  * Compares recent ~24h traffic (sumCurrent) against a configurable baseline (baselineTraffic) of expected traffic in 24 hours.
  * The baseline is multiplied by (thresholdMultiplier) to determine the threshold.
- * sumCurrent excludes records in whitelist ranges (surge windows determined by engineers).
+ * sumCurrent excludes records in allowlist ranges (surge windows determined by engineers).
  * 
  * Returns DELAYED_PROCESSING if sumCurrent >= thresholdMultiplier * baselineTraffic, indicating abnormal traffic spike.
  */
@@ -42,7 +42,7 @@ public class OptOutTrafficCalculator {
     private int baselineTraffic;
     private int thresholdMultiplier;
     private int evaluationWindowSeconds;
-    private List<List<Long>> whitelistRanges;
+    private List<List<Long>> allowlistRanges;
     
     public enum TrafficStatus {
         DELAYED_PROCESSING,
@@ -98,7 +98,7 @@ public class OptOutTrafficCalculator {
      *   "traffic_calc_evaluation_window_seconds": 86400,
      *   "traffic_calc_baseline_traffic": 100,
      *   "traffic_calc_threshold_multiplier": 5,
-     *   "traffic_calc_whitelist_ranges": [
+     *   "traffic_calc_allowlist_ranges": [
      *     [startTimestamp1, endTimestamp1],
      *     [startTimestamp2, endTimestamp2]
      *   ],
@@ -122,18 +122,18 @@ public class OptOutTrafficCalculator {
             if (!trafficCalcConfig.containsKey(Const.Config.OptOutTrafficCalcThresholdMultiplierProp)) {
                 throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_threshold_multiplier");
             }
-            if (!trafficCalcConfig.containsKey(Const.Config.OptOutTrafficCalcWhitelistRangesProp)) {
-                throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_whitelist_ranges");
+            if (!trafficCalcConfig.containsKey(Const.Config.OptOutTrafficCalcAllowlistRangesProp)) {
+                throw new MalformedTrafficCalcConfigException("Missing required field: traffic_calc_allowlist_ranges");
             }
 
             this.evaluationWindowSeconds = trafficCalcConfig.getInteger(Const.Config.OptOutTrafficCalcEvaluationWindowSecondsProp);
             this.baselineTraffic = trafficCalcConfig.getInteger(Const.Config.OptOutTrafficCalcBaselineTrafficProp);
             this.thresholdMultiplier = trafficCalcConfig.getInteger(Const.Config.OptOutTrafficCalcThresholdMultiplierProp);
             
-            List<List<Long>> ranges = parseWhitelistRanges(trafficCalcConfig);
-            this.whitelistRanges = ranges;
+            List<List<Long>> ranges = parseAllowlistRanges(trafficCalcConfig);
+            this.allowlistRanges = ranges;
             
-            LOGGER.info("Successfully loaded traffic calc config from ConfigMap: evaluationWindowSeconds={}, baselineTraffic={}, thresholdMultiplier={}, whitelistRanges={}",
+            LOGGER.info("Successfully loaded traffic calc config from ConfigMap: evaluationWindowSeconds={}, baselineTraffic={}, thresholdMultiplier={}, allowlistRanges={}",
                        this.evaluationWindowSeconds, this.baselineTraffic, this.thresholdMultiplier, ranges.size());
             
         } catch (MalformedTrafficCalcConfigException e) {
@@ -146,13 +146,13 @@ public class OptOutTrafficCalculator {
     }
     
     /**
-     * Parse whitelist ranges from JSON config
+     * Parse allowlist ranges from JSON config
      */
-    List<List<Long>> parseWhitelistRanges(JsonObject config) throws MalformedTrafficCalcConfigException {
+    List<List<Long>> parseAllowlistRanges(JsonObject config) throws MalformedTrafficCalcConfigException {
         List<List<Long>> ranges = new ArrayList<>();
         
         try {
-            var rangesArray = config.getJsonArray(Const.Config.OptOutTrafficCalcWhitelistRangesProp);
+            var rangesArray = config.getJsonArray(Const.Config.OptOutTrafficCalcAllowlistRangesProp);
             if (rangesArray != null) {
                 for (int i = 0; i < rangesArray.size(); i++) {
                     var rangeArray = rangesArray.getJsonArray(i);
@@ -161,18 +161,18 @@ public class OptOutTrafficCalculator {
                         long end = rangeArray.getLong(1);
                         
                         if(start >= end) {
-                            LOGGER.error("Invalid whitelist range: start must be less than end: [{}, {}]", start, end);
-                            throw new MalformedTrafficCalcConfigException("Invalid whitelist range at index " + i + ": start must be less than end");
+                            LOGGER.error("Invalid allowlist range: start must be less than end: [{}, {}]", start, end);
+                            throw new MalformedTrafficCalcConfigException("Invalid allowlist range at index " + i + ": start must be less than end");
                         }
 
                         if (end - start > 86400) {
-                            LOGGER.error("Invalid whitelist range: range must be less than 24 hours: [{}, {}]", start, end);
-                            throw new MalformedTrafficCalcConfigException("Invalid whitelist range at index " + i + ": range must be less than 24 hours");
+                            LOGGER.error("Invalid allowlist range: range must be less than 24 hours: [{}, {}]", start, end);
+                            throw new MalformedTrafficCalcConfigException("Invalid allowlist range at index " + i + ": range must be less than 24 hours");
                         }
                         
                         List<Long> range = Arrays.asList(start, end);
                         ranges.add(range);
-                        LOGGER.info("Loaded whitelist range: [{}, {}]", start, end);
+                        LOGGER.info("Loaded allowlist range: [{}, {}]", start, end);
                     }
                 }
             }
@@ -181,8 +181,8 @@ public class OptOutTrafficCalculator {
             ranges.sort(Comparator.comparing(range -> range.get(0)));
             
         } catch (Exception e) {
-            LOGGER.error("Failed to parse whitelist ranges", e);
-            throw new MalformedTrafficCalcConfigException("Failed to parse whitelist ranges: " + e.getMessage());
+            LOGGER.error("Failed to parse allowlist ranges", e);
+            throw new MalformedTrafficCalcConfigException("Failed to parse allowlist ranges: " + e.getMessage());
         }
         
         return ranges;
@@ -210,7 +210,7 @@ public class OptOutTrafficCalculator {
             LOGGER.info("Traffic calculation starting with t={} (oldest SQS message)", t);
             
             // define start time of the evaluation window [t-24h, t+5m]
-            long windowStart = t - this.evaluationWindowSeconds - getWhitelistDuration(t, t - this.evaluationWindowSeconds);
+            long windowStart = t - this.evaluationWindowSeconds - getAllowlistDuration(t, t - this.evaluationWindowSeconds);
             
             // Evict old cache entries (older than window start)
             evictOldCacheEntries(windowStart);
@@ -229,8 +229,8 @@ public class OptOutTrafficCalculator {
                         break;
                     }
                     
-                    // skip records in whitelisted ranges
-                    if (isInWhitelist(ts)) {
+                    // skip records in allowlisted ranges
+                    if (isInAllowlist(ts)) {
                         continue;
                     }
                     
@@ -339,11 +339,11 @@ public class OptOutTrafficCalculator {
     }
 
     /**
-     * Calculate total duration of whitelist ranges that overlap with the given time window.
+     * Calculate total duration of allowlist ranges that overlap with the given time window.
      */
-    long getWhitelistDuration(long t, long windowStart) {
+    long getAllowlistDuration(long t, long windowStart) {
         long totalDuration = 0;
-        for (List<Long> range : this.whitelistRanges) {
+        for (List<Long> range : this.allowlistRanges) {
             long start = range.get(0);
             long end = range.get(1);
             
@@ -413,7 +413,7 @@ public class OptOutTrafficCalculator {
                 continue;
             }
             
-            if (isInWhitelist(ts)) {
+            if (isInAllowlist(ts)) {
                 continue;
             }
             count++;
@@ -425,14 +425,14 @@ public class OptOutTrafficCalculator {
     }
     
     /**
-     * Check if a timestamp falls within any whitelist range
+     * Check if a timestamp falls within any allowlist range
      */
-    boolean isInWhitelist(long timestamp) {
-        if (whitelistRanges == null || whitelistRanges.isEmpty()) {
+    boolean isInAllowlist(long timestamp) {
+        if (allowlistRanges == null || allowlistRanges.isEmpty()) {
             return false;
         }
         
-        for (List<Long> range : whitelistRanges) {
+        for (List<Long> range : allowlistRanges) {
             if (range.size() < 2) {
                 continue;
             }

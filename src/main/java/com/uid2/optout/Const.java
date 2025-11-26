@@ -25,7 +25,7 @@ public class Const extends com.uid2.shared.Const {
         public static final String OptOutTrafficCalcBaselineTrafficProp = "traffic_calc_baseline_traffic";
         public static final String OptOutTrafficCalcThresholdMultiplierProp = "traffic_calc_threshold_multiplier";
         public static final String OptOutTrafficCalcEvaluationWindowSecondsProp = "traffic_calc_evaluation_window_seconds";
-        public static final String OptOutTrafficCalcWhitelistRangesProp = "traffic_calc_whitelist_ranges";
+        public static final String OptOutTrafficCalcAllowlistRangesProp = "traffic_calc_allowlist_ranges";
     }
 
     public static class Event {
