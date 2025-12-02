@@ -191,6 +191,9 @@ public class OptOutTrafficCalculator {
     /**
      * Calculate traffic status based on delta files and SQS queue messages.
      * 
+     * Uses the newest delta file timestamp to anchor the 24-hour delta traffic window,
+     * and the oldest queue timestamp to anchor the 5-minute queue window.
+     * 
      * @param sqsMessages List of SQS messages
      * @return TrafficStatus (DELAYED_PROCESSING or DEFAULT)
      */
@@ -205,17 +208,21 @@ public class OptOutTrafficCalculator {
                 return TrafficStatus.DEFAULT;
             }
             
-            // Find t = oldest SQS queue message timestamp
-            long t = findOldestQueueTimestamp(sqsMessages);
-            LOGGER.info("Traffic calculation starting with t={} (oldest SQS message)", t);
+            // Find newest delta file timestamp for delta traffic window
+            long newestDeltaTs = findNewestDeltaTimestamp(deltaS3Paths);
+            LOGGER.info("Traffic calculation: newestDeltaTs={}", newestDeltaTs);
             
-            // define start time of the evaluation window [t-24h, t+5m]
-            long windowStart = t - this.evaluationWindowSeconds - getAllowlistDuration(t, t - this.evaluationWindowSeconds);
+            // Find oldest SQS queue message timestamp for queue window
+            long oldestQueueTs = findOldestQueueTimestamp(sqsMessages);
+            LOGGER.info("Traffic calculation: oldestQueueTs={}", oldestQueueTs);
             
-            // Evict old cache entries (older than window start)
-            evictOldCacheEntries(windowStart);
+            // Define start time of the delta evaluation window [newestDeltaTs - 24h, newestDeltaTs]
+            long deltaWindowStart = newestDeltaTs - this.evaluationWindowSeconds - getAllowlistDuration(newestDeltaTs, newestDeltaTs - this.evaluationWindowSeconds);
             
-            // Process delta files and count
+            // Evict old cache entries (older than delta window start)
+            evictOldCacheEntries(deltaWindowStart);
+            
+            // Process delta files and count records in [deltaWindowStart, newestDeltaTs]
             int sum = 0;
             
             for (String s3Path : deltaS3Paths) {
@@ -224,8 +231,8 @@ public class OptOutTrafficCalculator {
                 boolean shouldStop = false;
                 for (long ts : timestamps) {
                     // Stop condition: record is older than our window
-                    if (ts < windowStart) {
-                        LOGGER.debug("Stopping delta file processing at timestamp {} (older than window start {})", ts, windowStart);
+                    if (ts < deltaWindowStart) {
+                        LOGGER.debug("Stopping delta file processing at timestamp {} (older than window start {})", ts, deltaWindowStart);
                         break;
                     }
                     
@@ -234,8 +241,8 @@ public class OptOutTrafficCalculator {
                         continue;
                     }
                     
-                    // increment sum if record is in window
-                    if (ts >= windowStart && ts <= t) {
+                    // increment sum if record is in delta window
+                    if (ts >= deltaWindowStart) {
                         sum++;
                     }
                     
@@ -246,10 +253,9 @@ public class OptOutTrafficCalculator {
                 }
             }
             
-            // Count SQS messages in [t, t+5m]
+            // Count SQS messages in [oldestQueueTs, oldestQueueTs + 5m]
             if (sqsMessages != null && !sqsMessages.isEmpty()) {
-                int sqsCount = countSqsMessages(
-                    sqsMessages, t);
+                int sqsCount = countSqsMessages(sqsMessages, oldestQueueTs);
                 sum += sqsCount;
             }
             
@@ -265,6 +271,29 @@ public class OptOutTrafficCalculator {
             LOGGER.error("Error calculating traffic status", e);
             return TrafficStatus.DEFAULT;
         }
+    }
+    
+    /**
+     * Find the newest timestamp from delta files.
+     * Reads the newest delta file and returns its maximum timestamp.
+     */
+    private long findNewestDeltaTimestamp(List<String> deltaS3Paths) throws IOException {
+        if (deltaS3Paths == null || deltaS3Paths.isEmpty()) {
+            return System.currentTimeMillis() / 1000;
+        }
+        
+        // Delta files are sorted (ISO 8601 format, lexicographically sortable) so first file is newest
+        String newestDeltaPath = deltaS3Paths.get(0);
+        List<Long> timestamps = getTimestampsFromFile(newestDeltaPath);
+        
+        if (timestamps.isEmpty()) {
+            LOGGER.warn("Newest delta file has no timestamps: {}", newestDeltaPath);
+            return System.currentTimeMillis() / 1000;
+        }
+        
+        long newestTs = Collections.max(timestamps);
+        LOGGER.debug("Found newest delta timestamp {} from file {}", newestTs, newestDeltaPath);
+        return newestTs;
     }
     
     /**
@@ -400,16 +429,17 @@ public class OptOutTrafficCalculator {
     }
     
     /**
-     * Count SQS messages from t to t+5 minutes
+     * Count SQS messages from oldestQueueTs to oldestQueueTs + 5 minutes
      */
-    private int countSqsMessages(List<Message> sqsMessages, long t) {
+    private int countSqsMessages(List<Message> sqsMessages, long oldestQueueTs) {
         
         int count = 0;
+        long windowEnd = oldestQueueTs + 5 * 60;
         
         for (Message msg : sqsMessages) {
             Long ts = extractTimestampFromMessage(msg);
 
-            if (ts < t || ts > t + 5 * 60) {
+            if (ts < oldestQueueTs || ts > windowEnd) {
                 continue;
             }
             
@@ -420,7 +450,7 @@ public class OptOutTrafficCalculator {
             
         }
         
-        LOGGER.info("SQS messages: {} in window [t={}, t+5(minutes)={}]", count, t, t + 5 * 60);
+        LOGGER.info("SQS messages: {} in window [oldestQueueTs={}, oldestQueueTs+5m={}]", count, oldestQueueTs, windowEnd);
         return count;
     }
     
