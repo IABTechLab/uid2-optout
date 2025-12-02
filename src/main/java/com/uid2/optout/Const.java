@@ -22,11 +22,15 @@ public class Const extends com.uid2.shared.Const {
         public static final String OptOutSqsS3FolderProp = "optout_sqs_s3_folder"; // Default: "sqs-delta" - folder within same S3 bucket as regular optout
         public static final String OptOutSqsMaxMessagesPerPollProp = "optout_sqs_max_messages_per_poll";
         public static final String OptOutSqsVisibilityTimeoutProp = "optout_sqs_visibility_timeout";
+        public static final String OptOutDeltaJobTimeoutSecondsProp = "optout_delta_job_timeout_seconds";
+        public static final String OptOutS3BucketDroppedRequestsProp = "optout_s3_bucket_dropped_requests";
+        public static final String TrafficFilterConfigPathProp = "traffic_filter_config_path";
+        public static final String TrafficCalcConfigPathProp = "traffic_calc_config_path";
+        public static final String ManualOverrideS3PathProp = "manual_override_s3_path";
         public static final String OptOutTrafficCalcBaselineTrafficProp = "traffic_calc_baseline_traffic";
         public static final String OptOutTrafficCalcThresholdMultiplierProp = "traffic_calc_threshold_multiplier";
         public static final String OptOutTrafficCalcEvaluationWindowSecondsProp = "traffic_calc_evaluation_window_seconds";
         public static final String OptOutTrafficCalcAllowlistRangesProp = "traffic_calc_allowlist_ranges";
-        public static final String OptOutDeltaJobTimeoutSecondsProp = "optout_delta_job_timeout_seconds";
     }
 
     public static class Event {

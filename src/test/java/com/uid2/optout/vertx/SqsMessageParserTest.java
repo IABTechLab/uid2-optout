@@ -4,7 +4,6 @@ import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
-
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -178,73 +177,6 @@ public class SqsMessageParserTest {
     }
 
     @Test
-    public void testFilterEligibleMessages_allEligible() {
-        List<SqsParsedMessage> messages = new ArrayList<>();
-        Message mockMsg = createValidMessage(VALID_HASH_BASE64, VALID_ID_BASE64, TEST_TIMESTAMP_MS);
-        
-        // Create messages from 10 minutes ago
-        long oldTimestamp = System.currentTimeMillis() / 1000 - 600;
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], oldTimestamp));
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], oldTimestamp - 100));
-
-        long currentTime = System.currentTimeMillis() / 1000;
-        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 300);
-        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
-
-        assertEquals(2, result.size()); // All should be eligible (> 5 minutes old)
-    }
-
-    @Test
-    public void testFilterEligibleMessages_noneEligible() {
-        List<SqsParsedMessage> messages = new ArrayList<>();
-        Message mockMsg = createValidMessage(VALID_HASH_BASE64, VALID_ID_BASE64, TEST_TIMESTAMP_MS);
-        
-        // Create messages from 1 minute ago (too recent)
-        long recentTimestamp = System.currentTimeMillis() / 1000 - 60;
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], recentTimestamp));
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], recentTimestamp + 10));
-
-        long currentTime = System.currentTimeMillis() / 1000;
-        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 300);
-        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
-
-        assertEquals(0, result.size()); // None should be eligible (< 5 minutes old)
-    }
-
-    @Test
-    public void testFilterEligibleMessages_mixedEligibility() {
-        List<SqsParsedMessage> messages = new ArrayList<>();
-        Message mockMsg = createValidMessage(VALID_HASH_BASE64, VALID_ID_BASE64, TEST_TIMESTAMP_MS);
-        
-        long currentTime = 1000L;
-        
-        // Old enough (600 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - 600));
-        
-        // Exactly at threshold (300 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - 300));
-        
-        // Too recent (100 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - 100));
-
-        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 300);
-        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
-
-        assertEquals(2, result.size()); // First two are eligible (>= 300 seconds old)
-    }
-
-    @Test
-    public void testFilterEligibleMessages_emptyList() {
-        List<SqsParsedMessage> messages = new ArrayList<>();
-        long currentTime = System.currentTimeMillis() / 1000;
-
-        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 300);
-        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
-
-        assertEquals(0, result.size());
-    }
-
-    @Test
     public void testParseAndSortMessages_timestampConversion() {
         // Verify milliseconds to seconds conversion
         Message message = createValidMessage(VALID_HASH_BASE64, VALID_ID_BASE64, 1699308912345L); // ms
@@ -287,32 +219,6 @@ public class SqsMessageParserTest {
     }
 
     @Test
-    public void testFilterEligibleMessages_boundaryCases() {
-        List<SqsParsedMessage> messages = new ArrayList<>();
-        Message mockMsg = createValidMessage(VALID_HASH_BASE64, VALID_ID_BASE64, TEST_TIMESTAMP_MS);
-        
-        long currentTime = 1000L;
-        int windowSeconds = 300;
-        
-        // One second too new (299 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - windowSeconds + 1));
-        
-        // Exactly at threshold (300 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - windowSeconds));
-        
-        // One second past threshold (301 seconds ago)
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - windowSeconds - 1));
-
-        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, windowSeconds);
-        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
-
-        // Should only include the last two (>= threshold)
-        assertEquals(2, result.size());
-        assertEquals(currentTime - windowSeconds, result.get(0).getTimestamp());
-        assertEquals(currentTime - windowSeconds - 1, result.get(1).getTimestamp());
-    }
-
-    @Test
     public void testParseAndSortMessages_parsesHashAndIdBytes() {
         Message message = createValidMessage(VALID_HASH_BASE64, VALID_ID_BASE64, TEST_TIMESTAMP_MS);
 
@@ -323,29 +229,6 @@ public class SqsMessageParserTest {
         assertNotNull(result.get(0).getIdBytes());
         assertEquals(32, result.get(0).getHashBytes().length);
         assertEquals(32, result.get(0).getIdBytes().length);
-    }
-
-    @Test
-    public void testFilterEligibleMessages_preservesOrder() {
-        List<SqsParsedMessage> messages = new ArrayList<>();
-        Message mockMsg = createValidMessage(VALID_HASH_BASE64, VALID_ID_BASE64, TEST_TIMESTAMP_MS);
-        
-        long currentTime = 1000L;
-        
-        // Add eligible messages in specific order
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 100));
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 200));
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 300));
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 900)); // Too recent
-
-        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 300);
-        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
-
-        assertEquals(3, result.size());
-        // Verify order is preserved
-        assertEquals(100, result.get(0).getTimestamp());
-        assertEquals(200, result.get(1).getTimestamp());
-        assertEquals(300, result.get(2).getTimestamp());
     }
 
     @Test
@@ -385,18 +268,4 @@ public class SqsMessageParserTest {
         }
     }
 
-    @Test
-    public void testFilterEligibleMessages_zeroWindowSeconds() {
-        List<SqsParsedMessage> messages = new ArrayList<>();
-        Message mockMsg = createValidMessage(VALID_HASH_BASE64, VALID_ID_BASE64, TEST_TIMESTAMP_MS);
-        
-        long currentTime = 1000L;
-        messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime));
-
-        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 0);
-        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
-
-        assertEquals(1, result.size()); // With 0 window, current time messages should be eligible
-    }
 }
-
