@@ -177,7 +177,6 @@ public class OptOutTrafficCalculator {
                 }
             }
             
-            // Sort ranges by start time for efficient lookups
             ranges.sort(Comparator.comparing(range -> range.get(0)));
             
         } catch (Exception e) {
