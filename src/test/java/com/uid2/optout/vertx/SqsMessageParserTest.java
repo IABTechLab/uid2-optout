@@ -188,7 +188,8 @@ public class SqsMessageParserTest {
         messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], oldTimestamp - 100));
 
         long currentTime = System.currentTimeMillis() / 1000;
-        List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 300, currentTime);
+        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 300);
+        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
 
         assertEquals(2, result.size()); // All should be eligible (> 5 minutes old)
     }
@@ -204,7 +205,8 @@ public class SqsMessageParserTest {
         messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], recentTimestamp + 10));
 
         long currentTime = System.currentTimeMillis() / 1000;
-        List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 300, currentTime);
+        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 300);
+        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
 
         assertEquals(0, result.size()); // None should be eligible (< 5 minutes old)
     }
@@ -225,7 +227,8 @@ public class SqsMessageParserTest {
         // Too recent (100 seconds ago)
         messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - 100));
 
-        List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 300, currentTime);
+        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 300);
+        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
 
         assertEquals(2, result.size()); // First two are eligible (>= 300 seconds old)
     }
@@ -235,7 +238,8 @@ public class SqsMessageParserTest {
         List<SqsParsedMessage> messages = new ArrayList<>();
         long currentTime = System.currentTimeMillis() / 1000;
 
-        List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 300, currentTime);
+        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 300);
+        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
 
         assertEquals(0, result.size());
     }
@@ -299,7 +303,8 @@ public class SqsMessageParserTest {
         // One second past threshold (301 seconds ago)
         messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime - windowSeconds - 1));
 
-        List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, windowSeconds, currentTime);
+        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, windowSeconds);
+        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
 
         // Should only include the last two (>= threshold)
         assertEquals(2, result.size());
@@ -333,7 +338,8 @@ public class SqsMessageParserTest {
         messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 300));
         messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], 900)); // Too recent
 
-        List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 300, currentTime);
+        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 300);
+        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
 
         assertEquals(3, result.size());
         // Verify order is preserved
@@ -387,7 +393,8 @@ public class SqsMessageParserTest {
         long currentTime = 1000L;
         messages.add(new SqsParsedMessage(mockMsg, new byte[32], new byte[32], currentTime));
 
-        List<SqsParsedMessage> result = SqsMessageParser.filterEligibleMessages(messages, 0, currentTime);
+        SqsBatchProcessor processor = new SqsBatchProcessor(null, null, 0);
+        List<SqsParsedMessage> result = processor.filterEligibleMessages(messages, currentTime);
 
         assertEquals(1, result.size()); // With 0 window, current time messages should be eligible
     }
