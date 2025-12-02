@@ -74,29 +74,5 @@ public class SqsMessageParser {
         }
         return Long.parseLong(sentTimestampStr) / 1000; // ms to seconds
     }
-
-    /**
-     * Filters messages to only include those where sufficient time has elapsed.
-     * 
-     * @param messages List of parsed messages
-     * @param deltaWindowSeconds Minimum time window in seconds
-     * @param currentTime Current time in seconds
-     * @return List of messages that meet the time threshold
-     */
-    public static List<SqsParsedMessage> filterEligibleMessages(
-            List<SqsParsedMessage> messages, 
-            int deltaWindowSeconds, 
-            long currentTime) {
-        
-        List<SqsParsedMessage> eligibleMessages = new ArrayList<>();
-        
-        for (SqsParsedMessage pm : messages) {
-            if (currentTime - pm.getTimestamp() >= deltaWindowSeconds) {
-                eligibleMessages.add(pm);
-            }
-        }
-        
-        return eligibleMessages;
-    }
 }
 
