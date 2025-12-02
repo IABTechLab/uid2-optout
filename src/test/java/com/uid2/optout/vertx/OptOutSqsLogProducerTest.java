@@ -1159,6 +1159,18 @@ public class OptOutSqsLogProducerTest {
     public void testTrafficCalculator_detectsSpikeInCurrentWindow(TestContext context) throws Exception {
         Async async = context.async();
 
+        // Use higher threshold (1000) so circuit breaker doesn't trigger before traffic calculator
+        // This tests the traffic calculator spike detection, not the circuit breaker
+        String trafficCalcConfig = """
+                {
+                    "traffic_calc_evaluation_window_seconds": 86400,
+                    "traffic_calc_baseline_traffic": 200,
+                    "traffic_calc_threshold_multiplier": 5,
+                    "traffic_calc_allowlist_ranges": []
+                }
+                """;
+        createTrafficCalcConfigFile(trafficCalcConfig);
+
         // Setup time
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
@@ -1266,6 +1278,99 @@ public class OptOutSqsLogProducerTest {
                     } catch (Exception e) {
                         context.fail(e);
                     }
+
+                    async.complete();
+                }));
+    }
+
+    @Test
+    public void testCircuitBreaker_stopsProcessingWhenMessageLimitExceeded(TestContext context) throws Exception {
+        Async async = context.async();
+
+        // Use low threshold (100) so circuit breaker triggers before traffic calculator
+        String trafficCalcConfig = """
+                {
+                    "traffic_calc_evaluation_window_seconds": 86400,
+                    "traffic_calc_baseline_traffic": 20,
+                    "traffic_calc_threshold_multiplier": 5,
+                    "traffic_calc_allowlist_ranges": []
+                }
+                """;
+        createTrafficCalcConfigFile(trafficCalcConfig);
+
+        // Reset cloudStorage mock to ensure clean state
+        reset(cloudStorage);
+
+        // Re-mock S3 upload (needed after reset)
+        doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
+
+        // No manual override set (returns null)
+        doReturn(null).when(cloudStorage).download("manual-override.json");
+
+        // Setup time
+        long currentTime = System.currentTimeMillis() / 1000;
+        long t = currentTime;
+
+        // Create 200 messages - exceeds threshold (20 * 5 = 100)
+        long oldTime = (t - 600) * 1000; // 10 minutes ago
+        List<Message> messages = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            messages.add(createMessage(VALID_HASH_BASE64, VALID_ID_BASE64,
+                    oldTime - (i * 1000), null, null, "10.0.0." + (i % 256), null));
+        }
+
+        // Mock SQS operations
+        when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
+                .thenReturn(ReceiveMessageResponse.builder().messages(messages).build())
+                .thenReturn(ReceiveMessageResponse.builder().messages(Collections.emptyList()).build());
+        when(sqsClient.deleteMessageBatch(any(DeleteMessageBatchRequest.class)))
+                .thenReturn(DeleteMessageBatchResponse.builder().build());
+
+        int port = Const.Port.ServicePortForOptOut + 1;
+
+        // Act & Assert
+        vertx.createHttpClient()
+                .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
+                        Endpoints.OPTOUT_DELTA_PRODUCE.toString())
+                .compose(req -> req
+                        .putHeader("Authorization", "Bearer " + TEST_API_KEY)
+                        .send())
+                .compose(resp -> {
+                    context.assertEquals(202, resp.statusCode());
+                    return resp.body();
+                })
+                .compose(body -> {
+                    JsonObject response = new JsonObject(body.toString());
+                    context.assertEquals("accepted", response.getString("status"));
+                    return pollForCompletion(context, port, 100, 50);
+                })
+                .onComplete(context.asyncAssertSuccess(finalStatus -> {
+                    context.assertEquals("completed", finalStatus.getString("state"));
+                    JsonObject result = finalStatus.getJsonObject("result");
+                    context.assertEquals("skipped", result.getString("status"));
+
+                    // Expected behavior:
+                    // SqsWindowReader hits maxMessagesPerWindow limit (100) during reading
+                    // Circuit breaker triggers DELAYED_PROCESSING immediately
+                    // Processing stops before any messages are counted as processed
+                    context.assertEquals(0, result.getInteger("entries_processed"));
+                    context.assertEquals(0, result.getInteger("deltas_produced"));
+
+                    // Verify manual override was set to DELAYED_PROCESSING on S3
+                    try {
+                        ArgumentCaptor<String> pathCaptor = ArgumentCaptor.forClass(String.class);
+                        verify(cloudStorage, atLeastOnce()).upload(any(InputStream.class), pathCaptor.capture());
+
+                        // Check if manual-override.json was uploaded
+                        boolean overrideSet = pathCaptor.getAllValues().stream()
+                                .anyMatch(path -> path.equals("manual-override.json"));
+                        context.assertTrue(overrideSet, "Circuit breaker should set DELAYED_PROCESSING override");
+                    } catch (Exception e) {
+                        context.fail(e);
+                    }
+
+                    // Verify NO messages were deleted from SQS (processing stopped before completion)
+                    verify(sqsClient, never()).deleteMessageBatch(any(DeleteMessageBatchRequest.class));
 
                     async.complete();
                 }));

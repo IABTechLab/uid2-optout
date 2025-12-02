@@ -516,6 +516,14 @@ public class OptOutTrafficCalculator {
     }
     
     /**
+     * Get the traffic threshold (baseline × multiplier).
+     * Used for early termination
+     */
+    public int getThreshold() {
+        return this.baselineTraffic * this.thresholdMultiplier;
+    }
+
+    /**
      * Get cache statistics for monitoring
      */
     public Map<String, Object> getCacheStats() {

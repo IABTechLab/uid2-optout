@@ -174,10 +174,10 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         this.trafficCalculator = new OptOutTrafficCalculator(cloudStorage, jsonConfig.getString(Const.Config.OptOutSqsS3FolderProp), jsonConfig.getString(Const.Config.TrafficCalcConfigPathProp));
         this.manualOverrideS3Path = jsonConfig.getString(Const.Config.ManualOverrideS3PathProp);
         
-        // Initialize window reader
+        // Initialize window reader with traffic threshold
         this.windowReader = new SqsWindowReader(
             this.sqsClient, this.queueUrl, this.maxMessagesPerPoll, 
-            this.visibilityTimeout, this.deltaWindowSeconds
+            this.visibilityTimeout, this.deltaWindowSeconds, this.trafficCalculator.getThreshold()
         );
     }
 
@@ -290,6 +290,8 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
 
         try {
             this.trafficCalculator.reloadTrafficCalcConfig();
+            // Update window reader's message limit to match new threshold
+            this.windowReader.setMaxMessagesPerWindow(this.trafficCalculator.getThreshold());
         } catch (MalformedTrafficCalcConfigException e) {
             LOGGER.error("Error reloading traffic calculator config: " + e.getMessage(), e);
             resp.setStatusCode(500)
@@ -298,7 +300,6 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             return;
         }
 
-        
         DeltaProduceJobStatus existingJob = currentJob.get();
         
         // If there's an existing job, check if it's still running
@@ -425,6 +426,14 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                 stoppedDueToRecentMessages = windowResult.stoppedDueToRecentMessages();
                 LOGGER.info("Delta production complete - no more eligible messages");
                 break;
+            }
+            
+            // if message limit exceeded, treat as traffic spike
+            if (windowResult.exceededMessageLimit()) {
+                LOGGER.error("Message limit exceeded ({} messages) - triggering DELAYED_PROCESSING to prevent memory exhaustion",
+                    windowResult.getMessages().size());
+                this.setDelayedProcessingOverride();
+                return new DeltaProductionResult(deltasProduced, totalEntriesProcessed, droppedRequestFilesProduced, droppedRequestsProcessed, true);
             }
             
             // Create delta file buffer
