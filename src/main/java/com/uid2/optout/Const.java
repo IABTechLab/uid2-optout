@@ -27,6 +27,10 @@ public class Const extends com.uid2.shared.Const {
         public static final String OptOutTrafficCalcEvaluationWindowSecondsProp = "traffic_calc_evaluation_window_seconds";
         public static final String OptOutTrafficCalcAllowlistRangesProp = "traffic_calc_allowlist_ranges";
         public static final String OptOutDeltaJobTimeoutSecondsProp = "optout_delta_job_timeout_seconds";
+        public static final String OptOutS3BucketDroppedRequestsProp = "optout_s3_bucket_dropped_requests";
+        public static final String TrafficFilterConfigPathProp = "traffic_filter_config_path";
+        public static final String TrafficCalcConfigPathProp = "traffic_calc_config_path";
+        public static final String ManualOverrideS3PathProp = "manual_override_s3_path";
     }
 
     public static class Event {
