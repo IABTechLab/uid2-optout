@@ -43,19 +43,19 @@ public class SqsWindowReader {
     public static class WindowReadResult {
         private final List<SqsParsedMessage> messages;
         private final long windowStart;
-        private final boolean stoppedDueToRecentMessages;
+        private final boolean stoppedDueToMessagesTooRecent;
         
         public WindowReadResult(List<SqsParsedMessage> messages, long windowStart, 
-                                boolean stoppedDueToRecentMessages) {
+                                boolean stoppedDueToMessagesTooRecent) {
             this.messages = messages;
             this.windowStart = windowStart;
-            this.stoppedDueToRecentMessages = stoppedDueToRecentMessages;
+            this.stoppedDueToMessagesTooRecent = stoppedDueToMessagesTooRecent;
         }
         
         public List<SqsParsedMessage> getMessages() { return messages; }
         public long getWindowStart() { return windowStart; }
         public boolean isEmpty() { return messages.isEmpty(); }
-        public boolean stoppedDueToRecentMessages() { return stoppedDueToRecentMessages; }
+        public boolean stoppedDueToMessagesTooRecent() { return stoppedDueToMessagesTooRecent; }
     }
 
     /**

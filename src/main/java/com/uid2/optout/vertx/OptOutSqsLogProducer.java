@@ -347,7 +347,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         DeltaProductionResult deltaResult = this.produceBatchedDeltas();
 
         // Determine status based on results
-        if (deltaResult.getDeltasProduced() == 0 && deltaResult.stoppedDueToRecentMessages()) {
+        if (deltaResult.getDeltasProduced() == 0 && deltaResult.stoppedDueToMessagesTooRecent()) {
             // No deltas produced because all messages were too recent
             result.put("status", "skipped");
             result.put("reason", "All messages too recent");
@@ -376,7 +376,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     private DeltaProductionResult produceBatchedDeltas() throws IOException {
         int deltasProduced = 0;
         int totalEntriesProcessed = 0;
-        boolean stoppedDueToRecentMessages = false;
+        boolean stoppedDueToMessagesTooRecent = false;
         
         long jobStartTime = OptOutUtils.nowEpochSeconds();
         LOGGER.info("Starting delta production from SQS queue (maxMessagesPerFile: {})", this.maxMessagesPerFile);
@@ -392,7 +392,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             
             // If no messages, we're done (queue empty or messages too recent)
             if (windowResult.isEmpty()) {
-                stoppedDueToRecentMessages = windowResult.stoppedDueToRecentMessages();
+                stoppedDueToMessagesTooRecent = windowResult.stoppedDueToMessagesTooRecent();
                 LOGGER.info("Delta production complete - no more eligible messages");
                 break;
             }
@@ -426,7 +426,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         LOGGER.info("Delta production complete: took {}s, produced {} deltas, processed {} entries",
             totalDuration, deltasProduced, totalEntriesProcessed);
 
-        return new DeltaProductionResult(deltasProduced, totalEntriesProcessed, stoppedDueToRecentMessages);
+        return new DeltaProductionResult(deltasProduced, totalEntriesProcessed, stoppedDueToMessagesTooRecent);
     }
 
     /**
