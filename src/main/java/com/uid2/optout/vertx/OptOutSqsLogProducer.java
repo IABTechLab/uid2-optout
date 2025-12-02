@@ -85,6 +85,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     private final int visibilityTimeout;
     private final int deltaWindowSeconds; // Time window for each delta file (5 minutes = 300 seconds)
     private final int jobTimeoutSeconds;
+    private final int maxMessagesPerFile; // Memory protection: max messages per delta file
     private final int listenPort;
     private final String internalApiKey;
     private final InternalAuthMiddleware internalAuth;
@@ -138,6 +139,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         this.visibilityTimeout = jsonConfig.getInteger(Const.Config.OptOutSqsVisibilityTimeoutProp, 240); // 4 minutes default
         this.deltaWindowSeconds = 300; // Fixed 5 minutes for all deltas
         this.jobTimeoutSeconds = jsonConfig.getInteger(Const.Config.OptOutDeltaJobTimeoutSecondsProp, 10800); // 3 hours default
+        this.maxMessagesPerFile = jsonConfig.getInteger(Const.Config.OptOutMaxMessagesPerFileProp, 10000); // Memory protection limit
 
         // HTTP server configuration - use port offset + 1 to avoid conflicts
         this.listenPort = Const.Port.ServicePortForOptOut + Utils.getPortOffset() + 1;
@@ -149,11 +151,12 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         int bufferSize = jsonConfig.getInteger(Const.Config.OptOutProducerBufferSizeProp);
         this.buffer = ByteBuffer.allocate(bufferSize).order(ByteOrder.LITTLE_ENDIAN);
         
-        // Initialize window reader
+        // Initialize window reader with memory protection limit
         this.windowReader = new SqsWindowReader(
             this.sqsClient, this.queueUrl, this.maxMessagesPerPoll, 
-            this.visibilityTimeout, this.deltaWindowSeconds
+            this.visibilityTimeout, this.deltaWindowSeconds, this.maxMessagesPerFile
         );
+        LOGGER.info("OptOutSqsLogProducer initialized with maxMessagesPerFile: {}", this.maxMessagesPerFile);
     }
 
     @Override
@@ -365,6 +368,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     /**
      * Reads messages from SQS and produces delta files in 5 minute batches.
      * Continues until queue is empty or messages are too recent.
+     * Windows are limited to maxMessagesPerFile for memory protection.
      * 
      * @return DeltaProductionResult with counts and stop reason
      * @throws IOException if delta production fails
@@ -375,7 +379,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         boolean stoppedDueToRecentMessages = false;
         
         long jobStartTime = OptOutUtils.nowEpochSeconds();
-        LOGGER.info("Starting delta production from SQS queue");
+        LOGGER.info("Starting delta production from SQS queue (maxMessagesPerFile: {})", this.maxMessagesPerFile);
 
         // Read and process windows until done
         while (true) {
@@ -383,7 +387,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                 break;
             }
             
-            // Read one complete 5-minute window
+            // Read one complete 5-minute window (limited to maxMessagesPerFile)
             SqsWindowReader.WindowReadResult windowResult = windowReader.readWindow();
             
             // If no messages, we're done (queue empty or messages too recent)
