@@ -193,10 +193,26 @@ public class OptOutTrafficCalculator {
      * Uses the newest delta file timestamp to anchor the 24-hour delta traffic window,
      * and the oldest queue timestamp to anchor the 5-minute queue window.
      * 
-     * @param sqsMessages List of SQS messages
+     * @param sqsMessages List of SQS messages in the current batch
      * @return TrafficStatus (DELAYED_PROCESSING or DEFAULT)
      */
     public TrafficStatus calculateStatus(List<Message> sqsMessages) {
+        return calculateStatus(sqsMessages, null);
+    }
+    
+    /**
+     * Calculate traffic status based on delta files, SQS queue messages, and queue attributes.
+     * 
+     * Uses the newest delta file timestamp to anchor the 24-hour delta traffic window,
+     * and the oldest queue timestamp to anchor the 5-minute queue window.
+     * 
+     * The invisible message count from queue attributes is added in case of multiple consumers.
+     * 
+     * @param sqsMessages List of SQS messages in the current batch
+     * @param queueAttributes SQS queue attributes including invisible message count (may be null)
+     * @return TrafficStatus (DELAYED_PROCESSING or DEFAULT)
+     */
+    public TrafficStatus calculateStatus(List<Message> sqsMessages, SqsMessageOperations.QueueAttributes queueAttributes) {
         
         try {
             // Get list of delta files from S3 (sorted newest to oldest)
@@ -258,11 +274,21 @@ public class OptOutTrafficCalculator {
                 sum += sqsCount;
             }
             
+            // Add invisible messages from queue attributes (messages being processed by other consumers)
+            // These represent in-flight work that will soon become delta records
+            int invisibleMessages = 0;
+            if (queueAttributes != null) {
+                invisibleMessages = queueAttributes.getApproximateNumberOfMessagesNotVisible();
+                sum += invisibleMessages;
+                LOGGER.info("Traffic calculation: adding {} invisible SQS messages to sum (queue: {})", 
+                           invisibleMessages, queueAttributes);
+            }
+            
             // Determine status
             TrafficStatus status = determineStatus(sum, this.baselineTraffic);
             
-            LOGGER.info("Traffic calculation complete: sum={}, baselineTraffic={}, thresholdMultiplier={}, status={}", 
-                       sum, this.baselineTraffic, this.thresholdMultiplier, status);
+            LOGGER.info("Traffic calculation complete: sum={} (including {} invisible), baselineTraffic={}, thresholdMultiplier={}, status={}", 
+                       sum, invisibleMessages, this.baselineTraffic, this.thresholdMultiplier, status);
             
             return status;
             

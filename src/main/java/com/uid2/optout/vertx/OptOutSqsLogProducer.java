@@ -472,8 +472,11 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             } else if (getManualOverride().equals("DEFAULT")) {
                 LOGGER.info("Manual override set to DEFAULT, skipping traffic calculation");
             } else {
-                // check traffic calculator status
-                OptOutTrafficCalculator.TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(currentDeltaMessages);
+                // Get queue attributes (including invisible messages) for traffic calculation
+                SqsMessageOperations.QueueAttributes queueAttributes = SqsMessageOperations.getQueueAttributes(this.sqsClient, this.queueUrl);
+                
+                // check traffic calculator status (including invisible messages in case of multiple consumers)
+                OptOutTrafficCalculator.TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(currentDeltaMessages, queueAttributes);
                 if (trafficStatus == OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING) {
                     LOGGER.error("OptOut Delta Production has hit DELAYED_PROCESSING status, stopping production");
                     this.setDelayedProcessingOverride();
