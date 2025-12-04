@@ -68,7 +68,7 @@ public class OptOutTrafficFilter {
      * Reload traffic filter config from ConfigMap.
      * Expected format:
 	 * {
-	 *   "blacklist_requests": [
+	 *   "denylist_requests": [
 	 *     {range: [startTimestamp, endTimestamp], IPs: ["ip1"]},
 	 *     {range: [startTimestamp, endTimestamp], IPs: ["ip1", "ip2"]},
 	 *     {range: [startTimestamp, endTimestamp], IPs: ["ip1", "ip3"]},
@@ -100,13 +100,13 @@ public class OptOutTrafficFilter {
     List<TrafficFilterRule> parseFilterRules(JsonObject config) throws MalformedTrafficFilterConfigException {
         List<TrafficFilterRule> rules = new ArrayList<>();
         try {
-            JsonArray blacklistRequests = config.getJsonArray("blacklist_requests");
-            if (blacklistRequests == null) {
-                LOGGER.error("Invalid traffic filter config: blacklist_requests is null");
-                throw new MalformedTrafficFilterConfigException("Invalid traffic filter config: blacklist_requests is null");
+            JsonArray denylistRequests = config.getJsonArray("denylist_requests");
+            if (denylistRequests == null) {
+                LOGGER.error("Invalid traffic filter config: denylist_requests is null");
+                throw new MalformedTrafficFilterConfigException("Invalid traffic filter config: denylist_requests is null");
             }
-            for (int i = 0; i < blacklistRequests.size(); i++) {
-                JsonObject ruleJson = blacklistRequests.getJsonObject(i);
+            for (int i = 0; i < denylistRequests.size(); i++) {
+                JsonObject ruleJson = denylistRequests.getJsonObject(i);
 
                 // parse range
                 var rangeJson = ruleJson.getJsonArray("range");
@@ -134,8 +134,8 @@ public class OptOutTrafficFilter {
 
                 // log error and throw exception if rule is invalid
                 if (range.size() != 2 || ipAddresses.size() == 0 || range.get(1) - range.get(0) > 86400) { // range must be 24 hours or less
-                    LOGGER.error("Invalid traffic filter rule: {}", ruleJson.encode());
-                    throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule");
+                    LOGGER.error("Invalid traffic filter rule, range must be 24 hours or less: {}", ruleJson.encode());
+                    throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule, range must be 24 hours or less");
                 }
 
                 TrafficFilterRule rule = new TrafficFilterRule(range, ipAddresses);
@@ -150,9 +150,14 @@ public class OptOutTrafficFilter {
         }
     }
 
-    public boolean isBlacklisted(SqsParsedMessage message) {
+    public boolean isDenylisted(SqsParsedMessage message) {
         long timestamp = message.getTimestamp();
         String clientIp = message.getClientIp();
+
+        if (clientIp == null || clientIp.isEmpty()) {
+            LOGGER.error("Request does not contain client IP, timestamp={}", timestamp);
+            return false;
+        }
 
         for (TrafficFilterRule rule : filterRules) {
             if(timestamp >= rule.getRangeStart() && timestamp <= rule.getRangeEnd()) {
