@@ -101,7 +101,7 @@ public class OptOutSqsLogProducerTest {
         try {
             String traficFilterConfig = """
                     {
-                        "blacklist_requests": [
+                        "denylist_requests": [
                         ]
                     }
                     """;
@@ -571,11 +571,11 @@ public class OptOutSqsLogProducerTest {
     public void testTrafficFilter_blacklistedMessagesAreDropped(TestContext context) throws Exception {
         Async async = context.async();
 
-        // Setup - update traffic filter config to blacklist specific IP and time range
+        // Setup - update traffic filter config to denyhlist specific IP and time range
         long baseTime = System.currentTimeMillis() / 1000 - 400; // 400 seconds ago
         String filterConfig = String.format("""
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [%d, %d],
                             "IPs": ["192.168.1.100"]
@@ -586,8 +586,8 @@ public class OptOutSqsLogProducerTest {
         createTrafficConfigFile(filterConfig);
 
         // Setup - create messages: some blacklisted, some not
-        long blacklistedTime = (baseTime) * 1000; // Within blacklist range
-        long normalTime = (baseTime - 200) * 1000; // Outside blacklist range
+        long blacklistedTime = (baseTime) * 1000; // Within denyhlist range
+        long normalTime = (baseTime - 200) * 1000; // Outside denyhlist range
         List<Message> messages = Arrays.asList(
                 // These should be dropped (blacklisted)
                 createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, blacklistedTime, null, null, "192.168.1.100", null),
@@ -653,7 +653,7 @@ public class OptOutSqsLogProducerTest {
         long baseTime = System.currentTimeMillis() / 1000 - 400;
         String filterConfig = String.format("""
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [%d, %d],
                             "IPs": ["192.168.1.100"]
@@ -663,7 +663,7 @@ public class OptOutSqsLogProducerTest {
                 """, baseTime - 100, baseTime + 100);
         createTrafficConfigFile(filterConfig);
 
-        // Setup - create messages that don't match blacklist
+        // Setup - create messages that don't match denyhlist
         long normalTime = (baseTime - 200) * 1000;
         List<Message> messages = Arrays.asList(
                 createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, normalTime, null, null, "10.0.0.1", null),
@@ -721,7 +721,7 @@ public class OptOutSqsLogProducerTest {
         long baseTime = System.currentTimeMillis() / 1000 - 400;
         String filterConfig = String.format("""
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [%d, %d],
                             "IPs": ["192.168.1.100"]
@@ -793,7 +793,7 @@ public class OptOutSqsLogProducerTest {
         long baseTime = System.currentTimeMillis() / 1000 - 400;
         String filterConfig = String.format("""
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [%d, %d],
                             "IPs": ["192.168.1.100"]
@@ -851,10 +851,10 @@ public class OptOutSqsLogProducerTest {
     public void testTrafficFilterConfig_reloadOnEachBatch(TestContext context) throws Exception {
         Async async = context.async();
 
-        // Setup - initial config with no blacklist
+        // Setup - initial config with no denyhlist
         String initialConfig = """
                 {
-                    "blacklist_requests": []
+                    "denylist_requests": []
                 }
                 """;
         createTrafficConfigFile(initialConfig);
@@ -895,12 +895,12 @@ public class OptOutSqsLogProducerTest {
                     context.assertEquals(1, result.getInteger("entries_processed"));
                     context.assertEquals(0, result.getInteger("dropped_requests_processed"));
 
-                    // Update config to blacklist the IP
+                    // Update config to denyhlist the IP
                     try {
                         long baseTime = System.currentTimeMillis() / 1000 - 400;
                         String updatedConfig = String.format("""
                                 {
-                                    "blacklist_requests": [
+                                    "denylist_requests": [
                                         {
                                             "range": [%d, %d],
                                             "IPs": ["192.168.1.100"]
