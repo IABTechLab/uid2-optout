@@ -179,6 +179,20 @@ public class OptOutTrafficCalculator {
             
             ranges.sort(Comparator.comparing(range -> range.get(0)));
             
+            // Validate no overlapping ranges
+            for (int i = 0; i < ranges.size() - 1; i++) {
+                long currentEnd = ranges.get(i).get(1);
+                long nextStart = ranges.get(i + 1).get(0);
+                if (currentEnd >= nextStart) {
+                    LOGGER.error("Overlapping allowlist ranges detected: [{}, {}] overlaps with [{}, {}]",
+                            ranges.get(i).get(0), currentEnd, nextStart, ranges.get(i + 1).get(1));
+                    throw new MalformedTrafficCalcConfigException(
+                            "Overlapping allowlist ranges detected at indices " + i + " and " + (i + 1));
+                }
+            }
+            
+        } catch (MalformedTrafficCalcConfigException e) {
+            throw e;
         } catch (Exception e) {
             LOGGER.error("Failed to parse allowlist ranges", e);
             throw new MalformedTrafficCalcConfigException("Failed to parse allowlist ranges: " + e.getMessage());
@@ -231,8 +245,10 @@ public class OptOutTrafficCalculator {
             long oldestQueueTs = findOldestQueueTimestamp(sqsMessages);
             LOGGER.info("Traffic calculation: oldestQueueTs={}", oldestQueueTs);
             
-            // Define start time of the delta evaluation window [newestDeltaTs - 24h, newestDeltaTs]
-            long deltaWindowStart = newestDeltaTs - this.evaluationWindowSeconds - getAllowlistDuration(newestDeltaTs, newestDeltaTs - this.evaluationWindowSeconds);
+            // Define start time of the delta evaluation window
+            // We need evaluationWindowSeconds of non-allowlisted time, so we iteratively extend
+            // the window to account for any allowlist ranges in the extended portion
+            long deltaWindowStart = calculateWindowStartWithAllowlist(newestDeltaTs, this.evaluationWindowSeconds);
             
             // Evict old cache entries (older than delta window start)
             evictOldCacheEntries(deltaWindowStart);
@@ -415,6 +431,31 @@ public class OptOutTrafficCalculator {
             }
         }
         return totalDuration;
+    }
+    
+    /**
+     * Calculate the window start time that provides evaluationWindowSeconds of non-allowlisted time.
+     * Iteratively extends the window to account for allowlist ranges that may fall in extended portions.
+     */
+    long calculateWindowStartWithAllowlist(long newestDeltaTs, int evaluationWindowSeconds) {
+        long allowlistDuration = getAllowlistDuration(newestDeltaTs, newestDeltaTs - evaluationWindowSeconds);
+        
+        // Each iteration discovers at least one new allowlist range, so max iterations = number of ranges
+        int maxIterations = this.allowlistRanges.size() + 1;
+        
+        for (int i = 0; i < maxIterations && allowlistDuration > 0; i++) {
+            long newWindowStart = newestDeltaTs - evaluationWindowSeconds - allowlistDuration;
+            long newAllowlistDuration = getAllowlistDuration(newestDeltaTs, newWindowStart);
+            
+            if (newAllowlistDuration == allowlistDuration) {
+                // No new allowlist time in extended portion, we've converged
+                break;
+            }
+            
+            allowlistDuration = newAllowlistDuration;
+        }
+        
+        return newestDeltaTs - evaluationWindowSeconds - allowlistDuration;
     }
     
     /**

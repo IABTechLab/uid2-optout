@@ -11,6 +11,7 @@ import java.util.List;
 /**
  * Reads messages from SQS for complete 5-minute time windows.
  * Handles accumulation of all messages for a window before returning.
+ * Limits messages per window to prevent memory issues.
  */
 public class SqsWindowReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(SqsWindowReader.class);
@@ -32,6 +33,8 @@ public class SqsWindowReader {
         this.deltaWindowSeconds = deltaWindowSeconds;
         this.maxMessagesPerWindow = maxMessagesPerWindow;
         this.batchProcessor = new SqsBatchProcessor(sqsClient, queueUrl, deltaWindowSeconds);
+        LOGGER.info("SqsWindowReader initialized with: maxMessagesPerWindow: {}, maxMessagesPerPoll: {}, visibilityTimeout: {}, deltaWindowSeconds: {}",
+                        maxMessagesPerWindow, maxMessagesPerPoll, visibilityTimeout, deltaWindowSeconds);
     }
 
     /**
@@ -81,7 +84,6 @@ public class SqsWindowReader {
         long currentWindowStart = 0;
         
         while (true) {
-
             if (windowMessages.size() >= maxMessagesPerWindow) {
                 LOGGER.warn("Message limit exceeded: {} messages >= limit {}. Stopping to prevent memory exhaustion.",
                     windowMessages.size(), maxMessagesPerWindow);

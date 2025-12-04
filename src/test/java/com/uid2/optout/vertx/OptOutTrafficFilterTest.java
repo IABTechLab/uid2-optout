@@ -34,10 +34,10 @@ public class OptOutTrafficFilterTest {
     
     @Test
     public void testParseFilterRules_emptyRules() throws Exception {
-        // Setup - empty blacklist
+        // Setup - empty denylist
         String config = """
                 {
-                    "blacklist_requests": []
+                    "denylist_requests": []
                 }
                 """;
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
@@ -52,7 +52,7 @@ public class OptOutTrafficFilterTest {
         // Setup - config with one rule
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": ["192.168.1.1"]
@@ -72,7 +72,7 @@ public class OptOutTrafficFilterTest {
         // Setup - config with multiple rules
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": ["192.168.1.1"]
@@ -92,8 +92,8 @@ public class OptOutTrafficFilterTest {
     }
     
     @Test(expected = OptOutTrafficFilter.MalformedTrafficFilterConfigException.class)
-    public void testParseFilterRules_missingBlacklistRequests() throws Exception {
-        // Setup - config without blacklist_requests field
+    public void testParseFilterRules_missingDenylistRequests() throws Exception {
+        // Setup - config without denylist_requests field
         String config = """
                 {
                     "other_field": "value"
@@ -110,7 +110,7 @@ public class OptOutTrafficFilterTest {
         // Setup - range where start > end
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700003600, 1700000000],
                             "IPs": ["192.168.1.1"]
@@ -129,7 +129,7 @@ public class OptOutTrafficFilterTest {
         // Setup - range where start == end
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700000000],
                             "IPs": ["192.168.1.1"]
@@ -148,7 +148,7 @@ public class OptOutTrafficFilterTest {
         // Setup - range longer than 24 hours (86400 seconds)
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700086401],
                             "IPs": ["192.168.1.1"]
@@ -167,7 +167,7 @@ public class OptOutTrafficFilterTest {
         // Setup - rule with empty IP list
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": []
@@ -186,7 +186,7 @@ public class OptOutTrafficFilterTest {
         // Setup - rule without IPs field
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600]
                         }
@@ -200,11 +200,11 @@ public class OptOutTrafficFilterTest {
     }
     
     @Test
-    public void testIsBlacklisted_matchingIPAndTimestamp() throws Exception {
-        // Setup - filter with blacklist rule
+    public void testIsDenylisted_matchingIPAndTimestamp() throws Exception {
+        // Setup - filter with denylist rule
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": ["192.168.1.1", "10.0.0.1"]
@@ -215,17 +215,17 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         SqsParsedMessage message = createTestMessage(1700001800, "192.168.1.1");
         
-        // Act & Assert - blacklisted
+        // Act & Assert - denylisted
         OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
-        assertTrue(filter.isBlacklisted(message));
+        assertTrue(filter.isDenylisted(message));
     }
     
     @Test
-    public void testIsBlacklisted_matchingIPOutsideTimeRange() throws Exception {
-        // Setup - filter with blacklist rule
+    public void testIsDenylisted_matchingIPOutsideTimeRange() throws Exception {
+        // Setup - filter with denylist rule
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": ["192.168.1.1"]
@@ -236,20 +236,20 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
         
-        // Act & Assert - message before range not blacklisted
+        // Act & Assert - message before range not denylisted
         SqsParsedMessage messageBefore = createTestMessage(1699999999, "192.168.1.1");
-        assertFalse(filter.isBlacklisted(messageBefore));
-        // Act & Assert - message after range not blacklisted
+        assertFalse(filter.isDenylisted(messageBefore));
+        // Act & Assert - message after range not denylisted
         SqsParsedMessage messageAfter = createTestMessage(1700003601, "192.168.1.1");
-        assertFalse(filter.isBlacklisted(messageAfter));
+        assertFalse(filter.isDenylisted(messageAfter));
     }
     
     @Test
-    public void testIsBlacklisted_nonMatchingIP() throws Exception {
-        // Setup - filter with blacklist rule
+    public void testIsDenylisted_nonMatchingIP() throws Exception {
+        // Setup - filter with denylist rule
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": ["192.168.1.1"]
@@ -260,17 +260,17 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
 
-        // Act & Assert - non-matching IP not blacklisted
+        // Act & Assert - non-matching IP not denylisted
         SqsParsedMessage message = createTestMessage(1700001800, "10.0.0.1");
-        assertFalse(filter.isBlacklisted(message));
+        assertFalse(filter.isDenylisted(message));
     }
     
     @Test
-    public void testIsBlacklisted_atRangeBoundaries() throws Exception {
-        // Setup - filter with blacklist rule
+    public void testIsDenylisted_atRangeBoundaries() throws Exception {
+        // Setup - filter with denylist rule
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": ["192.168.1.1"]
@@ -281,21 +281,21 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
         
-        // Act & Assert - message at start boundary (inclusive) blacklisted
+        // Act & Assert - message at start boundary (inclusive) denylisted
         SqsParsedMessage messageAtStart = createTestMessage(1700000000, "192.168.1.1");
-        assertTrue(filter.isBlacklisted(messageAtStart));
+        assertTrue(filter.isDenylisted(messageAtStart));
         
-        // Act & Assert - message at end boundary (inclusive) blacklisted
+        // Act & Assert - message at end boundary (inclusive) denylisted
         SqsParsedMessage messageAtEnd = createTestMessage(1700003600, "192.168.1.1");
-        assertTrue(filter.isBlacklisted(messageAtEnd));
+        assertTrue(filter.isDenylisted(messageAtEnd));
     }
     
     @Test
-    public void testIsBlacklisted_multipleRules() throws Exception {
-        // Setup - multiple blacklist rules
+    public void testIsDenylisted_multipleRules() throws Exception {
+        // Setup - multiple denylist rules
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": ["192.168.1.1"]
@@ -313,23 +313,23 @@ public class OptOutTrafficFilterTest {
         
         // Act & Assert - message matches first rule
         SqsParsedMessage msg1 = createTestMessage(1700001800, "192.168.1.1");
-        assertTrue(filter.isBlacklisted(msg1));
+        assertTrue(filter.isDenylisted(msg1));
         
         // Act & Assert - message matches second rule
         SqsParsedMessage msg2 = createTestMessage(1700011800, "10.0.0.1");
-        assertTrue(filter.isBlacklisted(msg2));
+        assertTrue(filter.isDenylisted(msg2));
         
         // Act & Assert - message matches neither rule
         SqsParsedMessage msg3 = createTestMessage(1700005000, "172.16.0.1");
-        assertFalse(filter.isBlacklisted(msg3));
+        assertFalse(filter.isDenylisted(msg3));
     }
     
     @Test
-    public void testIsBlacklisted_nullClientIp() throws Exception {
-        // Setup - filter with blacklist rule
+    public void testIsDenylisted_nullClientIp() throws Exception {
+        // Setup - filter with denylist rule
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": ["192.168.1.1"]
@@ -340,9 +340,9 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
         
-        // Act & Assert - message with null IP not blacklisted
+        // Act & Assert - message with null IP not denylisted
         SqsParsedMessage message = createTestMessage(1700001800, null);
-        assertFalse(filter.isBlacklisted(message));
+        assertFalse(filter.isDenylisted(message));
     }
     
     @Test
@@ -350,7 +350,7 @@ public class OptOutTrafficFilterTest {
         // Setup - config with one rule
         String initialConfig = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": ["192.168.1.1"]
@@ -367,7 +367,7 @@ public class OptOutTrafficFilterTest {
         // Setup - update config
         String updatedConfig = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700003600],
                             "IPs": ["192.168.1.1"]
@@ -397,7 +397,7 @@ public class OptOutTrafficFilterTest {
         // Setup - range exactly 24 hours (86400 seconds) - should be valid
         String config = """
                 {
-                    "blacklist_requests": [
+                    "denylist_requests": [
                         {
                             "range": [1700000000, 1700086400],
                             "IPs": ["192.168.1.1"]

@@ -13,6 +13,12 @@ public class DeltaProductionResult {
     private final int entriesProcessed;
     private final int droppedRequestFilesProduced;
     private final int droppedRequestsProcessed;
+    
+    /* 
+     * indicates that there are still messages in the queue, however,
+     * not enough time has elapsed to produce a delta file.
+     * We produce in batches of (5 minutes) 
+     */
     private final boolean stoppedDueToRecentMessages;
 
     public DeltaProductionResult(int deltasProduced, int entriesProcessed, int droppedRequestFilesProduced, int droppedRequestsProcessed, boolean stoppedDueToRecentMessages) {
