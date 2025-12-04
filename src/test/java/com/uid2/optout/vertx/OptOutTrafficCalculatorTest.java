@@ -319,6 +319,61 @@ public class OptOutTrafficCalculatorTest {
         assertTrue(result.isEmpty());
     }
 
+    @Test
+    void testParseTrafficCalcConfigRanges_overlappingRanges() throws Exception {
+        // Setup - overlapping ranges
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        JsonObject configWithRanges = new JsonObject();
+        JsonArray ranges = new JsonArray()
+            .add(new JsonArray().add(1000L).add(2000L))
+            .add(new JsonArray().add(1500L).add(2500L)); // Overlaps with first range
+        configWithRanges.put("traffic_calc_allowlist_ranges", ranges);
+
+        // Act & Assert - should throw exception due to overlap
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.parseAllowlistRanges(configWithRanges);
+        });
+    }
+
+    @Test
+    void testParseTrafficCalcConfigRanges_adjacentRangesWithSameBoundary() throws Exception {
+        // Setup - ranges where end of first equals start of second (touching but not overlapping semantically, but we treat as overlap)
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        JsonObject configWithRanges = new JsonObject();
+        JsonArray ranges = new JsonArray()
+            .add(new JsonArray().add(1000L).add(2000L))
+            .add(new JsonArray().add(2000L).add(3000L)); // Starts exactly where first ends
+        configWithRanges.put("traffic_calc_allowlist_ranges", ranges);
+
+        // Act & Assert - should throw exception because ranges touch at boundary
+        assertThrows(MalformedTrafficCalcConfigException.class, () -> {
+            calculator.parseAllowlistRanges(configWithRanges);
+        });
+    }
+
+    @Test
+    void testParseTrafficCalcConfigRanges_nonOverlappingRanges() throws Exception {
+        // Setup - ranges that don't overlap (with gap between them)
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        JsonObject configWithRanges = new JsonObject();
+        JsonArray ranges = new JsonArray()
+            .add(new JsonArray().add(1000L).add(2000L))
+            .add(new JsonArray().add(2001L).add(3000L)); // Starts after first ends
+        configWithRanges.put("traffic_calc_allowlist_ranges", ranges);
+
+        // Act
+        List<List<Long>> result = calculator.parseAllowlistRanges(configWithRanges);
+
+        // Assert - should succeed with 2 ranges
+        assertEquals(2, result.size());
+    }
+
     // ============================================================================
     // SECTION 3: isInTrafficCalcConfig()
     // ============================================================================
@@ -655,6 +710,101 @@ public class OptOutTrafficCalculatorTest {
 
         // Assert - entire window is in traffic calc config ranges = 5000
         assertEquals(5000L, duration);
+    }
+
+    // ============================================================================
+    // SECTION 4.5: calculateWindowStartWithAllowlist()
+    // ============================================================================
+
+    @Test
+    void testCalculateWindowStartWithAllowlist_noAllowlist() throws Exception {
+        // Setup - no allowlist ranges
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        // Act - window should be [3, 8] with no extension
+        long windowStart = calculator.calculateWindowStartWithAllowlist(8L, 5);
+
+        // Assert - no allowlist, so window start is simply newestDeltaTs - evaluationWindowSeconds
+        assertEquals(3L, windowStart);
+    }
+
+    @Test
+    void testCalculateWindowStartWithAllowlist_allowlistInOriginalWindowOnly() throws Exception {
+        // Setup - allowlist range only in original window, not in extended portion
+        String trafficCalcConfigJson = """
+            {
+                "traffic_calc_allowlist_ranges": [
+                    [6, 7]
+                ]
+            }
+            """;
+        createConfigFromPartialJson(trafficCalcConfigJson);
+
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        // Act - newestDeltaTs=8, evaluationWindow=5
+        // Original window [3, 8] has [6,7] allowlisted (1 hour)
+        // Extended portion [2, 3] has no allowlist
+        // So window start should be 8 - 5 - 1 = 2
+        long windowStart = calculator.calculateWindowStartWithAllowlist(8L, 5);
+
+        assertEquals(2L, windowStart);
+    }
+
+    @Test
+    void testCalculateWindowStartWithAllowlist_allowlistInExtendedPortion() throws Exception {
+        // Setup - allowlist ranges in both original window AND extended portion
+        // This is the user's example: evaluationWindow=5, newestDeltaTs=8, allowlist={[2,3], [6,7]}
+        String trafficCalcConfigJson = """
+            {
+                "traffic_calc_allowlist_ranges": [
+                    [2, 3],
+                    [6, 7]
+                ]
+            }
+            """;
+        createConfigFromPartialJson(trafficCalcConfigJson);
+
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        // Act
+        // Original window [3, 8]: [6,7] allowlisted = 1 hour
+        // First extension to [2, 8]: [2,3] and [6,7] allowlisted = 2 hours total
+        // Second extension to [1, 8]: still [2,3] and [6,7] = 2 hours (no new allowlist)
+        // Final: windowStart = 8 - 5 - 2 = 1
+        long windowStart = calculator.calculateWindowStartWithAllowlist(8L, 5);
+
+        assertEquals(1L, windowStart);
+    }
+
+    @Test
+    void testCalculateWindowStartWithAllowlist_allowlistBeforeWindow() throws Exception {
+        // Setup - allowlist range entirely before the initial window
+        // This tests that we don't over-extend when allowlist is old
+        // evaluationWindow=5, newestDeltaTs=20, allowlist=[10,13]
+        String trafficCalcConfigJson = """
+            {
+                "traffic_calc_allowlist_ranges": [
+                    [10, 13]
+                ]
+            }
+            """;
+        createConfigFromPartialJson(trafficCalcConfigJson);
+
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        // Act
+        // Initial window [15, 20]: no allowlist overlap, allowlistDuration = 0
+        // No extension needed
+        // Final: windowStart = 20 - 5 - 0 = 15
+        long windowStart = calculator.calculateWindowStartWithAllowlist(20L, 5);
+
+        // Verify: window [15, 20] has 5 hours, 0 allowlisted = 5 non-allowlisted
+        assertEquals(15L, windowStart);
     }
 
     // ============================================================================

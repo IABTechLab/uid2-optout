@@ -6,12 +6,18 @@ package com.uid2.optout.vertx;
 public class DeltaProductionResult {
     private final int deltasProduced;
     private final int entriesProcessed;
-    private final boolean stoppedDueToRecentMessages;
 
-    public DeltaProductionResult(int deltasProduced, int entriesProcessed, boolean stoppedDueToRecentMessages) {
+    /* 
+     * indicates that there are still messages in the queue, however,
+     * not enough time has elapsed to produce a delta file.
+     * We produce in batches of (5 minutes) 
+     */
+    private final boolean stoppedDueToMessagesTooRecent;
+
+    public DeltaProductionResult(int deltasProduced, int entriesProcessed, boolean stoppedDueToMessagesTooRecent) {
         this.deltasProduced = deltasProduced;
         this.entriesProcessed = entriesProcessed;
-        this.stoppedDueToRecentMessages = stoppedDueToRecentMessages;
+        this.stoppedDueToMessagesTooRecent = stoppedDueToMessagesTooRecent;
     }
 
     public int getDeltasProduced() {
@@ -22,8 +28,8 @@ public class DeltaProductionResult {
         return entriesProcessed;
     }
 
-    public boolean stoppedDueToRecentMessages() {
-        return stoppedDueToRecentMessages;
+    public boolean stoppedDueToMessagesTooRecent() {
+        return stoppedDueToMessagesTooRecent;
     }
 }
 
