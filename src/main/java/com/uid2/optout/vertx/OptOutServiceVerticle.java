@@ -365,21 +365,23 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         String email = body != null ? body.getString(EMAIL) : null;
         String phone = body != null ? body.getString(PHONE) : null;
 
-        HttpServerResponse resp = routingContext.response();
-
         // while old delta production is enabled, response is handled by replicate logic
 
         // Validate parameters - same as replicate
         if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
+            LOGGER.warn("handleQueue: Invalid identity_hash parameter");
             // this.sendBadRequestError(resp);
             return;
         }
         if (advertisingId == null || params.getAll(ADVERTISING_ID).size() != 1) {
+            LOGGER.warn("handleQueue: Invalid advertising_id parameter");
+
             // this.sendBadRequestError(resp);
             return;
         }
 
         if (!this.isGetOrPost(req)) {
+            LOGGER.warn("handleQueue: Invalid HTTP method: {}", req.method());
             // this.sendBadRequestError(resp);
             return;
         }
@@ -408,8 +410,6 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 }
             }, res -> {
                 if (res.failed()) {
-                    // this.sendInternalServerError(resp, "Failed to queue message: " + res.cause().getMessage());
-                    LOGGER.error("Failed to queue message: " + res.cause().getMessage());
                 } else {
                     String messageId = (String) res.result();
 
@@ -426,8 +426,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 }
             });
         } catch (Exception ex) {
-            // this.sendInternalServerError(resp, ex.getMessage());
-            LOGGER.error("Error processing queue request: " + ex.getMessage(), ex);
+            LOGGER.error("handleQueue: Error processing queue request");
         }
     }
 
