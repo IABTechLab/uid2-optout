@@ -473,8 +473,6 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             if (getManualOverride().equals("DELAYED_PROCESSING")) {
                 LOGGER.info("Manual override set to DELAYED_PROCESSING, stopping production");
                 return new DeltaProductionResult(deltasProduced, totalEntriesProcessed, droppedRequestFilesProduced, droppedRequestsProcessed, true);
-            } else if (getManualOverride().equals("DEFAULT")) {
-                LOGGER.info("Manual override set to DEFAULT, skipping traffic calculation");
             } else {
                 // Get queue attributes (including invisible messages) for traffic calculation
                 SqsMessageOperations.QueueAttributes queueAttributes = SqsMessageOperations.getQueueAttributes(this.sqsClient, this.queueUrl);
