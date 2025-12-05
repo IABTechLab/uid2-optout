@@ -568,7 +568,7 @@ public class OptOutSqsLogProducerTest {
     }
 
     @Test
-    public void testTrafficFilter_blacklistedMessagesAreDropped(TestContext context) throws Exception {
+    public void testTrafficFilter_denylistedMessagesAreDropped(TestContext context) throws Exception {
         Async async = context.async();
 
         // Setup - update traffic filter config to denyhlist specific IP and time range
@@ -585,13 +585,13 @@ public class OptOutSqsLogProducerTest {
                 """, baseTime - 100, baseTime + 100);
         createTrafficConfigFile(filterConfig);
 
-        // Setup - create messages: some blacklisted, some not
-        long blacklistedTime = (baseTime) * 1000; // Within denyhlist range
+        // Setup - create messages: some denylisted, some not
+        long denylistedTime = (baseTime) * 1000; // Within denyhlist range
         long normalTime = (baseTime - 200) * 1000; // Outside denyhlist range
         List<Message> messages = Arrays.asList(
-                // These should be dropped (blacklisted)
-                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, blacklistedTime, null, null, "192.168.1.100", null),
-                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, blacklistedTime + 1000, null, null, "192.168.1.100", null),
+                // These should be dropped (denylisted)
+                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, denylistedTime, null, null, "192.168.1.100", null),
+                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, denylistedTime + 1000, null, null, "192.168.1.100", null),
                 // These should be processed normally
                 createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, normalTime, null, null, "10.0.0.1", null),
                 createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, normalTime + 1000, null, null, "10.0.0.2", null)
@@ -649,7 +649,7 @@ public class OptOutSqsLogProducerTest {
     public void testTrafficFilter_noBlacklistedMessages(TestContext context) throws Exception {
         Async async = context.async();
 
-        // Setup - traffic filter with a blacklisted IP
+        // Setup - traffic filter with a denylisted IP
         long baseTime = System.currentTimeMillis() / 1000 - 400;
         String filterConfig = String.format("""
                 {
@@ -717,7 +717,7 @@ public class OptOutSqsLogProducerTest {
     public void testTrafficFilter_allMessagesBlacklisted(TestContext context) throws Exception {
         Async async = context.async();
 
-        // Setup - traffic filter with a blacklisted IP
+        // Setup - traffic filter with a denylisted IP
         long baseTime = System.currentTimeMillis() / 1000 - 400;
         String filterConfig = String.format("""
                 {
@@ -731,11 +731,11 @@ public class OptOutSqsLogProducerTest {
                 """, baseTime - 100, baseTime + 100);
         createTrafficConfigFile(filterConfig);
 
-        // Setup - create messages that are blacklisted
-        long blacklistedTime = baseTime * 1000;
+        // Setup - create messages that are denylisted
+        long denylistedTime = baseTime * 1000;
         List<Message> messages = Arrays.asList(
-                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, blacklistedTime, null, null, "192.168.1.100", null),
-                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, blacklistedTime + 1000, null, null, "192.168.1.100", null)
+                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, denylistedTime, null, null, "192.168.1.100", null),
+                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, denylistedTime + 1000, null, null, "192.168.1.100", null)
         );
 
         // Setup - mock SQS operations
@@ -767,7 +767,7 @@ public class OptOutSqsLogProducerTest {
                     JsonObject result = finalStatus.getJsonObject("result");
                     context.assertEquals("success", result.getString("status"));
 
-                    // No entries processed (all blacklisted)
+                    // No entries processed (all denylisted)
                     context.assertEquals(0, result.getInteger("entries_processed"));
 
                     // All messages dropped
@@ -789,7 +789,7 @@ public class OptOutSqsLogProducerTest {
     public void testTrafficFilter_messagesWithoutClientIp(TestContext context) throws Exception {
         Async async = context.async();
 
-        // Setup - traffic filter with a blacklisted IP
+        // Setup - traffic filter with a denylisted IP
         long baseTime = System.currentTimeMillis() / 1000 - 400;
         String filterConfig = String.format("""
                 {
@@ -803,7 +803,7 @@ public class OptOutSqsLogProducerTest {
                 """, baseTime - 100, baseTime + 100);
         createTrafficConfigFile(filterConfig);
 
-        // Create messages without client IP (should not be blacklisted)
+        // Create messages without client IP (should not be denylisted)
         long time = baseTime * 1000;
         List<Message> messages = Arrays.asList(
                 createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, time, null, null, null, null)
@@ -839,7 +839,7 @@ public class OptOutSqsLogProducerTest {
                     JsonObject result = finalStatus.getJsonObject("result");
                     context.assertEquals("success", result.getString("status"));
 
-                    // Message should be processed (not blacklisted due to missing IP)
+                    // Message should be processed (not denylisted due to missing IP)
                     context.assertEquals(1, result.getInteger("entries_processed"));
                     context.assertEquals(0, result.getInteger("dropped_requests_processed"));
 
@@ -923,7 +923,7 @@ public class OptOutSqsLogProducerTest {
                         doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
                         doAnswer(inv -> null).when(cloudStorageDroppedRequests).upload(any(InputStream.class), anyString());
 
-                        // Act & Assert - second request - should now be blacklisted
+                        // Act & Assert - second request - should now be denylisted
                         vertx.createHttpClient()
                                 .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
                                         Endpoints.OPTOUT_DELTA_PRODUCE.toString())
@@ -942,7 +942,7 @@ public class OptOutSqsLogProducerTest {
                                 .onComplete(context.asyncAssertSuccess(finalStatus2 -> {
                                     context.assertEquals("completed", finalStatus2.getString("state"));
                                     JsonObject result2 = finalStatus2.getJsonObject("result");
-                                    // Now should be blacklisted
+                                    // Now should be denylisted
                                     context.assertEquals(0, result2.getInteger("entries_processed"));
                                     context.assertEquals(1, result2.getInteger("dropped_requests_processed"));
                                     async.complete();

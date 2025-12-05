@@ -488,13 +488,13 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                 }
             }
             
-            // Upload delta file if there are non-blacklisted messages
+            // Upload delta file if there are non-denylisted messages
             if (!currentDeltaMessages.isEmpty()) {
                 uploadDeltaAndDeleteMessages(deltaStream, deltaName, windowStart, currentDeltaMessages);
                 deltasProduced++;
             }
             
-            // Upload dropped request file if there are blacklisted messages
+            // Upload dropped request file if there are denylisted messages
             if (!droppedRequestMessages.isEmpty()) {
                 this.uploadDroppedRequestsAndDeleteMessages(droppedRequestStream, currentDroppedRequestName, windowStart, droppedRequestMessages);
                 droppedRequestFilesProduced++;
