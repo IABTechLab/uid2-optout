@@ -92,7 +92,6 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     private final int visibilityTimeout;
     private final int deltaWindowSeconds; // Time window for each delta file (5 minutes = 300 seconds)
     private final int jobTimeoutSeconds;
-    private final int maxMessagesPerFile; // Memory protection: max messages per delta file
     private final int listenPort;
     private final String internalApiKey;
     private final InternalAuthMiddleware internalAuth;
@@ -129,10 +128,6 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     // Helper for reading complete 5-minute windows from SQS
     private final SqsWindowReader windowReader;
 
-    public OptOutSqsLogProducer(JsonObject jsonConfig, ICloudStorage cloudStorage, OptOutCloudSync cloudSync) throws IOException, MalformedTrafficCalcConfigException, MalformedTrafficFilterConfigException {
-        this(jsonConfig, cloudStorage, cloudSync, Const.Event.DeltaProduce);
-    }
-
     public OptOutSqsLogProducer(JsonObject jsonConfig, ICloudStorage cloudStorage, OptOutCloudSync cloudSync, String eventDeltaProduced) throws IOException, MalformedTrafficCalcConfigException, MalformedTrafficFilterConfigException {
         this(jsonConfig, cloudStorage, null, cloudSync, eventDeltaProduced, null);
     }
@@ -160,7 +155,6 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         this.visibilityTimeout = jsonConfig.getInteger(Const.Config.OptOutSqsVisibilityTimeoutProp, 240); // 4 minutes default
         this.deltaWindowSeconds = 300; // Fixed 5 minutes for all deltas
         this.jobTimeoutSeconds = jsonConfig.getInteger(Const.Config.OptOutDeltaJobTimeoutSecondsProp, 10800); // 3 hours default
-        this.maxMessagesPerFile = jsonConfig.getInteger(Const.Config.OptOutMaxMessagesPerFileProp, 10000); // Memory protection limit
 
         // HTTP server configuration - use port offset + 1 to avoid conflicts
         this.listenPort = Const.Port.ServicePortForOptOut + Utils.getPortOffset() + 1;
@@ -181,7 +175,6 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             this.sqsClient, this.queueUrl, this.maxMessagesPerPoll, 
             this.visibilityTimeout, this.deltaWindowSeconds, this.trafficCalculator.getThreshold()
         );
-        LOGGER.info("OptOutSqsLogProducer initialized with maxMessagesPerFile: {}", this.maxMessagesPerFile);
     }
 
     @Override
@@ -414,7 +407,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         boolean stoppedDueToRecentMessages = false;
         
         long jobStartTime = OptOutUtils.nowEpochSeconds();
-        LOGGER.info("Starting delta production from SQS queue (maxMessagesPerFile: {})", this.maxMessagesPerFile);
+        LOGGER.info("Starting delta production from SQS queue");
 
         // Read and process windows until done
         while (true) {
