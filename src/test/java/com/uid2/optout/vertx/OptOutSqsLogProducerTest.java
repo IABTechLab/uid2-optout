@@ -116,8 +116,9 @@ public class OptOutSqsLogProducerTest {
         // Mock S3 upload
         doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
         
-        // Call endpoint via HTTP
         int port = Const.Port.ServicePortForOptOut + 1;
+        
+        // Step 1: Start the job (POST) - returns 202 immediately
         vertx.createHttpClient()
                 .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1", 
                         Endpoints.OPTOUT_DELTA_PRODUCE.toString())
@@ -125,14 +126,23 @@ public class OptOutSqsLogProducerTest {
                         .putHeader("Authorization", "Bearer " + TEST_API_KEY)
                         .send())
                 .compose(resp -> {
-                    context.assertEquals(200, resp.statusCode());
+                    context.assertEquals(202, resp.statusCode());
                     return resp.body();
                 })
-                .onComplete(context.asyncAssertSuccess(body -> {
+                .compose(body -> {
                     JsonObject response = new JsonObject(body.toString());
-                    context.assertEquals("success", response.getString("status"));
-                    context.assertTrue(response.getInteger("deltas_produced") >= 1);
-                    context.assertTrue(response.getInteger("entries_processed") >= 2);
+                    context.assertEquals("accepted", response.getString("status"));
+                    
+                    // Step 2: Poll for job completion
+                    return pollForCompletion(context, port, 100, 50); // Poll every 100ms, max 50 times (5 seconds)
+                })
+                .onComplete(context.asyncAssertSuccess(finalStatus -> {
+                    context.assertEquals("completed", finalStatus.getString("state"));
+                    JsonObject result = finalStatus.getJsonObject("result");
+                    context.assertNotNull(result);
+                    context.assertEquals("success", result.getString("status"));
+                    context.assertTrue(result.getInteger("deltas_produced") >= 1);
+                    context.assertTrue(result.getInteger("entries_processed") >= 2);
                     
                     // Verify S3 was called
                     try {
@@ -148,6 +158,48 @@ public class OptOutSqsLogProducerTest {
                 }));
     }
     
+    /**
+     * Helper method to poll for job completion
+     */
+    private io.vertx.core.Future<JsonObject> pollForCompletion(TestContext context, int port, long intervalMs, int maxAttempts) {
+        return pollForCompletionRecursive(context, port, intervalMs, maxAttempts, 0);
+    }
+    
+    private io.vertx.core.Future<JsonObject> pollForCompletionRecursive(TestContext context, int port, long intervalMs, int maxAttempts, int attempt) {
+        if (attempt >= maxAttempts) {
+            return io.vertx.core.Future.failedFuture("Job did not complete within timeout");
+        }
+        
+        return vertx.createHttpClient()
+                .request(io.vertx.core.http.HttpMethod.GET, port, "127.0.0.1",
+                        Endpoints.OPTOUT_DELTA_PRODUCE.toString() + "/status")
+                .compose(req -> req
+                        .putHeader("Authorization", "Bearer " + TEST_API_KEY)
+                        .send())
+                .compose(resp -> {
+                    if (resp.statusCode() != 200) {
+                        return io.vertx.core.Future.failedFuture("Status check failed: " + resp.statusCode());
+                    }
+                    return resp.body();
+                })
+                .compose(body -> {
+                    JsonObject status = new JsonObject(body.toString());
+                    String state = status.getString("state");
+                    
+                    if ("completed".equals(state) || "failed".equals(state)) {
+                        return io.vertx.core.Future.succeededFuture(status);
+                    }
+                    
+                    // Still running or idle, wait and poll again
+                    io.vertx.core.Promise<JsonObject> promise = io.vertx.core.Promise.promise();
+                    vertx.setTimer(intervalMs, id -> {
+                        pollForCompletionRecursive(context, port, intervalMs, maxAttempts, attempt + 1)
+                                .onComplete(promise);
+                    });
+                    return promise.future();
+                });
+    }
+    
     @Test
     public void testDeltaProduceEndpoint_noMessages(TestContext context) {
         Async async = context.async();
@@ -157,6 +209,8 @@ public class OptOutSqsLogProducerTest {
                 .thenReturn(ReceiveMessageResponse.builder().messages(Collections.emptyList()).build());
         
         int port = Const.Port.ServicePortForOptOut + 1;
+        
+        // Start job
         vertx.createHttpClient()
                 .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
                         Endpoints.OPTOUT_DELTA_PRODUCE.toString())
@@ -164,14 +218,23 @@ public class OptOutSqsLogProducerTest {
                         .putHeader("Authorization", "Bearer " + TEST_API_KEY)
                         .send())
                 .compose(resp -> {
-                    context.assertEquals(200, resp.statusCode());
+                    context.assertEquals(202, resp.statusCode());
                     return resp.body();
                 })
-                .onComplete(context.asyncAssertSuccess(body -> {
+                .compose(body -> {
                     JsonObject response = new JsonObject(body.toString());
-                    context.assertEquals("success", response.getString("status"));
-                    context.assertEquals(0, response.getInteger("deltas_produced"));
-                    context.assertEquals(0, response.getInteger("entries_processed"));
+                    context.assertEquals("accepted", response.getString("status"));
+                    
+                    // Poll for completion
+                    return pollForCompletion(context, port, 100, 50);
+                })
+                .onComplete(context.asyncAssertSuccess(finalStatus -> {
+                    context.assertEquals("completed", finalStatus.getString("state"));
+                    JsonObject result = finalStatus.getJsonObject("result");
+                    context.assertNotNull(result);
+                    context.assertEquals("success", result.getString("status"));
+                    context.assertEquals(0, result.getInteger("deltas_produced"));
+                    context.assertEquals(0, result.getInteger("entries_processed"));
                     
                     // Verify no operations
                     try {
@@ -200,6 +263,8 @@ public class OptOutSqsLogProducerTest {
                 .thenReturn(ReceiveMessageResponse.builder().messages(Collections.emptyList()).build());
         
         int port = Const.Port.ServicePortForOptOut + 1;
+        
+        // Start job
         vertx.createHttpClient()
                 .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
                         Endpoints.OPTOUT_DELTA_PRODUCE.toString())
@@ -207,13 +272,22 @@ public class OptOutSqsLogProducerTest {
                         .putHeader("Authorization", "Bearer " + TEST_API_KEY)
                         .send())
                 .compose(resp -> {
-                    context.assertEquals(200, resp.statusCode());
+                    context.assertEquals(202, resp.statusCode());
                     return resp.body();
                 })
-                .onComplete(context.asyncAssertSuccess(body -> {
+                .compose(body -> {
                     JsonObject response = new JsonObject(body.toString());
-                    context.assertEquals("skipped", response.getString("status"));
-                    context.assertEquals("All messages too recent", response.getString("reason"));
+                    context.assertEquals("accepted", response.getString("status"));
+                    
+                    // Poll for completion
+                    return pollForCompletion(context, port, 100, 50);
+                })
+                .onComplete(context.asyncAssertSuccess(finalStatus -> {
+                    context.assertEquals("completed", finalStatus.getString("state"));
+                    JsonObject result = finalStatus.getJsonObject("result");
+                    context.assertNotNull(result);
+                    context.assertEquals("skipped", result.getString("status"));
+                    context.assertEquals("All messages too recent", result.getString("reason"));
                     
                     // No processing should occur
                     try {
@@ -243,6 +317,146 @@ public class OptOutSqsLogProducerTest {
                 .onComplete(context.asyncAssertSuccess(body -> {
                     // Should not call SQS when unauthorized
                     verify(sqsClient, never()).receiveMessage(any(ReceiveMessageRequest.class));
+                    async.complete();
+                }));
+    }
+    
+    @Test
+    public void testDeltaProduceEndpoint_concurrentJobPrevention(TestContext context) throws Exception {
+        Async async = context.async();
+        
+        // Create messages that will take some time to process
+        long oldTime = System.currentTimeMillis() - 400_000;
+        List<Message> messages = Arrays.asList(
+                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, oldTime)
+        );
+        
+        // Mock SQS to return messages
+        when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
+                .thenReturn(ReceiveMessageResponse.builder().messages(messages).build())
+                .thenReturn(ReceiveMessageResponse.builder().messages(Collections.emptyList()).build());
+        
+        when(sqsClient.deleteMessageBatch(any(DeleteMessageBatchRequest.class)))
+                .thenReturn(DeleteMessageBatchResponse.builder().build());
+        
+        doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
+        
+        int port = Const.Port.ServicePortForOptOut + 1;
+        
+        // Start first job
+        vertx.createHttpClient()
+                .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
+                        Endpoints.OPTOUT_DELTA_PRODUCE.toString())
+                .compose(req -> req
+                        .putHeader("Authorization", "Bearer " + TEST_API_KEY)
+                        .send())
+                .compose(resp -> {
+                    context.assertEquals(202, resp.statusCode());
+                    return resp.body();
+                })
+                .compose(body -> {
+                    JsonObject response = new JsonObject(body.toString());
+                    context.assertEquals("accepted", response.getString("status"));
+                    
+                    // Immediately try to start a second job (should be rejected)
+                    return vertx.createHttpClient()
+                            .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
+                                    Endpoints.OPTOUT_DELTA_PRODUCE.toString())
+                            .compose(req -> req
+                                    .putHeader("Authorization", "Bearer " + TEST_API_KEY)
+                                    .send());
+                })
+                .compose(resp -> {
+                    context.assertEquals(409, resp.statusCode()); // Conflict - job already running
+                    return resp.body();
+                })
+                .onComplete(context.asyncAssertSuccess(body -> {
+                    JsonObject response = new JsonObject(body.toString());
+                    context.assertEquals("conflict", response.getString("status"));
+                    context.assertTrue(response.getString("message").contains("already running"));
+                    
+                    async.complete();
+                }));
+    }
+    
+    @Test
+    public void testDeltaProduceEndpoint_autoClearCompletedJob(TestContext context) throws Exception {
+        Async async = context.async();
+        
+        // Create messages for first job
+        long oldTime1 = System.currentTimeMillis() - 400_000;
+        List<Message> messages1 = Arrays.asList(
+                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, oldTime1)
+        );
+        
+        // Create messages for second job
+        long oldTime2 = System.currentTimeMillis() - 400_000;
+        List<Message> messages2 = Arrays.asList(
+                createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, oldTime2)
+        );
+        
+        // Mock SQS to return different messages for each job
+        when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
+                // First job
+                .thenReturn(ReceiveMessageResponse.builder().messages(messages1).build())
+                .thenReturn(ReceiveMessageResponse.builder().messages(Collections.emptyList()).build())
+                // Second job
+                .thenReturn(ReceiveMessageResponse.builder().messages(messages2).build())
+                .thenReturn(ReceiveMessageResponse.builder().messages(Collections.emptyList()).build());
+        
+        when(sqsClient.deleteMessageBatch(any(DeleteMessageBatchRequest.class)))
+                .thenReturn(DeleteMessageBatchResponse.builder().build());
+        
+        doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
+        
+        int port = Const.Port.ServicePortForOptOut + 1;
+        
+        // Start first job
+        vertx.createHttpClient()
+                .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
+                        Endpoints.OPTOUT_DELTA_PRODUCE.toString())
+                .compose(req -> req
+                        .putHeader("Authorization", "Bearer " + TEST_API_KEY)
+                        .send())
+                .compose(resp -> {
+                    context.assertEquals(202, resp.statusCode());
+                    return resp.body();
+                })
+                .compose(body -> {
+                    JsonObject response = new JsonObject(body.toString());
+                    context.assertEquals("accepted", response.getString("status"));
+                    
+                    // Wait for first job to complete
+                    return pollForCompletion(context, port, 100, 50);
+                })
+                .compose(firstJobStatus -> {
+                    context.assertEquals("completed", firstJobStatus.getString("state"));
+                    
+                    // Now start a second job - should auto-clear the completed first job
+                    return vertx.createHttpClient()
+                            .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
+                                    Endpoints.OPTOUT_DELTA_PRODUCE.toString())
+                            .compose(req -> req
+                                    .putHeader("Authorization", "Bearer " + TEST_API_KEY)
+                                    .send());
+                })
+                .compose(resp -> {
+                    context.assertEquals(202, resp.statusCode()); // Should succeed (auto-cleared)
+                    return resp.body();
+                })
+                .compose(body -> {
+                    JsonObject response = new JsonObject(body.toString());
+                    context.assertEquals("accepted", response.getString("status"));
+                    
+                    // Wait for second job to complete
+                    return pollForCompletion(context, port, 100, 50);
+                })
+                .onComplete(context.asyncAssertSuccess(secondJobStatus -> {
+                    context.assertEquals("completed", secondJobStatus.getString("state"));
+                    
+                    // Verify both jobs processed messages
+                    verify(sqsClient, atLeast(2)).deleteMessageBatch(any(DeleteMessageBatchRequest.class));
+                    
                     async.complete();
                 }));
     }

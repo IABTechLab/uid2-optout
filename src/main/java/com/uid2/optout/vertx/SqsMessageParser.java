@@ -34,6 +34,10 @@ public class SqsMessageParser {
                 JsonObject body = new JsonObject(message.body());
                 String identityHash = body.getString("identity_hash");
                 String advertisingId = body.getString("advertising_id");
+                String traceId = body.getString("trace_id");
+                String clientIp = body.getString("client_ip");
+                String email = body.getString("email");
+                String phone = body.getString("phone");
 
                 if (identityHash == null || advertisingId == null) {
                     LOGGER.error("Invalid message format, skipping: {}", message.body());
@@ -48,7 +52,7 @@ public class SqsMessageParser {
                     continue;
                 }
 
-                parsedMessages.add(new SqsParsedMessage(message, hashBytes, idBytes, timestampSeconds));
+                parsedMessages.add(new SqsParsedMessage(message, hashBytes, idBytes, timestampSeconds, email, phone, clientIp, traceId));
             } catch (Exception e) {
                 LOGGER.error("Error parsing SQS message", e);
             }
@@ -73,30 +77,6 @@ public class SqsMessageParser {
             return OptOutUtils.nowEpochSeconds();
         }
         return Long.parseLong(sentTimestampStr) / 1000; // ms to seconds
-    }
-
-    /**
-     * Filters messages to only include those where sufficient time has elapsed.
-     * 
-     * @param messages List of parsed messages
-     * @param deltaWindowSeconds Minimum time window in seconds
-     * @param currentTime Current time in seconds
-     * @return List of messages that meet the time threshold
-     */
-    public static List<SqsParsedMessage> filterEligibleMessages(
-            List<SqsParsedMessage> messages, 
-            int deltaWindowSeconds, 
-            long currentTime) {
-        
-        List<SqsParsedMessage> eligibleMessages = new ArrayList<>();
-        
-        for (SqsParsedMessage pm : messages) {
-            if (currentTime - pm.getTimestamp() >= deltaWindowSeconds) {
-                eligibleMessages.add(pm);
-            }
-        }
-        
-        return eligibleMessages;
     }
 }
 
