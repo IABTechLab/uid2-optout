@@ -123,6 +123,12 @@ public class OptOutTrafficFilter {
                     range.add(end);
                 }
 
+                // log error and throw exception if range is not 2 elements
+                if (range.size() != 2) {
+                    LOGGER.error("Invalid traffic filter rule: range is not 2 elements: {}", ruleJson.encode());
+                    throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule: range is not 2 elements");
+                }
+
                 // parse IPs
                 var ipAddressesJson = ruleJson.getJsonArray("IPs");
                 List<String> ipAddresses = new ArrayList<>();
@@ -132,8 +138,14 @@ public class OptOutTrafficFilter {
                     }
                 }
 
+                // log error and throw exception if IPs is empty
+                if (ipAddresses.size() == 0) {
+                    LOGGER.error("Invalid traffic filter rule: IPs is empty: {}", ruleJson.encode());
+                    throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule: IPs is empty");
+                }
+
                 // log error and throw exception if rule is invalid
-                if (range.size() != 2 || ipAddresses.size() == 0 || range.get(1) - range.get(0) > 86400) { // range must be 24 hours or less
+                if (range.get(1) - range.get(0) > 86400) { // range must be 24 hours or less
                     LOGGER.error("Invalid traffic filter rule, range must be 24 hours or less: {}", ruleJson.encode());
                     throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule, range must be 24 hours or less");
                 }

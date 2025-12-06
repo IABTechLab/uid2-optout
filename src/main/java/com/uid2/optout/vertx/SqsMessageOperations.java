@@ -7,6 +7,7 @@ import software.amazon.awssdk.services.sqs.model.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Utility class for SQS message operations.
@@ -14,6 +15,96 @@ import java.util.List;
 public class SqsMessageOperations {
     private static final Logger LOGGER = LoggerFactory.getLogger(SqsMessageOperations.class);
     private static final int SQS_MAX_DELETE_BATCH_SIZE = 10;
+
+    /**
+     * Result of getting queue attributes from SQS.
+     */
+    public static class QueueAttributes {
+        private final int approximateNumberOfMessages;
+        private final int approximateNumberOfMessagesNotVisible;
+        private final int approximateNumberOfMessagesDelayed;
+
+        public QueueAttributes(int approximateNumberOfMessages, 
+                               int approximateNumberOfMessagesNotVisible,
+                               int approximateNumberOfMessagesDelayed) {
+            this.approximateNumberOfMessages = approximateNumberOfMessages;
+            this.approximateNumberOfMessagesNotVisible = approximateNumberOfMessagesNotVisible;
+            this.approximateNumberOfMessagesDelayed = approximateNumberOfMessagesDelayed;
+        }
+
+        /** Number of messages available for retrieval from the queue (visible messages) */
+        public int getApproximateNumberOfMessages() {
+            return approximateNumberOfMessages;
+        }
+
+        /** Number of messages that are in flight (being processed by consumers, invisible) */
+        public int getApproximateNumberOfMessagesNotVisible() {
+            return approximateNumberOfMessagesNotVisible;
+        }
+
+        /** Number of messages in the queue that are delayed and not available yet */
+        public int getApproximateNumberOfMessagesDelayed() {
+            return approximateNumberOfMessagesDelayed;
+        }
+
+        /** Total messages in queue = visible + invisible + delayed */
+        public int getTotalMessages() {
+            return approximateNumberOfMessages + approximateNumberOfMessagesNotVisible + approximateNumberOfMessagesDelayed;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("QueueAttributes{visible=%d, invisible=%d, delayed=%d, total=%d}",
+                approximateNumberOfMessages, approximateNumberOfMessagesNotVisible, 
+                approximateNumberOfMessagesDelayed, getTotalMessages());
+        }
+    }
+
+    /**
+     * Gets queue attributes from SQS including message counts.
+     * 
+     * @param sqsClient The SQS client
+     * @param queueUrl The queue URL
+     * @return QueueAttributes with message counts, or null if failed
+     */
+    public static QueueAttributes getQueueAttributes(SqsClient sqsClient, String queueUrl) {
+        try {
+            GetQueueAttributesRequest request = GetQueueAttributesRequest.builder()
+                .queueUrl(queueUrl)
+                .attributeNames(
+                    QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES,
+                    QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_NOT_VISIBLE,
+                    QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_DELAYED
+                )
+                .build();
+
+            GetQueueAttributesResponse response = sqsClient.getQueueAttributes(request);
+            Map<QueueAttributeName, String> attrs = response.attributes();
+
+            int visible = parseIntOrDefault(attrs.get(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES), 0);
+            int invisible = parseIntOrDefault(attrs.get(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_NOT_VISIBLE), 0);
+            int delayed = parseIntOrDefault(attrs.get(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_DELAYED), 0);
+
+            QueueAttributes queueAttributes = new QueueAttributes(visible, invisible, delayed);
+            LOGGER.debug("Queue attributes: {}", queueAttributes);
+            return queueAttributes;
+
+        } catch (Exception e) {
+            LOGGER.error("Error getting queue attributes from SQS", e);
+            return null;
+        }
+    }
+
+    private static int parseIntOrDefault(String value, int defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
 
     /**
      * Receives all available messages from an SQS queue up to a maximum number of batches.

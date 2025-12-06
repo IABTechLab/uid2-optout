@@ -21,20 +21,28 @@ public class SqsWindowReader {
     private final int maxMessagesPerPoll;
     private final int visibilityTimeout;
     private final int deltaWindowSeconds;
-    private final int maxMessagesPerFile;
     private final SqsBatchProcessor batchProcessor;
-    
+    private int maxMessagesPerWindow;
+
     public SqsWindowReader(SqsClient sqsClient, String queueUrl, int maxMessagesPerPoll, 
-                          int visibilityTimeout, int deltaWindowSeconds, int maxMessagesPerFile) {
+                          int visibilityTimeout, int deltaWindowSeconds, int maxMessagesPerWindow) {
         this.sqsClient = sqsClient;
         this.queueUrl = queueUrl;
         this.maxMessagesPerPoll = maxMessagesPerPoll;
         this.visibilityTimeout = visibilityTimeout;
         this.deltaWindowSeconds = deltaWindowSeconds;
-        this.maxMessagesPerFile = maxMessagesPerFile;
+        this.maxMessagesPerWindow = maxMessagesPerWindow;
         this.batchProcessor = new SqsBatchProcessor(sqsClient, queueUrl, deltaWindowSeconds);
-        LOGGER.info("SqsWindowReader initialized with: maxMessagesPerFile: {}, maxMessagesPerPoll: {}, visibilityTimeout: {}, deltaWindowSeconds: {}",
-                        maxMessagesPerFile, maxMessagesPerPoll, visibilityTimeout, deltaWindowSeconds);
+        LOGGER.info("SqsWindowReader initialized with: maxMessagesPerWindow: {}, maxMessagesPerPoll: {}, visibilityTimeout: {}, deltaWindowSeconds: {}",
+                        maxMessagesPerWindow, maxMessagesPerPoll, visibilityTimeout, deltaWindowSeconds);
+    }
+
+    /**
+     * Update the max messages limit (e.g., after config reload).
+     */
+    public void setMaxMessagesPerWindow(int maxMessagesPerWindow) {
+        this.maxMessagesPerWindow = maxMessagesPerWindow;
+        LOGGER.info("Updated maxMessagesPerWindow to {}", maxMessagesPerWindow);
     }
 
     /**
@@ -43,19 +51,22 @@ public class SqsWindowReader {
     public static class WindowReadResult {
         private final List<SqsParsedMessage> messages;
         private final long windowStart;
-        private final boolean stoppedDueToMessagesTooRecent;
+        private final boolean stoppedDueToRecentMessages;
+        private final boolean exceededMessageLimit;
         
         public WindowReadResult(List<SqsParsedMessage> messages, long windowStart, 
-                                boolean stoppedDueToMessagesTooRecent) {
+                               boolean stoppedDueToRecentMessages, boolean exceededMessageLimit) {
             this.messages = messages;
             this.windowStart = windowStart;
-            this.stoppedDueToMessagesTooRecent = stoppedDueToMessagesTooRecent;
+            this.stoppedDueToRecentMessages = stoppedDueToRecentMessages;
+            this.exceededMessageLimit = exceededMessageLimit;
         }
         
         public List<SqsParsedMessage> getMessages() { return messages; }
         public long getWindowStart() { return windowStart; }
         public boolean isEmpty() { return messages.isEmpty(); }
-        public boolean stoppedDueToMessagesTooRecent() { return stoppedDueToMessagesTooRecent; }
+        public boolean stoppedDueToRecentMessages() { return stoppedDueToRecentMessages; }
+        public boolean exceededMessageLimit() { return exceededMessageLimit; }
     }
 
     /**
@@ -64,7 +75,7 @@ public class SqsWindowReader {
      * - We discover the next window
      * - Queue is empty (no more messages)
      * - Messages are too recent (all messages younger than 5 minutes)
-     * - Message limit is reached (memory protection)
+     * - Message count exceeds maxMessagesPerWindow
      * 
      * @return WindowReadResult with messages for the window, or empty if done
      */
@@ -73,11 +84,10 @@ public class SqsWindowReader {
         long currentWindowStart = 0;
         
         while (true) {
-            // Check if we've hit the message limit
-            if (windowMessages.size() >= this.maxMessagesPerFile) {
-                LOGGER.warn("Window message limit reached ({} messages). Truncating window starting at {} for memory protection.",
-                    this.maxMessagesPerFile, currentWindowStart);
-                return new WindowReadResult(windowMessages, currentWindowStart, false);
+            if (windowMessages.size() >= maxMessagesPerWindow) {
+                LOGGER.warn("Message limit exceeded: {} messages >= limit {}. Stopping to prevent memory exhaustion.",
+                    windowMessages.size(), maxMessagesPerWindow);
+                return new WindowReadResult(windowMessages, currentWindowStart, false, true);
             }
             
             // Read one batch from SQS (up to 10 messages)
@@ -86,7 +96,7 @@ public class SqsWindowReader {
             
             if (rawBatch.isEmpty()) {
                 // Queue empty - return what we have
-                return new WindowReadResult(windowMessages, currentWindowStart, false);
+                return new WindowReadResult(windowMessages, currentWindowStart, false, false);
             }
             
             // Process batch: parse, validate, filter
@@ -95,7 +105,7 @@ public class SqsWindowReader {
             if (batchResult.isEmpty()) {
                 if (batchResult.shouldStopProcessing()) {
                     // Messages too recent - return what we have
-                    return new WindowReadResult(windowMessages, currentWindowStart, true);
+                    return new WindowReadResult(windowMessages, currentWindowStart, true, false);
                 }
                 // corrupt messages deleted, read next messages
                 continue;
@@ -117,13 +127,19 @@ public class SqsWindowReader {
                 }
                 
                 windowMessages.add(msg);
+                
+                // Check limit after each message addition
+                if (windowMessages.size() >= maxMessagesPerWindow) {
+                    LOGGER.warn("Message limit exceeded during batch: {} messages >= limit {}",
+                        windowMessages.size(), maxMessagesPerWindow);
+                    return new WindowReadResult(windowMessages, currentWindowStart, false, true);
+                }
             }
 
             if (newWindow) {
                 // close current window and return
-                return new WindowReadResult(windowMessages, currentWindowStart, false);
+                return new WindowReadResult(windowMessages, currentWindowStart, false, false);
             }
         }
     }
 }
-
