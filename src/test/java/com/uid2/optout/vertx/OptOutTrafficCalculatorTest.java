@@ -4,6 +4,7 @@ import com.uid2.shared.cloud.CloudStorageException;
 import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.optout.OptOutCollection;
 import com.uid2.shared.optout.OptOutEntry;
+import com.uid2.optout.sqs.SqsMessageOperations;
 import com.uid2.optout.Const;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -1538,8 +1539,8 @@ public class OptOutTrafficCalculatorTest {
         // QueueAttributes: 0 visible, 600 invisible (other consumers), 0 delayed
         // Since we read 1 message, otherConsumers = 600 - 1 = 599
         // Total = 10 (delta) + 1 (our message) + 599 (other consumers) = 610 >= 500 threshold
-        com.uid2.optout.sqs.SqsMessageOperations.QueueAttributes queueAttributes = 
-            new com.uid2.optout.sqs.SqsMessageOperations.QueueAttributes(0, 600, 0);
+        SqsMessageOperations.QueueAttributes queueAttributes = 
+            new SqsMessageOperations.QueueAttributes(0, 600, 0);
         
         OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes);
 
@@ -1578,8 +1579,8 @@ public class OptOutTrafficCalculatorTest {
         // QueueAttributes: 0 visible, 450 invisible (200 ours + 250 others), 0 delayed
         // otherConsumers = 450 - 200 = 250
         // Total = 100 (delta) + 200 (our messages) + 250 (other consumers) = 550 >= 500 threshold
-        com.uid2.optout.sqs.SqsMessageOperations.QueueAttributes queueAttributes = 
-            new com.uid2.optout.sqs.SqsMessageOperations.QueueAttributes(0, 450, 0);
+        SqsMessageOperations.QueueAttributes queueAttributes = 
+            new SqsMessageOperations.QueueAttributes(0, 450, 0);
         
         OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes);
 
