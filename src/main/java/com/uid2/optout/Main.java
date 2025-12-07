@@ -308,12 +308,12 @@ public class Main {
                 LOGGER.info("SQS log producer deployed - bucket: {}, folder: {}", 
                     this.config.getString(Const.Config.OptOutS3BucketProp), sqsFolder);
             } catch (IOException e) {
-                LOGGER.error("Failed to initialize SQS log producer: " + e.getMessage(), e);
-                LOGGER.error("Failed to initialize SQS log producer, delta production will be disabled: " + e.getMessage(), e);
+                LOGGER.error("failed to initialize SQS log producer: " + e.getMessage(), e);
+                LOGGER.error("failed to initialize SQS log producer, delta production will be disabled: " + e.getMessage(), e);
             } catch (MalformedTrafficFilterConfigException e) {
-                LOGGER.error("The traffic filter config is malformed, refusing to process messages, delta production will be disabled: " + e.getMessage(), e);
+                LOGGER.error("the traffic filter config is malformed, refusing to process messages, delta production will be disabled: " + e.getMessage(), e);
             } catch (MalformedTrafficCalcConfigException e) {
-                LOGGER.error("The traffic calc config is malformed, refusing to process messages, delta production will be disabled: " + e.getMessage(), e);
+                LOGGER.error("the traffic calc config is malformed, refusing to process messages, delta production will be disabled: " + e.getMessage(), e);
             }
         }
 

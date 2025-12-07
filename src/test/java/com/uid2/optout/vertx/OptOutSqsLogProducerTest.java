@@ -331,7 +331,7 @@ public class OptOutSqsLogProducerTest {
                     context.assertEquals("completed", finalStatus.getString("state"));
                     JsonObject result = finalStatus.getJsonObject("result");
                     context.assertNotNull(result);
-                    context.assertEquals("success", result.getString("status"));
+                    context.assertEquals("skipped", result.getString("status"));
                     context.assertEquals(0, result.getInteger("deltas_produced"));
                     context.assertEquals(0, result.getInteger("entries_processed"));
                     
@@ -386,7 +386,7 @@ public class OptOutSqsLogProducerTest {
                     JsonObject result = finalStatus.getJsonObject("result");
                     context.assertNotNull(result);
                     context.assertEquals("skipped", result.getString("status"));
-                    context.assertEquals("MESSAGES_TOO_RECENT", result.getString("reason"));
+                    context.assertEquals("MESSAGES_TOO_RECENT", result.getString("stop_reason"));
                     
                     // No processing should occur
                     try {
@@ -1070,8 +1070,8 @@ public class OptOutSqsLogProducerTest {
                 .onComplete(context.asyncAssertSuccess(finalStatus -> {
                     context.assertEquals("completed", finalStatus.getString("state"));
                     JsonObject result = finalStatus.getJsonObject("result");
-                    context.assertEquals("skipped", result.getString("status"));
-                    context.assertEquals("MANUAL_OVERRIDE_ACTIVE", result.getString("reason"));
+                    context.assertEquals("halted", result.getString("status"));
+                    context.assertEquals("MANUAL_OVERRIDE_ACTIVE", result.getString("stop_reason"));
 
                     // Should not process anything - manual override checked at start
                     context.assertEquals(0, result.getInteger("entries_processed"));
@@ -1258,7 +1258,7 @@ public class OptOutSqsLogProducerTest {
                 .onComplete(context.asyncAssertSuccess(finalStatus -> {
                     context.assertEquals("completed", finalStatus.getString("state"));
                     JsonObject result = finalStatus.getJsonObject("result");
-                    context.assertEquals("skipped", result.getString("status"));
+                    context.assertEquals("halted", result.getString("status"));
 
                     // Expected behavior:
                     // All 610 messages are within a single 5-minute window
@@ -1355,7 +1355,7 @@ public class OptOutSqsLogProducerTest {
                 .onComplete(context.asyncAssertSuccess(finalStatus -> {
                     context.assertEquals("completed", finalStatus.getString("state"));
                     JsonObject result = finalStatus.getJsonObject("result");
-                    context.assertEquals("skipped", result.getString("status"));
+                    context.assertEquals("halted", result.getString("status"));
 
                     // Expected behavior:
                     // SqsWindowReader hits maxMessagesPerWindow limit (100) during reading
