@@ -16,7 +16,7 @@ import java.nio.ByteOrder;
  * 
  * Delta files have the following format:
  * - Start entry: null hash (32 bytes) + null hash (32 bytes) + timestamp (8 bytes)
- * - Opt-out entries: hash (32 bytes) + id (32 bytes) + timestamp (8 bytes)
+ * - Opt-out entries: hash (32 bytes) + id (32 bytes) + timestamp (7 bytes) + metadata (1 byte)
  * - End entry: ones hash (32 bytes) + ones hash (32 bytes) + timestamp (8 bytes)
  * 
  * Each entry is 72 bytes (OptOutConst.EntrySize).

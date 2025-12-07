@@ -49,23 +49,23 @@ public class DeltaManualOverrideService {
         return DELAYED_PROCESSING_VALUE.equals(getOverrideValue());
     }
 
-        /**
+    /**
      * Set the manual override to DELAYED_PROCESSING.
      * This will stop delta production until manually cleared.
      * 
      * @return true if override was set successfully
      */
-        public boolean setDelayedProcessing() {
-            try {
-                JsonObject config = new JsonObject().put(OVERRIDE_KEY, DELAYED_PROCESSING_VALUE);
-                cloudStorage.upload(new ByteArrayInputStream(config.encode().getBytes()), overrideS3Path);
-                LOGGER.info("Set manual override to DELAYED_PROCESSING at {}", overrideS3Path);
-                return true;
-            } catch (Exception e) {
-                LOGGER.error("Error setting delayed processing override at {}: {}", overrideS3Path, e.getMessage(), e);
-                return false;
-            }
+    public boolean setDelayedProcessing() {
+        try {
+            JsonObject config = new JsonObject().put(OVERRIDE_KEY, DELAYED_PROCESSING_VALUE);
+            cloudStorage.upload(new ByteArrayInputStream(config.encode().getBytes()), overrideS3Path);
+            LOGGER.info("Set manual override to DELAYED_PROCESSING at {}", overrideS3Path);
+            return true;
+        } catch (Exception e) {
+            LOGGER.error("Error setting delayed processing override at {}: {}", overrideS3Path, e.getMessage(), e);
+            return false;
         }
+    }
     
     /**
      * Get the current manual override value
