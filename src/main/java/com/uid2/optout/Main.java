@@ -1,8 +1,8 @@
 package com.uid2.optout;
 
 import com.uid2.optout.vertx.*;
-import com.uid2.optout.vertx.OptOutTrafficFilter.MalformedTrafficFilterConfigException;
-import com.uid2.optout.vertx.OptOutTrafficCalculator.MalformedTrafficCalcConfigException;
+import com.uid2.optout.traffic.OptOutTrafficFilter.MalformedTrafficFilterConfigException;
+import com.uid2.optout.traffic.OptOutTrafficCalculator.MalformedTrafficCalcConfigException;
 import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationResponseHandler;

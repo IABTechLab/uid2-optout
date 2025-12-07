@@ -1,4 +1,4 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.traffic;
 
 import com.uid2.shared.cloud.CloudStorageException;
 import com.uid2.shared.cloud.ICloudStorage;
@@ -24,7 +24,8 @@ import org.mockito.quality.Strictness;
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 
-import com.uid2.optout.vertx.OptOutTrafficCalculator.MalformedTrafficCalcConfigException;
+import com.uid2.optout.traffic.OptOutTrafficCalculator;
+import com.uid2.optout.traffic.OptOutTrafficCalculator.MalformedTrafficCalcConfigException;
 import java.io.ByteArrayInputStream;
 import java.util.*;
 

@@ -1,10 +1,11 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.traffic;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 import com.uid2.optout.sqs.SqsParsedMessage;
+import com.uid2.optout.traffic.OptOutTrafficFilter;
 
 import software.amazon.awssdk.services.sqs.model.Message;
 

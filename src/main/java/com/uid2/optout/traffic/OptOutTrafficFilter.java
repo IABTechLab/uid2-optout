@@ -1,4 +1,4 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.traffic;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

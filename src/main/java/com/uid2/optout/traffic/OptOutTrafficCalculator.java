@@ -1,4 +1,4 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.traffic;
 
 import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.optout.OptOutCollection;
@@ -267,7 +267,6 @@ public class OptOutTrafficCalculator {
                 for (long ts : timestamps) {
                     // Stop condition: record is older than our window
                     if (ts < deltaWindowStart) {
-                        LOGGER.info("stopping delta file processing at timestamp {} (older than window start {})", ts, deltaWindowStart);
                         break;
                     }
                     
@@ -314,8 +313,8 @@ public class OptOutTrafficCalculator {
             // Determine status
             TrafficStatus status = determineStatus(sum, this.baselineTraffic);
             
-            LOGGER.info("traffic calculation complete: sum={} (deltaRecords + sqsMessages={} + otherConsumers={}), baselineTraffic={}, thresholdMultiplier={}, status={}", 
-                       sum, sqsCount, otherConsumersMessages, this.baselineTraffic, this.thresholdMultiplier, status);
+            LOGGER.info("traffic calculation complete: sum={} (deltaRecords={} + sqsMessages={} + otherConsumers={}), baselineTraffic={}, thresholdMultiplier={}, status={}", 
+                       sum, deltaRecordsCount, sqsCount, otherConsumersMessages, this.baselineTraffic, this.thresholdMultiplier, status);
             
             return status;
             
@@ -389,17 +388,14 @@ public class OptOutTrafficCalculator {
         // Check cache first
         FileRecordCache cached = deltaFileCache.get(filename);
         if (cached != null) {
-            LOGGER.info("using cached timestamps for file: {}", filename);
             return cached.timestamps;
         }
         
         // Cache miss - download from S3
-        LOGGER.info("downloading and reading timestamps from s3: {}", s3Path);
         List<Long> timestamps = readTimestampsFromS3(s3Path);
         
         // Store in cache
         deltaFileCache.put(filename, new FileRecordCache(timestamps));
-        LOGGER.info("cached delta file: {} ({} records)", filename, timestamps.size());
         
         return timestamps;
     }
@@ -509,7 +505,7 @@ public class OptOutTrafficCalculator {
             try {
                 return Long.parseLong(sentTimestamp) / 1000;  // Convert ms to seconds
             } catch (NumberFormatException e) {
-                LOGGER.info("invalid sentTimestamp: {}", sentTimestamp);
+                LOGGER.warn("invalid sentTimestamp: {}", sentTimestamp);
             }
         }
         
@@ -595,7 +591,7 @@ public class OptOutTrafficCalculator {
         }
         
         if (sumCurrent >= thresholdMultiplier * baselineTraffic) {
-            LOGGER.warn("delayed_processing threshold breached: sumCurrent={} >= {}×baselineTraffic={}", 
+            LOGGER.error("delayed_processing threshold breached: sumCurrent={} >= {}×baselineTraffic={}", 
                        sumCurrent, thresholdMultiplier, baselineTraffic);
             return TrafficStatus.DELAYED_PROCESSING;
         }
