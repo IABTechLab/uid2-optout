@@ -1,4 +1,4 @@
-package com.uid2.optout.sqs;
+package com.uid2.optout.vertx;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
