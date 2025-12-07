@@ -62,8 +62,7 @@ public class OptOutTrafficFilter {
         this.filterRules = Collections.emptyList(); // start empty
         reloadTrafficFilterConfig(); // load ConfigMap
 
-        LOGGER.info("OptOutTrafficFilter initialized: filterRules={}", 
-        filterRules.size());
+        LOGGER.info("initialized: filterRules={}", filterRules.size());
     }
 
     /**
@@ -80,18 +79,17 @@ public class OptOutTrafficFilter {
      * Can be called periodically to pick up config changes without restarting.
      */
     public void reloadTrafficFilterConfig() throws MalformedTrafficFilterConfigException {
-        LOGGER.info("Loading traffic filter config from ConfigMap");
+        LOGGER.info("loading traffic filter config");
         try (InputStream is = Files.newInputStream(Paths.get(trafficFilterConfigPath))) {
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             JsonObject filterConfigJson = new JsonObject(content);
 
             this.filterRules = parseFilterRules(filterConfigJson);
 
-            LOGGER.info("Successfully loaded traffic filter config from ConfigMap: filterRules={}",
-                       filterRules.size());
+            LOGGER.info("loaded traffic filter config: filterRules={}", filterRules.size());
 
         } catch (Exception e) {
-            LOGGER.warn("No traffic filter config found at: {}", trafficFilterConfigPath, e);
+            LOGGER.warn("no traffic filter config found at: {}", trafficFilterConfigPath, e);
             throw new MalformedTrafficFilterConfigException(e.getMessage());
         } 
     }
@@ -104,8 +102,8 @@ public class OptOutTrafficFilter {
         try {
             JsonArray denylistRequests = config.getJsonArray("denylist_requests");
             if (denylistRequests == null) {
-                LOGGER.error("Invalid traffic filter config: denylist_requests is null");
-                throw new MalformedTrafficFilterConfigException("Invalid traffic filter config: denylist_requests is null");
+                LOGGER.error("invalid traffic filter config: denylist_requests is null");
+                throw new MalformedTrafficFilterConfigException("invalid traffic filter config: denylist_requests is null");
             }
             for (int i = 0; i < denylistRequests.size(); i++) {
                 JsonObject ruleJson = denylistRequests.getJsonObject(i);
@@ -118,8 +116,8 @@ public class OptOutTrafficFilter {
                     long end = rangeJson.getLong(1);
 
                     if (start >= end) {
-                        LOGGER.error("Invalid traffic filter rule: range start must be less than end: {}", ruleJson.encode());
-                        throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule: range start must be less than end");
+                        LOGGER.error("invalid traffic filter rule, range start must be less than end: {}", ruleJson.encode());
+                        throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: range start must be less than end");
                     }
                     range.add(start);
                     range.add(end);
@@ -127,8 +125,8 @@ public class OptOutTrafficFilter {
 
                 // log error and throw exception if range is not 2 elements
                 if (range.size() != 2) {
-                    LOGGER.error("Invalid traffic filter rule: range is not 2 elements: {}", ruleJson.encode());
-                    throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule: range is not 2 elements");
+                    LOGGER.error("invalid traffic filter rule, range is not 2 elements: {}", ruleJson.encode());
+                    throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: range is not 2 elements");
                 }
 
                 // parse IPs
@@ -142,24 +140,24 @@ public class OptOutTrafficFilter {
 
                 // log error and throw exception if IPs is empty
                 if (ipAddresses.size() == 0) {
-                    LOGGER.error("Invalid traffic filter rule: IPs is empty: {}", ruleJson.encode());
-                    throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule: IPs is empty");
+                    LOGGER.error("invalid traffic filter rule, IPs is empty: {}", ruleJson.encode());
+                    throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: IPs is empty");
                 }
 
                 // log error and throw exception if rule is invalid
                 if (range.get(1) - range.get(0) > 86400) { // range must be 24 hours or less
-                    LOGGER.error("Invalid traffic filter rule, range must be 24 hours or less: {}", ruleJson.encode());
-                    throw new MalformedTrafficFilterConfigException("Invalid traffic filter rule, range must be 24 hours or less");
+                    LOGGER.error("invalid traffic filter rule, range must be 24 hours or less: {}", ruleJson.encode());
+                    throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: range must be 24 hours or less");
                 }
 
                 TrafficFilterRule rule = new TrafficFilterRule(range, ipAddresses);
 
-                LOGGER.info("Loaded traffic filter rule: range=[{}, {}], IPs={}", rule.getRangeStart(), rule.getRangeEnd(), rule.getIpAddresses());
+                LOGGER.info("loaded traffic filter rule: range=[{}, {}], IPs={}", rule.getRangeStart(), rule.getRangeEnd(), rule.getIpAddresses());
                 rules.add(rule);
             }
             return rules;
         } catch (Exception e) {
-            LOGGER.error("Failed to parse traffic filter rules: config={}, error={}", config.encode(), e.getMessage());
+            LOGGER.error("failed to parse traffic filter rules: config={}, error={}", config.encode(), e.getMessage());
             throw new MalformedTrafficFilterConfigException(e.getMessage());
         }
     }
@@ -169,7 +167,7 @@ public class OptOutTrafficFilter {
         String clientIp = message.getClientIp();
 
         if (clientIp == null || clientIp.isEmpty()) {
-            LOGGER.error("Request does not contain client IP, timestamp={}", timestamp);
+            LOGGER.error("request does not contain client ip, timestamp={}", timestamp);
             return false;
         }
 

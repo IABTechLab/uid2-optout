@@ -86,11 +86,11 @@ public class SqsMessageOperations {
             int delayed = parseIntOrDefault(attrs.get(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_DELAYED), 0);
 
             QueueAttributes queueAttributes = new QueueAttributes(visible, invisible, delayed);
-            LOGGER.debug("queue attributes: {}", queueAttributes);
+            LOGGER.info("queue attributes: {}", queueAttributes);
             return queueAttributes;
 
         } catch (Exception e) {
-            LOGGER.error("error getting queue attributes", e);
+            LOGGER.info("error getting queue attributes", e);
             return null;
         }
     }
@@ -132,7 +132,7 @@ public class SqsMessageOperations {
 
             ReceiveMessageResponse response = sqsClient.receiveMessage(receiveRequest);
 
-            LOGGER.debug("received {} messages", response.messages().size());
+            LOGGER.info("received {} messages", response.messages().size());
             return response.messages();
 
         } catch (Exception e) {
@@ -183,7 +183,7 @@ public class SqsMessageOperations {
                 }
             }
 
-            LOGGER.debug("deleted {} messages", totalDeleted);
+            LOGGER.info("deleted {} messages", totalDeleted);
 
         } catch (Exception e) {
             LOGGER.error("error deleting messages", e);

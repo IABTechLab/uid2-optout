@@ -76,7 +76,7 @@ public class DeltaManualOverrideService {
             JsonObject configJson = Utils.toJsonObject(inputStream);
             return configJson.getString(OVERRIDE_KEY, "");
         } catch (Exception e) {
-            LOGGER.debug("no manual override found: {}", overrideS3Path);
+            LOGGER.error("no manual override found: {}", overrideS3Path);
             return "";
         }
     }
