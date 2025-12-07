@@ -1,7 +1,4 @@
-package com.uid2.optout.vertx;
-
-import com.uid2.optout.delta.DeltaProductionJobStatus;
-import com.uid2.optout.delta.StopReason;
+package com.uid2.optout.delta;
 
 import io.vertx.core.json.JsonObject;
 
