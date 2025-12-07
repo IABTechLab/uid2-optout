@@ -247,15 +247,27 @@ public class OptOutTrafficCalculator {
             
             // Process delta files and count records in [deltaWindowStart, newestDeltaTs]
             int sum = 0;
+            int deltaRecordsCount = 0;
+            int filesProcessed = 0;
+            int cacheHits = 0;
+            int cacheMisses = 0;
             
             for (String s3Path : deltaS3Paths) {
+                boolean wasCached = isCached(s3Path);
+                if (wasCached) {
+                    cacheHits++;
+                } else {
+                    cacheMisses++;
+                }
+                
                 List<Long> timestamps = getTimestampsFromFile(s3Path);
+                filesProcessed++;
                 
                 boolean shouldStop = false;
                 for (long ts : timestamps) {
                     // Stop condition: record is older than our window
                     if (ts < deltaWindowStart) {
-                        LOGGER.debug("stopping delta file processing at timestamp {} (older than window start {})", ts, deltaWindowStart);
+                        LOGGER.info("stopping delta file processing at timestamp {} (older than window start {})", ts, deltaWindowStart);
                         break;
                     }
                     
@@ -266,6 +278,7 @@ public class OptOutTrafficCalculator {
                     
                     // increment sum if record is in delta window
                     if (ts >= deltaWindowStart) {
+                        deltaRecordsCount++;
                         sum++;
                     }
                     
@@ -275,6 +288,9 @@ public class OptOutTrafficCalculator {
                     break;
                 }
             }
+            
+            LOGGER.info("delta files: processed={}, deltaRecords={}, cache hits={}, misses={}, cacheSize={}", 
+                       filesProcessed, deltaRecordsCount, cacheHits, cacheMisses, deltaFileCache.size());
             
             // Count SQS messages in [oldestQueueTs, oldestQueueTs + 5m] with allowlist filtering
             int sqsCount = 0;
@@ -328,7 +344,7 @@ public class OptOutTrafficCalculator {
         }
         
         long newestTs = Collections.max(timestamps);
-        LOGGER.debug("found newest delta timestamp {} from file {}", newestTs, newestDeltaPath);
+        LOGGER.info("found newest delta timestamp {} from file {}", newestTs, newestDeltaPath);
         return newestTs;
     }
     
@@ -341,15 +357,26 @@ public class OptOutTrafficCalculator {
             List<String> allFiles = cloudStorage.list(s3DeltaPrefix);
             
             // Filter to only .dat delta files and sort newest to oldest
-            return allFiles.stream()
+            List<String> deltaFiles = allFiles.stream()
                 .filter(OptOutUtils::isDeltaFile)
                 .sorted(OptOutUtils.DeltaFilenameComparatorDescending)
                 .collect(Collectors.toList());
+            
+            LOGGER.info("listed {} delta files from s3 (prefix={})", deltaFiles.size(), s3DeltaPrefix);
+            return deltaFiles;
                 
         } catch (Exception e) {
             LOGGER.error("failed to list delta files from s3 with prefix: {}", s3DeltaPrefix, e);
             return Collections.emptyList();
         }
+    }
+    
+    /**
+     * Check if a delta file is already cached
+     */
+    private boolean isCached(String s3Path) {
+        String filename = s3Path.substring(s3Path.lastIndexOf('/') + 1);
+        return deltaFileCache.containsKey(filename);
     }
     
     /**
@@ -362,16 +389,17 @@ public class OptOutTrafficCalculator {
         // Check cache first
         FileRecordCache cached = deltaFileCache.get(filename);
         if (cached != null) {
-            LOGGER.debug("using cached timestamps for file: {}", filename);
+            LOGGER.info("using cached timestamps for file: {}", filename);
             return cached.timestamps;
         }
         
         // Cache miss - download from S3
-        LOGGER.debug("downloading and reading timestamps from s3: {}", s3Path);
+        LOGGER.info("downloading and reading timestamps from s3: {}", s3Path);
         List<Long> timestamps = readTimestampsFromS3(s3Path);
         
         // Store in cache
         deltaFileCache.put(filename, new FileRecordCache(timestamps));
+        LOGGER.info("cached delta file: {} ({} records)", filename, timestamps.size());
         
         return timestamps;
     }
@@ -481,7 +509,7 @@ public class OptOutTrafficCalculator {
             try {
                 return Long.parseLong(sentTimestamp) / 1000;  // Convert ms to seconds
             } catch (NumberFormatException e) {
-                LOGGER.debug("invalid sentTimestamp: {}", sentTimestamp);
+                LOGGER.info("invalid sentTimestamp: {}", sentTimestamp);
             }
         }
         
