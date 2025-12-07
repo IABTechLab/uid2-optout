@@ -46,9 +46,9 @@ public class DeltaProductionOrchestrator {
     
     private final SqsWindowReader windowReader;
     private final DeltaFileWriter deltaFileWriter;
-    private final DeltaUploadService deltaUploadService;
-    private final DeltaUploadService droppedRequestUploadService;
-    private final DeltaManualOverrideService manualOverrideService;
+    private final S3UploadService deltaUploadService;
+    private final S3UploadService droppedRequestUploadService;
+    private final ManualOverrideService manualOverrideService;
     private final OptOutTrafficFilter trafficFilter;
     private final OptOutTrafficCalculator trafficCalculator;
     private final OptOutCloudSync cloudSync;
@@ -62,9 +62,9 @@ public class DeltaProductionOrchestrator {
             int jobTimeoutSeconds,
             SqsWindowReader windowReader,
             DeltaFileWriter deltaFileWriter,
-            DeltaUploadService deltaUploadService,
-            DeltaUploadService droppedRequestUploadService,
-            DeltaManualOverrideService manualOverrideService,
+            S3UploadService deltaUploadService,
+            S3UploadService droppedRequestUploadService,
+            ManualOverrideService manualOverrideService,
             OptOutTrafficFilter trafficFilter,
             OptOutTrafficCalculator trafficCalculator,
             OptOutCloudSync cloudSync,

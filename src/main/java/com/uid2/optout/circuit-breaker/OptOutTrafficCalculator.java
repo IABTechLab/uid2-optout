@@ -6,6 +6,7 @@ import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
 import com.uid2.optout.Const;
 import com.uid2.optout.sqs.SqsMessageOperations;
+
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

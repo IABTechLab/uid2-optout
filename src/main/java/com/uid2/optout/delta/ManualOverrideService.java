@@ -20,8 +20,8 @@ import java.io.InputStream;
  * {"manual_override": "DELAYED_PROCESSING"}
  * </pre>
  */
-public class DeltaManualOverrideService {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DeltaManualOverrideService.class);
+public class ManualOverrideService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ManualOverrideService.class);
     
     private static final String OVERRIDE_KEY = "manual_override";
     private static final String DELAYED_PROCESSING_VALUE = "DELAYED_PROCESSING";
@@ -35,7 +35,7 @@ public class DeltaManualOverrideService {
      * @param cloudStorage Cloud storage client for reading/writing override file
      * @param overrideS3Path S3 path where the override file is stored
      */
-    public DeltaManualOverrideService(ICloudStorage cloudStorage, String overrideS3Path) {
+    public ManualOverrideService(ICloudStorage cloudStorage, String overrideS3Path) {
         this.cloudStorage = cloudStorage;
         this.overrideS3Path = overrideS3Path;
     }

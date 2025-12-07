@@ -17,8 +17,8 @@ import java.util.List;
  * This class encapsulates the critical "upload then delete" pattern that ensures
  * data is persisted to S3 before messages are removed from the queue.
  */
-public class DeltaUploadService {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DeltaUploadService.class);
+public class S3UploadService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(S3UploadService.class);
     
     private final ICloudStorage cloudStorage;
     private final SqsClient sqsClient;
@@ -44,7 +44,7 @@ public class DeltaUploadService {
      * @param sqsClient SQS client for message deletion
      * @param queueUrl SQS queue URL
      */
-    public DeltaUploadService(ICloudStorage cloudStorage, SqsClient sqsClient, String queueUrl) {
+    public S3UploadService(ICloudStorage cloudStorage, SqsClient sqsClient, String queueUrl) {
         this.cloudStorage = cloudStorage;
         this.sqsClient = sqsClient;
         this.queueUrl = queueUrl;
@@ -81,4 +81,3 @@ public class DeltaUploadService {
         }
     }
 }
-

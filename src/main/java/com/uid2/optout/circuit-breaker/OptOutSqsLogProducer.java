@@ -3,12 +3,12 @@ package com.uid2.optout.vertx;
 import com.uid2.optout.Const;
 import com.uid2.optout.auth.InternalAuthMiddleware;
 import com.uid2.optout.delta.DeltaFileWriter;
-import com.uid2.optout.delta.DeltaManualOverrideService;
+import com.uid2.optout.delta.ManualOverrideService;
 import com.uid2.optout.delta.DeltaProductionJobStatus;
-import com.uid2.optout.delta.DeltaProductionResult;
 import com.uid2.optout.delta.DeltaProductionMetrics;
 import com.uid2.optout.delta.DeltaProductionOrchestrator;
-import com.uid2.optout.delta.DeltaUploadService;
+import com.uid2.optout.delta.DeltaProductionResult;
+import com.uid2.optout.delta.S3UploadService;
 import com.uid2.optout.delta.StopReason;
 import com.uid2.optout.sqs.SqsWindowReader;
 import com.uid2.optout.vertx.OptOutTrafficCalculator.MalformedTrafficCalcConfigException;
@@ -128,9 +128,9 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
 
         // Orchestrator setup
         DeltaFileWriter deltaFileWriter = new DeltaFileWriter(bufferSize);
-        DeltaUploadService deltaUploadService = new DeltaUploadService(cloudStorage, this.sqsClient, queueUrl);
-        DeltaUploadService droppedRequestUploadService = new DeltaUploadService(cloudStorageDroppedRequests, this.sqsClient, queueUrl) ;
-        DeltaManualOverrideService manualOverrideService = new DeltaManualOverrideService(cloudStorage, jsonConfig.getString(Const.Config.ManualOverrideS3PathProp));
+        S3UploadService deltaUploadService = new S3UploadService(cloudStorage, this.sqsClient, queueUrl);
+        S3UploadService droppedRequestUploadService = new S3UploadService(cloudStorageDroppedRequests, this.sqsClient, queueUrl) ;
+        ManualOverrideService manualOverrideService = new ManualOverrideService(cloudStorage, jsonConfig.getString(Const.Config.ManualOverrideS3PathProp));
         SqsWindowReader windowReader = new SqsWindowReader(
             this.sqsClient, queueUrl, maxMessagesPerPoll, 
             visibilityTimeout, deltaWindowSeconds, maxMessagesPerFile
