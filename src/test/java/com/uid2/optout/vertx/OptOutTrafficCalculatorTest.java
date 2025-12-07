@@ -1569,9 +1569,10 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - 200 messages read by us + 450 invisible (200 are ours + 250 from others)
+        // Messages must be within 5-minute window to be counted, so use 1-second spacing
         List<Message> sqsMessages = new ArrayList<>();
         for (int i = 0; i < 200; i++) {
-            sqsMessages.add(createSqsMessage(t - i * 10));
+            sqsMessages.add(createSqsMessage(t - i)); // 1 second apart, all within 5-minute window
         }
         
         // QueueAttributes: 0 visible, 450 invisible (200 ours + 250 others), 0 delayed
