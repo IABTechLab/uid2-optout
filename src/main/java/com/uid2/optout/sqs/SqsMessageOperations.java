@@ -86,11 +86,11 @@ public class SqsMessageOperations {
             int delayed = parseIntOrDefault(attrs.get(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_DELAYED), 0);
 
             QueueAttributes queueAttributes = new QueueAttributes(visible, invisible, delayed);
-            LOGGER.debug("Queue attributes: {}", queueAttributes);
+            LOGGER.debug("queue attributes: {}", queueAttributes);
             return queueAttributes;
 
         } catch (Exception e) {
-            LOGGER.error("Error getting queue attributes from SQS", e);
+            LOGGER.error("error getting queue attributes", e);
             return null;
         }
     }
@@ -132,11 +132,11 @@ public class SqsMessageOperations {
 
             ReceiveMessageResponse response = sqsClient.receiveMessage(receiveRequest);
 
-            LOGGER.debug("Received {} messages from SQS", response.messages().size());
+            LOGGER.debug("received {} messages", response.messages().size());
             return response.messages();
 
         } catch (Exception e) {
-            LOGGER.error("Error receiving messages from SQS", e);
+            LOGGER.error("error receiving messages", e);
             return new ArrayList<>();
         }
     }
@@ -174,7 +174,7 @@ public class SqsMessageOperations {
                     DeleteMessageBatchResponse deleteResponse = sqsClient.deleteMessageBatch(deleteRequest);
 
                     if (!deleteResponse.failed().isEmpty()) {
-                        LOGGER.error("Failed to delete {} messages from SQS", deleteResponse.failed().size());
+                        LOGGER.error("failed to delete {} messages", deleteResponse.failed().size());
                     } else {
                         totalDeleted += entries.size();
                     }
@@ -183,10 +183,10 @@ public class SqsMessageOperations {
                 }
             }
 
-            LOGGER.info("Deleted {} messages from SQS", totalDeleted);
+            LOGGER.debug("deleted {} messages", totalDeleted);
 
         } catch (Exception e) {
-            LOGGER.error("Error deleting messages from SQS", e);
+            LOGGER.error("error deleting messages", e);
         }
     }
 }

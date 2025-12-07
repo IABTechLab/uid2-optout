@@ -19,8 +19,7 @@ import java.nio.ByteOrder;
  * - Opt-out entries: hash (32 bytes) + id (32 bytes) + timestamp (7 bytes) + metadata (1 byte)
  * - End entry: ones hash (32 bytes) + ones hash (32 bytes) + timestamp (8 bytes)
  * 
- * Each entry is 72 bytes (OptOutConst.EntrySize).
- * This format is consistent with OptOutLogProducer.java.
+ * Each entry is 72 bytes (OptOutConst.EntrySize)
  */
 public class DeltaFileWriter {
     private static final Logger LOGGER = LoggerFactory.getLogger(DeltaFileWriter.class);
@@ -106,7 +105,7 @@ public class DeltaFileWriter {
     private void ensureCapacity(int dataSize) {
         if (buffer.capacity() < dataSize) {
             int newCapacity = Integer.highestOneBit(dataSize) << 1;
-            LOGGER.warn("Expanding buffer size: current {}, need {}, new {}", buffer.capacity(), dataSize, newCapacity);
+            LOGGER.info("expanding buffer size: current {}, need {}, new {}", buffer.capacity(), dataSize, newCapacity);
             this.buffer = ByteBuffer.allocate(newCapacity).order(ByteOrder.LITTLE_ENDIAN);
         }
     }

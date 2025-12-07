@@ -34,8 +34,8 @@ public class SqsWindowReader {
         this.deltaWindowSeconds = deltaWindowSeconds;
         this.maxMessagesPerWindow = maxMessagesPerWindow;
         this.batchProcessor = new SqsBatchProcessor(sqsClient, queueUrl, deltaWindowSeconds);
-        LOGGER.info("SqsWindowReader initialized with: maxMessagesPerWindow: {}, maxMessagesPerPoll: {}, visibilityTimeout: {}, deltaWindowSeconds: {}",
-                        maxMessagesPerWindow, maxMessagesPerPoll, visibilityTimeout, deltaWindowSeconds);
+        LOGGER.info("initialized: maxMessagesPerWindow={}, maxMessagesPerPoll={}, visibilityTimeout={}, deltaWindowSeconds={}",
+                maxMessagesPerWindow, maxMessagesPerPoll, visibilityTimeout, deltaWindowSeconds);
     }
 
     /**
@@ -91,8 +91,7 @@ public class SqsWindowReader {
         
         while (true) {
             if (windowMessages.size() >= maxMessagesPerWindow) {
-                LOGGER.warn("Message limit exceeded: {} messages >= limit {}. Closing window.",
-                    windowMessages.size(), maxMessagesPerWindow);
+                LOGGER.warn("message limit exceeded: {} messages >= limit {}", windowMessages.size(), maxMessagesPerWindow);
                 return WindowReadResult.messageLimitExceeded(windowMessages, currentWindowStart);
             }
             

@@ -487,14 +487,6 @@ public class OptOutTrafficCalculator {
                    sumCurrent, thresholdMultiplier, baselineTraffic);
         return TrafficStatus.DEFAULT;
     }
-    
-    /**
-     * Get the traffic threshold (baseline × multiplier).
-     * Used for early termination
-     */
-    public int getThreshold() {
-        return this.baselineTraffic * this.thresholdMultiplier;
-    }
 
     /**
      * Get cache statistics for monitoring

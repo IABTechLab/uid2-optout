@@ -101,10 +101,10 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         // Initialize SQS client
         String queueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
         if (queueUrl == null || queueUrl.isEmpty()) {
-            throw new IOException("SQS queue URL not configured");
+            throw new IOException("sqs queue url not configured");
         }
         this.sqsClient = sqsClient != null ? sqsClient : SqsClient.builder().build();
-        LOGGER.info("SQS client initialized for queue: {}", queueUrl);
+        LOGGER.info("sqs client initialized for queue: {}", queueUrl);
 
         // HTTP server configuration
         this.listenPort = Const.Port.ServicePortForOptOut + Utils.getPortOffset() + 1;
@@ -153,13 +153,13 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             new DeltaProductionMetrics()
         );
         
-        LOGGER.info("OptOutSqsLogProducer initialized with maxMessagesPerFile: {}, maxMessagesPerPoll: {}, visibilityTimeout: {}, deltaWindowSeconds: {}, jobTimeoutSeconds: {}",
+        LOGGER.info("initialized with maxMessagesPerFile={}, maxMessagesPerPoll={}, visibilityTimeout={}, deltaWindowSeconds={}, jobTimeoutSeconds={}",
             maxMessagesPerFile, maxMessagesPerPoll, visibilityTimeout, deltaWindowSeconds, jobTimeoutSeconds);
     }
 
     @Override
     public void start(Promise<Void> startPromise) {
-        LOGGER.info("Attempting to start SQS Log Producer HTTP server on port: {}", listenPort);
+        LOGGER.info("starting http server on port {}", listenPort);
 
         try {
             vertx.createHttpServer()
@@ -167,17 +167,17 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                     .listen(listenPort, result -> {
                         if (result.succeeded()) {
                             this.healthComponent.setHealthStatus(true);
-                            LOGGER.info("SQS Log Producer HTTP server started on port: {}", listenPort);
+                            LOGGER.info("http server started on port {}", listenPort);
                             startPromise.complete();
                         } else {
-                            LOGGER.error("Failed to start SQS Log Producer HTTP server", result.cause());
+                            LOGGER.error("failed to start http server", result.cause());
                             this.healthComponent.setHealthStatus(false, result.cause().getMessage());
                             startPromise.fail(result.cause());
                         }
                     });
 
         } catch (Exception e) {
-            LOGGER.error("Failed to start SQS Log Producer HTTP server", e);
+            LOGGER.error("failed to start http server", e);
             this.healthComponent.setHealthStatus(false, e.getMessage());
             startPromise.fail(e);
         }
@@ -185,20 +185,19 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
 
     @Override
     public void stop(Promise<Void> stopPromise) {
-        LOGGER.info("Stopping SQS Log Producer...");
+        LOGGER.info("stopping");
         this.shutdownInProgress = true;
 
         if (this.sqsClient != null) {
             try {
                 this.sqsClient.close();
-                LOGGER.info("SQS client closed");
             } catch (Exception e) {
-                LOGGER.error("Error closing SQS client", e);
+                LOGGER.error("error closing sqs client", e);
             }
         }
 
         stopPromise.complete();
-        LOGGER.info("SQS Log Producer stopped");
+        LOGGER.info("stopped");
     }
 
     private Router createRouter() {
@@ -226,7 +225,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         DeltaProductionJobStatus job = currentJob.get();
         
         if (job == null) {
-            sendIdle(resp, "No job running on this pod");
+            sendIdle(resp, "no job running on this pod");
             return;
         }
 
@@ -247,12 +246,12 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     private void handleDeltaProduceStart(RoutingContext routingContext) {
         HttpServerResponse resp = routingContext.response();
 
-        LOGGER.info("Delta production job requested via /deltaproduce endpoint");
+        LOGGER.info("delta production job requested");
 
         try {
             this.trafficFilter.reloadTrafficFilterConfig();
         } catch (MalformedTrafficFilterConfigException e) {
-            LOGGER.error("Error reloading traffic filter config: " + e.getMessage(), e);
+            LOGGER.error("error reloading traffic filter config", e);
             sendError(resp, e);
             return;
         }
@@ -260,7 +259,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         try {
             this.trafficCalculator.reloadTrafficCalcConfig();
         } catch (MalformedTrafficCalcConfigException e) {
-            LOGGER.error("Error reloading traffic calculator config: " + e.getMessage(), e);
+            LOGGER.error("error reloading traffic calculator config", e);
             sendError(resp, e);
             return;
         }
@@ -270,29 +269,27 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         // If there's an existing job, check if it's still running
         if (existingJob != null) {
             if (existingJob.getState() == DeltaProductionJobStatus.JobState.RUNNING) {
-                // Cannot replace a running job - 409 Conflict
-                LOGGER.warn("Delta production job already running on this pod");
-                sendConflict(resp, "A delta production job is already running on this pod");
+                LOGGER.warn("job already running");
+                sendConflict(resp, "job already running on this pod");
                 return;
             }
             
-            LOGGER.info("Auto-clearing previous {} job to start new one", existingJob.getState());
+            LOGGER.info("clearing previous {} job", existingJob.getState());
         }
 
         DeltaProductionJobStatus newJob = new DeltaProductionJobStatus();
 
         // Try to set the new job
         if (!currentJob.compareAndSet(existingJob, newJob)) {
-            sendConflict(resp, "Job state changed, please retry");
+            sendConflict(resp, "job state changed, please retry");
             return;
         }
 
-        // Start the job asynchronously
-        LOGGER.info("New delta production job initialized");
+        LOGGER.info("starting new job");
         this.startDeltaProductionJob(newJob);
 
         // Return immediately with 202 Accepted
-        sendAccepted(resp, "Delta production job started on this pod");
+        sendAccepted(resp, "job started");
     }
 
     /**
@@ -300,18 +297,12 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
      * The job runs on a worker thread and updates the DeltaProduceJobStatus when complete
      */
     private void startDeltaProductionJob(DeltaProductionJobStatus job) {
-        vertx.executeBlocking(() -> {
-            LOGGER.info("Delta production job starting on worker thread");
-            return produceDeltasBlocking();
-        }).onComplete(ar -> {
+        vertx.executeBlocking(() -> produceDeltasBlocking()).onComplete(ar -> {
             if (ar.succeeded()) {
-                JsonObject result = ar.result();
-                job.complete(result);
-                LOGGER.info("Delta production job succeeded: {}", result.encode());
+                job.complete(ar.result());
             } else {
-                String errorMsg = ar.cause().getMessage();
-                job.fail(errorMsg);
-                LOGGER.error("Delta production job failed: {}", errorMsg, ar.cause());
+                job.fail(ar.cause().getMessage());
+                LOGGER.error("job failed", ar.cause());
             }
         });
     }
@@ -326,53 +317,25 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
      */
     private JsonObject produceDeltasBlocking() throws Exception {
         if (this.shutdownInProgress) {
-            throw new Exception("Producer is shutting down");
+            throw new Exception("producer is shutting down");
         }
-        LOGGER.info("Starting delta production from SQS queue");
 
-        // Process messages until queue is empty or messages are too recent
-        DeltaProductionResult deltaResult = this.produceBatchedDeltas();
+        DeltaProductionResult result = orchestrator.produceBatchedDeltas(this::publishDeltaProducedEvent);
 
-        StopReason stopReason = deltaResult.getStopReason();
-        boolean producedDeltas = deltaResult.getDeltasProduced() > 0;
-        boolean producedDroppedRequests = deltaResult.getDroppedRequestFilesProduced() > 0;
+        StopReason stopReason = result.getStopReason();
+        boolean producedWork = result.getDeltasProduced() > 0 || result.getDroppedRequestFilesProduced() > 0;
+        boolean halted = stopReason == StopReason.CIRCUIT_BREAKER_TRIGGERED || stopReason == StopReason.MANUAL_OVERRIDE_ACTIVE;
 
-        // Determine status based on results:
-        // "success" = produced work OR completed normally
-        // "skipped" = stopped early due to abnormal conditions (circuit breaker, override, too recent)
-        boolean isSkipped = stopReason == StopReason.CIRCUIT_BREAKER_TRIGGERED
-            || stopReason == StopReason.MESSAGES_TOO_RECENT
-            || stopReason == StopReason.MANUAL_OVERRIDE_ACTIVE;
+        String status = halted ? "halted" : (producedWork ? "success" : "skipped");
         
-        boolean isSuccess = !isSkipped && (producedDeltas 
-            || producedDroppedRequests
-            || stopReason == StopReason.QUEUE_EMPTY 
-            || stopReason == StopReason.NONE);
-        
-        if (isSuccess) {
-            LOGGER.info("Delta production complete: {} deltas, {} entries, dropped request files: {}, dropped requests: {}, stop reason: {}", 
-                deltaResult.getDeltasProduced(), deltaResult.getEntriesProcessed(), deltaResult.getDroppedRequestFilesProduced(), deltaResult.getDroppedRequestsProcessed(), stopReason);
-            return deltaResult.toJsonWithStatus("success");
-        } else {
-            LOGGER.info("Delta production skipped: {}, {} entries processed, dropped request files: {}, dropped requests: {}", 
-                stopReason, deltaResult.getEntriesProcessed(), deltaResult.getDroppedRequestFilesProduced(), deltaResult.getDroppedRequestsProcessed());
-            return deltaResult.toJsonWithStatus("skipped", "reason", stopReason.name());
-        }
-    }
+        LOGGER.info("delta production {}: {} deltas, {} entries, {} dropped files, {} dropped requests, reason={}",
+                status, result.getDeltasProduced(), result.getEntriesProcessed(), 
+                result.getDroppedRequestFilesProduced(), result.getDroppedRequestsProcessed(), stopReason);
 
-
-    /**
-     * Delegates to the orchestrator to produce delta files.
-     * 
-     * @return DeltaProduceResult with counts and stop reason
-     * @throws IOException if delta production fails
-     */
-    private DeltaProductionResult produceBatchedDeltas() throws IOException {
-        return orchestrator.produceBatchedDeltas(this::publishDeltaProducedEvent);
+        return result.toJsonWithStatus(status);
     }
 
     private void publishDeltaProducedEvent(String deltaName) {
         vertx.eventBus().publish(this.eventDeltaProduced, deltaName);
-        LOGGER.info("Published delta.produced event for: {}", deltaName);
     }
 }

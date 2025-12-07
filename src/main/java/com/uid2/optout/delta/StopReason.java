@@ -5,6 +5,7 @@ package com.uid2.optout.delta;
  * Used across all layers (batch, window, orchestrator) for consistent stop reason tracking.
  */
 public enum StopReason {
+    
     /**
      * Processing completed normally with work done, or still in progress.
      */

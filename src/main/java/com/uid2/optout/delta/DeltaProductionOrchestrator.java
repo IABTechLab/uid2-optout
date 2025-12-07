@@ -30,11 +30,10 @@ import java.util.function.Consumer;
  *   <li>Reading messages from SQS in 5-minute windows</li>
  *   <li>Filtering denylisted messages</li>
  *   <li>Checking circuit breakers (manual override, traffic calculator)</li>
- *   <li>Constructingdelta files and dropped request files</li>
+ *   <li>Constructing delta files and dropped request files</li>
  *   <li>Uploading to S3 and deleting processed messages</li>
  * </ul>
  * 
- * <p>The orchestrator is stateless and thread-safe.</p>
  */
 public class DeltaProductionOrchestrator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DeltaProductionOrchestrator.class);
@@ -89,87 +88,84 @@ public class DeltaProductionOrchestrator {
     /**
      * Produces delta files from SQS queue in batched 5-minute windows.
      * 
-     * <p>Continues until queue is empty, messages are too recent, or a circuit breaker triggers.</p>
+     * Continues until queue is empty, messages are too recent, circuit breaker is triggered, or job timeout is reached.
      * 
      * @param onDeltaProduced Called with delta filename after each successful delta upload (for event publishing)
-     * @return DeltaProduceResult with production statistics
+     * @return DeltaProductionResult with production statistics
      * @throws IOException if delta production fails
      */
     public DeltaProductionResult produceBatchedDeltas(Consumer<String> onDeltaProduced) throws IOException {
-        // Check for manual override at the start
+        
+        // check for manual override
         if (manualOverrideService.isDelayedProcessing()) {
-            LOGGER.info("Manual override set to DELAYED_PROCESSING, skipping production");
-            return DeltaProductionResult.empty(StopReason.MANUAL_OVERRIDE_ACTIVE);
+            LOGGER.info("manual override set to DELAYED_PROCESSING, skipping production");
+            return DeltaProductionResult.builder().stopReason(StopReason.MANUAL_OVERRIDE_ACTIVE).build();
         }
 
-        ProductionStats stats = new ProductionStats();
+        DeltaProductionResult.Builder result = DeltaProductionResult.builder();
         long jobStartTime = OptOutUtils.nowEpochSeconds();
         
-        LOGGER.info("Starting delta production from SQS queue (replicaId: {}, deltaWindowSeconds: {}, jobTimeoutSeconds: {})", 
+        LOGGER.info("starting delta production from SQS queue (replicaId: {}, deltaWindowSeconds: {}, jobTimeoutSeconds: {})", 
             this.replicaId, this.deltaWindowSeconds, this.jobTimeoutSeconds);
 
-        // Read and process windows until done
+        // read and process windows until done
         while (!isJobTimedOut(jobStartTime)) {
 
-            // Read one complete 5-minute window
+            // read one complete 5-minute window
             SqsWindowReader.WindowReadResult windowResult = windowReader.readWindow();
 
-            // If no messages, we're done (queue empty or messages too recent)
+            // if no messages, we're done (queue empty or messages too recent)
             if (windowResult.isEmpty()) {
-                stats.stopReason = windowResult.getStopReason();
-                LOGGER.info("Delta production complete - no more eligible messages (reason: {})", stats.stopReason);
+                result.stopReason(windowResult.getStopReason());
+                LOGGER.info("delta production complete - no more eligible messages (reason: {})", windowResult.getStopReason().name());
                 break;
             }
 
-            // Process this window
-            WindowProcessingResult windowProcessingResult = processWindow(windowResult, onDeltaProduced);
+            // process this window
+            boolean isDelayedProcessing = processWindow(windowResult, result, onDeltaProduced);
             
-            // Check if we should stop (circuit breaker triggered)
-            if (windowProcessingResult.shouldStop) {
-                stats.merge(windowProcessingResult);
-                stats.stopReason = StopReason.CIRCUIT_BREAKER_TRIGGERED;
-                return stats.toResult();
+            // circuit breaker triggered
+            if (isDelayedProcessing) {
+                result.stopReason(StopReason.CIRCUIT_BREAKER_TRIGGERED);
+                return result.build();
             }
-            
-            stats.merge(windowProcessingResult);
-
-            LOGGER.info("Processed window [{}, {}]: {} entries, {} dropped requests",
-                    windowResult.getWindowStart(), 
-                    windowResult.getWindowStart() + this.deltaWindowSeconds, 
-                    windowProcessingResult.entriesProcessed,
-                    windowProcessingResult.droppedRequestsProcessed);
         }
 
-        long totalDuration = OptOutUtils.nowEpochSeconds() - jobStartTime;
-        LOGGER.info("Delta production complete: took {}s, produced {} deltas, processed {} entries, " +
-                        "produced {} dropped request files, processed {} dropped requests, stop reason: {}",
-                totalDuration, stats.deltasProduced, stats.entriesProcessed, 
-                stats.droppedRequestFilesProduced, stats.droppedRequestsProcessed, stats.stopReason);
-
-        return stats.toResult();
+        return result.build();
     }
 
     /**
      * Processes a single 5-minute window of messages.
+     * 
+     * @param windowResult The window data to process
+     * @param result The builder to accumulate statistics into
+     * @param onDeltaProduced Callback for when a delta is produced
+     * @return true if the circuit breaker triggered
      */
-    private WindowProcessingResult processWindow(SqsWindowReader.WindowReadResult windowResult, 
-                                                  Consumer<String> onDeltaProduced) throws IOException {
-        WindowProcessingResult result = new WindowProcessingResult();
-        
+    private boolean processWindow(SqsWindowReader.WindowReadResult windowResult,
+                                  DeltaProductionResult.Builder result,
+                                  Consumer<String> onDeltaProduced) throws IOException {
         long windowStart = windowResult.getWindowStart();
         List<SqsParsedMessage> messages = windowResult.getMessages();
 
-        // Create buffers
+        // check for manual override
+        if (manualOverrideService.isDelayedProcessing()) {
+            LOGGER.info("manual override set to DELAYED_PROCESSING, stopping production");
+            return true;
+        }
+
+        // create buffers for current window
         ByteArrayOutputStream deltaStream = new ByteArrayOutputStream();
         JsonArray droppedRequestStream = new JsonArray();
         
+        // get file names for current window
         String deltaName = OptOutUtils.newDeltaFileName(this.replicaId);
         String droppedRequestName = generateDroppedRequestFileName();
 
-        // Write start of delta
+        // write start of delta
         deltaFileWriter.writeStartOfDelta(deltaStream, windowStart);
 
-        // Separate messages into delta entries and dropped requests
+        // separate messages into delta entries and dropped requests
         List<Message> deltaMessages = new ArrayList<>();
         List<Message> droppedMessages = new ArrayList<>();
         
@@ -177,63 +173,52 @@ public class DeltaProductionOrchestrator {
             if (trafficFilter.isDenylisted(msg)) {
                 writeDroppedRequestEntry(droppedRequestStream, msg);
                 droppedMessages.add(msg.getOriginalMessage());
-                result.droppedRequestsProcessed++;
             } else {
                 deltaFileWriter.writeOptOutEntry(deltaStream, msg.getHashBytes(), msg.getIdBytes(), msg.getTimestamp());
                 deltaMessages.add(msg.getOriginalMessage());
-                result.entriesProcessed++;
             }
         }
 
-        // Check for manual override
-        if (manualOverrideService.isDelayedProcessing()) {
-            LOGGER.info("Manual override set to DELAYED_PROCESSING, stopping production");
-            result.shouldStop = true;
-            return result;
-        }
-
-        // Check traffic calculator
+        // check traffic calculator
         SqsMessageOperations.QueueAttributes queueAttributes = SqsMessageOperations.getQueueAttributes(this.sqsClient, this.queueUrl);
         OptOutTrafficCalculator.TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(queueAttributes);
         
         if (trafficStatus == OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING) {
-            LOGGER.error("OptOut Delta Production has hit DELAYED_PROCESSING status, stopping production");
+            LOGGER.error("optout delta production has hit DELAYED_PROCESSING status, stopping production and setting manual override");
             manualOverrideService.setDelayedProcessing();
-            result.shouldStop = true;
-            return result;
+            return true;
         }
 
-        // Upload delta file if there are non-denylisted messages
+        // upload delta file if there are non-denylisted messages
         if (!deltaMessages.isEmpty()) {
             uploadDelta(deltaStream, deltaName, windowStart, deltaMessages, onDeltaProduced);
-            result.deltasProduced++;
+            result.incrementDeltasProduced();
+            result.incrementEntriesProcessed(deltaMessages.size());
         }
 
-        // Upload dropped request file if there are denylisted messages
+        // upload dropped request file if there are denylisted messages
         if (!droppedMessages.isEmpty() && droppedRequestUploadService != null) {
             uploadDroppedRequests(droppedRequestStream, droppedRequestName, windowStart, droppedMessages);
-            result.droppedRequestFilesProduced++;
+            result.incrementDroppedRequestFilesProduced();
+            result.incrementDroppedRequestsProcessed(droppedMessages.size());
         }
 
-        deltaStream.close();
-        return result;
+        LOGGER.info("processed window [{}, {}]: {} entries, {} dropped requests",
+                windowStart, windowStart + this.deltaWindowSeconds,
+                deltaMessages.size(), droppedMessages.size());
+
+        return false;
     }
 
-    /**
-     * Uploads a delta file to S3 and deletes processed messages from SQS.
-     */
     private void uploadDelta(ByteArrayOutputStream deltaStream, String deltaName, 
                              long windowStart, List<Message> messages, 
                              Consumer<String> onDeltaProduced) throws IOException {
-        // Add end-of-delta entry
+        // add end-of-delta entry
         long endTimestamp = windowStart + this.deltaWindowSeconds;
         deltaFileWriter.writeEndOfDelta(deltaStream, endTimestamp);
 
         byte[] deltaData = deltaStream.toByteArray();
         String s3Path = this.cloudSync.toCloudPath(deltaName);
-
-        LOGGER.info("SQS Delta Upload - fileName: {}, s3Path: {}, size: {} bytes, messages: {}, window: [{}, {})",
-                deltaName, s3Path, deltaData.length, messages.size(), windowStart, endTimestamp);
 
         deltaUploadService.uploadAndDeleteMessages(deltaData, s3Path, messages, (count) -> {
             metrics.recordDeltaProduced(count);
@@ -241,16 +226,9 @@ public class DeltaProductionOrchestrator {
         });
     }
 
-    /**
-     * Uploads dropped requests to S3 and deletes processed messages from SQS.
-     */
     private void uploadDroppedRequests(JsonArray droppedRequestStream, String droppedRequestName,
                                        long windowStart, List<Message> messages) throws IOException {
         byte[] droppedRequestData = droppedRequestStream.encode().getBytes();
-
-        LOGGER.info("SQS Dropped Requests Upload - fileName: {}, size: {} bytes, messages: {}, window: [{}, {})",
-                droppedRequestName, droppedRequestData.length, messages.size(), 
-                windowStart, windowStart + this.deltaWindowSeconds);
 
         droppedRequestUploadService.uploadAndDeleteMessages(droppedRequestData, droppedRequestName, messages, 
                 metrics::recordDroppedRequestsProduced);
@@ -283,50 +261,15 @@ public class DeltaProductionOrchestrator {
         long elapsedTime = OptOutUtils.nowEpochSeconds() - jobStartTime;
         
         if (elapsedTime > 3600) { // 1 hour - log warning
-            LOGGER.error("Delta production job has been running for {} seconds", elapsedTime);
+            LOGGER.error("delta production job has been running for {} seconds", elapsedTime);
         }
         
         if (elapsedTime > this.jobTimeoutSeconds) {
-            LOGGER.error("Delta production job has been running for {} seconds (exceeds timeout of {}s)",
+            LOGGER.error("delta production job has been running for {} seconds (exceeds timeout of {}s)",
                     elapsedTime, this.jobTimeoutSeconds);
             return true;
         }
         return false;
-    }
-
-    /**
-     * Mutable class for tracking production statistics during a job.
-     */
-    private static class ProductionStats {
-        int deltasProduced = 0;
-        int entriesProcessed = 0;
-        int droppedRequestFilesProduced = 0;
-        int droppedRequestsProcessed = 0;
-        StopReason stopReason = StopReason.NONE;
-
-        ProductionStats merge(WindowProcessingResult windowResult) {
-            this.deltasProduced += windowResult.deltasProduced;
-            this.entriesProcessed += windowResult.entriesProcessed;
-            this.droppedRequestFilesProduced += windowResult.droppedRequestFilesProduced;
-            this.droppedRequestsProcessed += windowResult.droppedRequestsProcessed;
-            return this;
-        }
-
-        DeltaProductionResult toResult() {
-            return new DeltaProductionResult(deltasProduced, entriesProcessed, 
-                    droppedRequestFilesProduced, droppedRequestsProcessed, stopReason);
-        }
-    }
-
-    /**
-     * Result of processing a single window.
-     */
-    private static class WindowProcessingResult {
-        int deltasProduced = 0;
-        int entriesProcessed = 0;
-        int droppedRequestFilesProduced = 0;
-        int droppedRequestsProcessed = 0;
-        boolean shouldStop = false;
     }
 }
 

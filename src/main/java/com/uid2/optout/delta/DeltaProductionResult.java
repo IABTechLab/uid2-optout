@@ -3,10 +3,13 @@ package com.uid2.optout.delta;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Data class containing statistics from delta production.
+ * Immutable result containing statistics from a delta production job.
  * 
- * This class holds the counts and provides JSON encoding methods.
- * API response status is determined by the caller based on these statistics.
+ * <p>This class holds production counts and the stop reason, with methods for JSON serialization.
+ * Use {@link Builder} to accumulate statistics during production, then call {@link Builder#build()}
+ * to create the immutable result.</p>
+ * 
+ * <p>Note: Job duration is tracked by {@link DeltaProductionJobStatus}, not this class.</p>
  */
 public class DeltaProductionResult {
     private final int deltasProduced;
@@ -15,7 +18,10 @@ public class DeltaProductionResult {
     private final int droppedRequestsProcessed;
     private final StopReason stopReason;
 
-    public DeltaProductionResult(int deltasProduced, int entriesProcessed, 
+    /**
+     * Private constructor. Use {@link #builder()} to create instances.
+     */
+    private DeltaProductionResult(int deltasProduced, int entriesProcessed, 
                                   int droppedRequestFilesProduced, int droppedRequestsProcessed, 
                                   StopReason stopReason) {
         this.deltasProduced = deltasProduced;
@@ -26,11 +32,13 @@ public class DeltaProductionResult {
     }
 
     /**
-     * Factory method for an empty result (no production occurred).
+     * Creates a new Builder for accumulating production statistics.
      */
-    public static DeltaProductionResult empty(StopReason stopReason) {
-        return new DeltaProductionResult(0, 0, 0, 0, stopReason);
+    public static Builder builder() {
+        return new Builder();
     }
+
+    // ==================== Getters ====================
 
     public int getDeltasProduced() {
         return deltasProduced;
@@ -38,10 +46,6 @@ public class DeltaProductionResult {
 
     public int getEntriesProcessed() {
         return entriesProcessed;
-    }
-
-    public StopReason getStopReason() {
-        return stopReason;
     }
 
     public int getDroppedRequestFilesProduced() {
@@ -52,9 +56,12 @@ public class DeltaProductionResult {
         return droppedRequestsProcessed;
     }
 
-    /**
-     * Convert to JSON with just the production counts.
-     */
+    public StopReason getStopReason() {
+        return stopReason;
+    }
+
+    // ==================== JSON Serialization ====================
+
     public JsonObject toJson() {
         return new JsonObject()
             .put("deltas_produced", deltasProduced)
@@ -64,17 +71,69 @@ public class DeltaProductionResult {
             .put("stop_reason", stopReason.name());
     }
 
-    /**
-     * Convert to JSON with status and counts.
-     */
     public JsonObject toJsonWithStatus(String status) {
         return toJson().put("status", status);
     }
 
+    @Override
+    public String toString() {
+        return String.format(
+            "DeltaProductionResult{deltasProduced=%d, entriesProcessed=%d, " +
+            "droppedRequestFilesProduced=%d, droppedRequestsProcessed=%d, stopReason=%s}",
+            deltasProduced, entriesProcessed, droppedRequestFilesProduced, 
+            droppedRequestsProcessed, stopReason);
+    }
+
+    // ==================== Builder ====================
+
     /**
-     * Convert to JSON with status, reason/error, and counts.
+     * Mutable builder for accumulating production statistics.
+     * 
+     * <p>Use this builder to track stats during delta production jobs,
+     * then call {@link #build()} to create the immutable result.</p>
      */
-    public JsonObject toJsonWithStatus(String status, String reasonKey, String reasonValue) {
-        return toJsonWithStatus(status).put(reasonKey, reasonValue);
+    public static class Builder {
+        private int deltasProduced;
+        private int entriesProcessed;
+        private int droppedRequestFilesProduced;
+        private int droppedRequestsProcessed;
+        private StopReason stopReason = StopReason.NONE;
+
+        public Builder incrementDeltasProduced() {
+            deltasProduced++;
+            return this;
+        }
+
+        public Builder incrementEntriesProcessed(int count) {
+            entriesProcessed += count;
+            return this;
+        }
+
+        public Builder incrementDroppedRequestFilesProduced() {
+            droppedRequestFilesProduced++;
+            return this;
+        }
+
+        public Builder incrementDroppedRequestsProcessed(int count) {
+            droppedRequestsProcessed += count;
+            return this;
+        }
+
+        public Builder stopReason(StopReason reason) {
+            this.stopReason = reason;
+            return this;
+        }
+
+        /**
+         * Builds the DeltaProductionResult with the accumulated statistics.
+         */
+        public DeltaProductionResult build() {
+            return new DeltaProductionResult(
+                    deltasProduced, 
+                    entriesProcessed, 
+                    droppedRequestFilesProduced, 
+                    droppedRequestsProcessed, 
+                    stopReason);
+        }
     }
 }

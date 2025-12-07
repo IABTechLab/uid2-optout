@@ -25,7 +25,7 @@ public class DeltaUploadService {
     private final String queueUrl;
     
     /**
-     * Callback interface for metrics updates after successful upload.
+     * Callback interface for after successful upload.
      */
     @FunctionalInterface
     public interface UploadSuccessCallback {
@@ -63,25 +63,20 @@ public class DeltaUploadService {
      * @throws IOException if upload fails
      */
     public void uploadAndDeleteMessages(byte[] data, String s3Path, List<Message> messages, UploadSuccessCallback onSuccess) throws IOException {
-        LOGGER.info("Uploading to S3: path={}, size={} bytes, messages={}", s3Path, data.length, messages.size());
+        LOGGER.info("uploading to s3: path={}, size={} bytes, messages={}", s3Path, data.length, messages.size());
         
         try (ByteArrayInputStream inputStream = new ByteArrayInputStream(data)) {
             cloudStorage.upload(inputStream, s3Path);
-            LOGGER.info("Successfully uploaded to S3: {}", s3Path);
             
-            // Invoke callback for metrics/events
             if (onSuccess != null) {
                 onSuccess.onSuccess(messages.size());
             }
-            
         } catch (Exception e) {
-            LOGGER.error("Failed to upload to S3: path={}, error={}", s3Path, e.getMessage(), e);
-            throw new IOException("S3 upload failed: " + s3Path, e);
+            LOGGER.error("failed to upload to s3: path={}", s3Path, e);
+            throw new IOException("s3 upload failed: " + s3Path, e);
         }
         
-        // CRITICAL: Only delete messages after successful S3 upload
         if (!messages.isEmpty()) {
-            LOGGER.info("Deleting {} messages from SQS after successful S3 upload", messages.size());
             SqsMessageOperations.deleteMessagesFromSqs(sqsClient, queueUrl, messages);
         }
     }

@@ -59,10 +59,10 @@ public class DeltaManualOverrideService {
         try {
             JsonObject config = new JsonObject().put(OVERRIDE_KEY, DELAYED_PROCESSING_VALUE);
             cloudStorage.upload(new ByteArrayInputStream(config.encode().getBytes()), overrideS3Path);
-            LOGGER.info("Set manual override to DELAYED_PROCESSING at {}", overrideS3Path);
+            LOGGER.info("set manual override to DELAYED_PROCESSING: {}", overrideS3Path);
             return true;
         } catch (Exception e) {
-            LOGGER.error("Error setting delayed processing override at {}: {}", overrideS3Path, e.getMessage(), e);
+            LOGGER.error("error setting manual override: {}", overrideS3Path, e);
             return false;
         }
     }
@@ -76,7 +76,7 @@ public class DeltaManualOverrideService {
             JsonObject configJson = Utils.toJsonObject(inputStream);
             return configJson.getString(OVERRIDE_KEY, "");
         } catch (Exception e) {
-            LOGGER.debug("No manual override found at {}: {}", overrideS3Path, e.getMessage());
+            LOGGER.debug("no manual override found: {}", overrideS3Path);
             return "";
         }
     }
