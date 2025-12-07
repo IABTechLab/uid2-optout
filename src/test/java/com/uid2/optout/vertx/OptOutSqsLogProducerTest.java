@@ -21,6 +21,7 @@ import java.io.ByteArrayInputStream;
 import java.util.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -68,7 +69,6 @@ public class OptOutSqsLogProducerTest {
               .put(Const.Config.OptOutSqsVisibilityTimeoutProp, 240)
               .put(Const.Config.OptOutProducerBufferSizeProp, 65536)
               .put(Const.Config.OptOutProducerReplicaIdProp, 1)
-              .put(Const.Config.OptOutInternalApiTokenProp, TEST_API_KEY)
               .put(Const.Config.OptOutInternalApiTokenProp, TEST_API_KEY)
               .put(Const.Config.TrafficFilterConfigPathProp, TRAFFIC_FILTER_CONFIG_PATH)
               .put(Const.Config.TrafficCalcConfigPathProp, TRAFFIC_CALC_CONFIG_PATH)
@@ -431,7 +431,7 @@ public class OptOutSqsLogProducerTest {
         );
         
         // Use CountDownLatch to control when the mock returns - ensures job stays running
-        java.util.concurrent.CountDownLatch processingLatch = new java.util.concurrent.CountDownLatch(1);
+        CountDownLatch processingLatch = new CountDownLatch(1);
         
         // Mock SQS to wait on latch before returning - keeps job in RUNNING state
         when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
@@ -1383,7 +1383,7 @@ public class OptOutSqsLogProducerTest {
         );
 
         // Use CountDownLatch to keep job running
-        java.util.concurrent.CountDownLatch processingLatch = new java.util.concurrent.CountDownLatch(1);
+        CountDownLatch processingLatch = new CountDownLatch(1);
 
         when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
                 .thenAnswer(inv -> {
