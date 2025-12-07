@@ -3,6 +3,9 @@ package com.uid2.optout.vertx;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
+import com.uid2.optout.sqs.SqsParsedMessage;
+
 import software.amazon.awssdk.services.sqs.model.Message;
 
 import java.nio.file.Files;

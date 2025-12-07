@@ -1,5 +1,6 @@
 package com.uid2.optout.vertx;
 
+import com.uid2.optout.sqs.SqsParsedMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

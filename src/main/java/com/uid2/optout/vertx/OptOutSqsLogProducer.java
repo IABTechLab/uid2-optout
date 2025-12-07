@@ -2,36 +2,37 @@ package com.uid2.optout.vertx;
 
 import com.uid2.optout.Const;
 import com.uid2.optout.auth.InternalAuthMiddleware;
+import com.uid2.optout.delta.DeltaFileWriter;
+import com.uid2.optout.delta.DeltaManualOverrideService;
+import com.uid2.optout.delta.DeltaProductionJobStatus;
+import com.uid2.optout.delta.DeltaProductionResult;
+import com.uid2.optout.delta.DeltaProductionMetrics;
+import com.uid2.optout.delta.DeltaProductionOrchestrator;
+import com.uid2.optout.delta.DeltaUploadService;
+import com.uid2.optout.delta.StopReason;
+import com.uid2.optout.sqs.SqsWindowReader;
 import com.uid2.optout.vertx.OptOutTrafficCalculator.MalformedTrafficCalcConfigException;
 import com.uid2.optout.vertx.OptOutTrafficFilter.MalformedTrafficFilterConfigException;
 import com.uid2.shared.Utils;
 import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.health.HealthComponent;
 import com.uid2.shared.health.HealthManager;
-import com.uid2.shared.optout.*;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.Metrics;
+import com.uid2.shared.optout.OptOutCloudSync;
+import com.uid2.shared.optout.OptOutUtils;
+
 import io.vertx.core.*;
 import io.vertx.core.http.*;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
-import io.vertx.core.json.JsonArray;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.sqs.SqsClient;
-import software.amazon.awssdk.services.sqs.model.*;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import static com.uid2.optout.util.HttpResponseHelper.*;
+
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -82,104 +83,83 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     private final HealthComponent healthComponent = HealthManager.instance.registerComponent("sqs-log-producer");
 
     private final SqsClient sqsClient;
-    private final String queueUrl;
     private final String eventDeltaProduced;
-    private final int replicaId;
-    private final ICloudStorage cloudStorage;
-    private final ICloudStorage cloudStorageDroppedRequests;
-    private final OptOutCloudSync cloudSync;
-    private final int maxMessagesPerPoll;
-    private final int visibilityTimeout;
-    private final int deltaWindowSeconds; // Time window for each delta file (5 minutes = 300 seconds)
-    private final int jobTimeoutSeconds;
     private final int listenPort;
-    private final String internalApiKey;
     private final InternalAuthMiddleware internalAuth;
     private final OptOutTrafficFilter trafficFilter;
     private final OptOutTrafficCalculator trafficCalculator;
-    private final String manualOverrideS3Path;
-
-    private Counter counterDeltaProduced = Counter
-        .builder("uid2_optout_sqs_delta_produced_total")
-        .description("counter for how many optout delta files are produced from SQS")
-        .register(Metrics.globalRegistry);
-
-    private Counter counterEntriesProcessed = Counter
-        .builder("uid2_optout_sqs_entries_processed_total")
-        .description("counter for how many optout entries are processed from SQS")
-        .register(Metrics.globalRegistry);
-
-    private Counter counterDroppedRequestFilesProduced = Counter
-        .builder("uid2_optout_sqs_dropped_request_files_produced_total")
-        .description("counter for how many optout dropped request files are produced from SQS")
-        .register(Metrics.globalRegistry);
+    private final DeltaProductionOrchestrator orchestrator;
     
-    private Counter counterDroppedRequestsProcessed = Counter
-        .builder("uid2_optout_sqs_dropped_requests_processed_total")
-        .description("counter for how many optout dropped requests are processed from SQS")
-        .register(Metrics.globalRegistry);
-
-    private ByteBuffer buffer;
-    private boolean shutdownInProgress = false;
+    // Tracks the current delta production job status for this pod
+    private final AtomicReference<DeltaProductionJobStatus> currentJob = new AtomicReference<>(null);
     
-    //Tracks the current delta production job status for this pod.
-    private final AtomicReference<DeltaProduceJobStatus> currentJob = new AtomicReference<>(null);
-    
-    // Helper for reading complete 5-minute windows from SQS
-    private final SqsWindowReader windowReader;
+    private volatile boolean shutdownInProgress = false;
 
-    public OptOutSqsLogProducer(JsonObject jsonConfig, ICloudStorage cloudStorage, OptOutCloudSync cloudSync, String eventDeltaProduced) throws IOException, MalformedTrafficCalcConfigException, MalformedTrafficFilterConfigException {
-        this(jsonConfig, cloudStorage, null, cloudSync, eventDeltaProduced, null);
-    }
-
-    // Constructor for testing - allows injecting mock SqsClient
     public OptOutSqsLogProducer(JsonObject jsonConfig, ICloudStorage cloudStorage, ICloudStorage cloudStorageDroppedRequests, OptOutCloudSync cloudSync, String eventDeltaProduced, SqsClient sqsClient) throws IOException, MalformedTrafficCalcConfigException, MalformedTrafficFilterConfigException {
         this.eventDeltaProduced = eventDeltaProduced;
-        this.replicaId = OptOutUtils.getReplicaId(jsonConfig);
-        this.cloudStorage = cloudStorage;
-        this.cloudStorageDroppedRequests = cloudStorageDroppedRequests;
-        this.cloudSync = cloudSync;
-
+        
         // Initialize SQS client
-        this.queueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
-        if (this.queueUrl == null || this.queueUrl.isEmpty()) {
+        String queueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
+        if (queueUrl == null || queueUrl.isEmpty()) {
             throw new IOException("SQS queue URL not configured");
         }
-
-        // Use injected client for testing, or create new one
         this.sqsClient = sqsClient != null ? sqsClient : SqsClient.builder().build();
-        LOGGER.info("SQS client initialized for queue: " + this.queueUrl);
+        LOGGER.info("SQS client initialized for queue: {}", queueUrl);
 
-        // SQS Configuration
-        this.maxMessagesPerPoll = 10; // SQS max is 10
-        this.visibilityTimeout = jsonConfig.getInteger(Const.Config.OptOutSqsVisibilityTimeoutProp, 240); // 4 minutes default
-        this.deltaWindowSeconds = 300; // Fixed 5 minutes for all deltas
-        this.jobTimeoutSeconds = jsonConfig.getInteger(Const.Config.OptOutDeltaJobTimeoutSecondsProp, 10800); // 3 hours default
-
-        // HTTP server configuration - use port offset + 1 to avoid conflicts
+        // HTTP server configuration
         this.listenPort = Const.Port.ServicePortForOptOut + Utils.getPortOffset() + 1;
         
         // Authentication
-        this.internalApiKey = jsonConfig.getString(Const.Config.OptOutInternalApiTokenProp);
-        this.internalAuth = new InternalAuthMiddleware(this.internalApiKey, "optout-sqs");
+        String internalApiKey = jsonConfig.getString(Const.Config.OptOutInternalApiTokenProp);
+        this.internalAuth = new InternalAuthMiddleware(internalApiKey, "optout-sqs");
 
-        int bufferSize = jsonConfig.getInteger(Const.Config.OptOutProducerBufferSizeProp);
-        this.buffer = ByteBuffer.allocate(bufferSize).order(ByteOrder.LITTLE_ENDIAN);
-
+        // Circuit breaker tools
         this.trafficFilter = new OptOutTrafficFilter(jsonConfig.getString(Const.Config.TrafficFilterConfigPathProp));
         this.trafficCalculator = new OptOutTrafficCalculator(cloudStorage, jsonConfig.getString(Const.Config.OptOutSqsS3FolderProp), jsonConfig.getString(Const.Config.TrafficCalcConfigPathProp));
-        this.manualOverrideS3Path = jsonConfig.getString(Const.Config.ManualOverrideS3PathProp);
-        
-        // Initialize window reader with traffic threshold
-        this.windowReader = new SqsWindowReader(
-            this.sqsClient, this.queueUrl, this.maxMessagesPerPoll, 
-            this.visibilityTimeout, this.deltaWindowSeconds, this.trafficCalculator.getThreshold()
+
+        // Configuration values for orchestrator setup
+        int replicaId = OptOutUtils.getReplicaId(jsonConfig);
+        int maxMessagesPerPoll = 10; // SQS max is 10
+        int deltaWindowSeconds = 300; // Fixed 5 minutes for all deltas
+        int visibilityTimeout = jsonConfig.getInteger(Const.Config.OptOutSqsVisibilityTimeoutProp, 240);
+        int jobTimeoutSeconds = jsonConfig.getInteger(Const.Config.OptOutDeltaJobTimeoutSecondsProp, 10800);
+        int maxMessagesPerFile = jsonConfig.getInteger(Const.Config.OptOutMaxMessagesPerFileProp, 10000);
+        int bufferSize = jsonConfig.getInteger(Const.Config.OptOutProducerBufferSizeProp);
+
+        // Orchestrator setup
+        DeltaFileWriter deltaFileWriter = new DeltaFileWriter(bufferSize);
+        DeltaUploadService deltaUploadService = new DeltaUploadService(cloudStorage, this.sqsClient, queueUrl);
+        DeltaUploadService droppedRequestUploadService = new DeltaUploadService(cloudStorageDroppedRequests, this.sqsClient, queueUrl) ;
+        DeltaManualOverrideService manualOverrideService = new DeltaManualOverrideService(cloudStorage, jsonConfig.getString(Const.Config.ManualOverrideS3PathProp));
+        SqsWindowReader windowReader = new SqsWindowReader(
+            this.sqsClient, queueUrl, maxMessagesPerPoll, 
+            visibilityTimeout, deltaWindowSeconds, maxMessagesPerFile
         );
+
+        this.orchestrator = new DeltaProductionOrchestrator(
+            this.sqsClient,
+            queueUrl,
+            replicaId,
+            deltaWindowSeconds,
+            jobTimeoutSeconds,
+            windowReader,
+            deltaFileWriter,
+            deltaUploadService,
+            droppedRequestUploadService,
+            manualOverrideService,
+            this.trafficFilter,
+            this.trafficCalculator,
+            cloudSync,
+            new DeltaProductionMetrics()
+        );
+        
+        LOGGER.info("OptOutSqsLogProducer initialized with maxMessagesPerFile: {}, maxMessagesPerPoll: {}, visibilityTimeout: {}, deltaWindowSeconds: {}, jobTimeoutSeconds: {}",
+            maxMessagesPerFile, maxMessagesPerPoll, visibilityTimeout, deltaWindowSeconds, jobTimeoutSeconds);
     }
 
     @Override
     public void start(Promise<Void> startPromise) {
-        LOGGER.info("Starting SQS Log Producer with HTTP endpoint...");
+        LOGGER.info("Attempting to start SQS Log Producer HTTP server on port: {}", listenPort);
 
         try {
             vertx.createHttpServer()
@@ -187,8 +167,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                     .listen(listenPort, result -> {
                         if (result.succeeded()) {
                             this.healthComponent.setHealthStatus(true);
-                            LOGGER.info("SQS Log Producer HTTP server started on port: {} (delta window: {}s)", 
-                                listenPort, this.deltaWindowSeconds);
+                            LOGGER.info("SQS Log Producer HTTP server started on port: {}", listenPort);
                             startPromise.complete();
                         } else {
                             LOGGER.error("Failed to start SQS Log Producer HTTP server", result.cause());
@@ -198,7 +177,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                     });
 
         } catch (Exception e) {
-            LOGGER.error("Failed to start SQS Log Producer", e);
+            LOGGER.error("Failed to start SQS Log Producer HTTP server", e);
             this.healthComponent.setHealthStatus(false, e.getMessage());
             startPromise.fail(e);
         }
@@ -244,18 +223,14 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     private void handleDeltaProduceStatus(RoutingContext routingContext) {
         HttpServerResponse resp = routingContext.response();
 
-        DeltaProduceJobStatus job = currentJob.get();
+        DeltaProductionJobStatus job = currentJob.get();
         
         if (job == null) {
-            resp.setStatusCode(200)
-                    .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                    .end(new JsonObject().put("status", "idle").put("message", "No job running on this pod").encode());
+            sendIdle(resp, "No job running on this pod");
             return;
         }
 
-        resp.setStatusCode(200)
-                .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                .end(job.toJson().encode());
+        sendSuccess(resp, job.toJson());
     }
 
     /**
@@ -278,67 +253,55 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             this.trafficFilter.reloadTrafficFilterConfig();
         } catch (MalformedTrafficFilterConfigException e) {
             LOGGER.error("Error reloading traffic filter config: " + e.getMessage(), e);
-            resp.setStatusCode(500)
-                    .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                    .end(new JsonObject().put("status", "failed").put("error", e.getMessage()).encode());
+            sendError(resp, e);
             return;
         }
 
         try {
             this.trafficCalculator.reloadTrafficCalcConfig();
-            // Update window reader's message limit to match new threshold
-            this.windowReader.setMaxMessagesPerWindow(this.trafficCalculator.getThreshold());
         } catch (MalformedTrafficCalcConfigException e) {
             LOGGER.error("Error reloading traffic calculator config: " + e.getMessage(), e);
-            resp.setStatusCode(500)
-                    .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                    .end(new JsonObject().put("status", "failed").put("error", e.getMessage()).encode());
+            sendError(resp, e);
             return;
         }
 
-        DeltaProduceJobStatus existingJob = currentJob.get();
+        DeltaProductionJobStatus existingJob = currentJob.get();
         
         // If there's an existing job, check if it's still running
         if (existingJob != null) {
-            if (existingJob.getState() == DeltaProduceJobStatus.JobState.RUNNING) {
+            if (existingJob.getState() == DeltaProductionJobStatus.JobState.RUNNING) {
                 // Cannot replace a running job - 409 Conflict
                 LOGGER.warn("Delta production job already running on this pod");
-                resp.setStatusCode(409)
-                        .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                        .end(new JsonObject().put("status", "conflict").put("reason", "A delta production job is already running on this pod").encode());
+                sendConflict(resp, "A delta production job is already running on this pod");
                 return;
             }
             
             LOGGER.info("Auto-clearing previous {} job to start new one", existingJob.getState());
         }
 
-        DeltaProduceJobStatus newJob = new DeltaProduceJobStatus();
+        DeltaProductionJobStatus newJob = new DeltaProductionJobStatus();
 
         // Try to set the new job
         if (!currentJob.compareAndSet(existingJob, newJob)) {
-            resp.setStatusCode(409)
-                    .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                    .end(new JsonObject().put("status", "conflict").put("reason", "Job state changed, please retry").encode());
+            sendConflict(resp, "Job state changed, please retry");
             return;
         }
 
         // Start the job asynchronously
-        LOGGER.info("Starting delta production job");
+        LOGGER.info("New delta production job initialized");
         this.startDeltaProductionJob(newJob);
 
         // Return immediately with 202 Accepted
-        resp.setStatusCode(202)
-                .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                .end(new JsonObject().put("status", "accepted").put("message", "Delta production job started on this pod").encode());
+        sendAccepted(resp, "Delta production job started on this pod");
     }
 
     /**
      * Starts the delta production job asynchronously
      * The job runs on a worker thread and updates the DeltaProduceJobStatus when complete
      */
-    private void startDeltaProductionJob(DeltaProduceJobStatus job) {
+    private void startDeltaProductionJob(DeltaProductionJobStatus job) {
         vertx.executeBlocking(() -> {
-            LOGGER.info("Executing delta production job");
+            LOGGER.info("Delta production job starting on worker thread");
             return produceDeltasBlocking();
         }).onComplete(ar -> {
             if (ar.succeeded()) {
@@ -370,338 +333,46 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         // Process messages until queue is empty or messages are too recent
         DeltaProductionResult deltaResult = this.produceBatchedDeltas();
 
-        // Determine status based on results
-        if (deltaResult.getDeltasProduced() == 0 && deltaResult.stoppedDueToRecentMessages()) {
-            // No deltas produced - either messages too recent or traffic spike detected
-            LOGGER.info("Delta production skipped: {} entries processed", deltaResult.getEntriesProcessed());
-            return deltaResult.toJsonWithStatus("skipped", "reason", "No deltas produced");
-        } else {
-            LOGGER.info("Delta production complete: {} deltas, {} entries", 
-                deltaResult.getDeltasProduced(), deltaResult.getEntriesProcessed());
+        StopReason stopReason = deltaResult.getStopReason();
+        boolean producedDeltas = deltaResult.getDeltasProduced() > 0;
+        boolean producedDroppedRequests = deltaResult.getDroppedRequestFilesProduced() > 0;
+
+        // Determine status based on results:
+        // "success" = produced work OR completed normally
+        // "skipped" = stopped early due to abnormal conditions (circuit breaker, override, too recent)
+        boolean isSkipped = stopReason == StopReason.CIRCUIT_BREAKER_TRIGGERED
+            || stopReason == StopReason.MESSAGES_TOO_RECENT
+            || stopReason == StopReason.MANUAL_OVERRIDE_ACTIVE;
+        
+        boolean isSuccess = !isSkipped && (producedDeltas 
+            || producedDroppedRequests
+            || stopReason == StopReason.QUEUE_EMPTY 
+            || stopReason == StopReason.NONE);
+        
+        if (isSuccess) {
+            LOGGER.info("Delta production complete: {} deltas, {} entries, dropped request files: {}, dropped requests: {}, stop reason: {}", 
+                deltaResult.getDeltasProduced(), deltaResult.getEntriesProcessed(), deltaResult.getDroppedRequestFilesProduced(), deltaResult.getDroppedRequestsProcessed(), stopReason);
             return deltaResult.toJsonWithStatus("success");
+        } else {
+            LOGGER.info("Delta production skipped: {}, {} entries processed, dropped request files: {}, dropped requests: {}", 
+                stopReason, deltaResult.getEntriesProcessed(), deltaResult.getDroppedRequestFilesProduced(), deltaResult.getDroppedRequestsProcessed());
+            return deltaResult.toJsonWithStatus("skipped", "reason", stopReason.name());
         }
     }
 
 
     /**
-     * Reads messages from SQS and produces delta files in 5 minute batches.
-     * Continues until queue is empty or messages are too recent.
-     * Windows are limited to maxMessagesPerFile for memory protection.
+     * Delegates to the orchestrator to produce delta files.
      * 
-     * @return DeltaProductionResult with counts and stop reason
+     * @return DeltaProduceResult with counts and stop reason
      * @throws IOException if delta production fails
      */
     private DeltaProductionResult produceBatchedDeltas() throws IOException {
-        // Check for manual override at the start of the batch (and then between each delta window)
-        if (getManualOverride().equals("DELAYED_PROCESSING")) {
-            LOGGER.info("Manual override set to DELAYED_PROCESSING, stopping production");
-            return new DeltaProductionResult(0, 0, 0, 0, false);
-        }
-
-        int deltasProduced = 0;
-        int totalEntriesProcessed = 0;
-
-        int droppedRequestFilesProduced = 0;
-        int droppedRequestsProcessed = 0;
-
-        boolean stoppedDueToRecentMessages = false;
-        
-        long jobStartTime = OptOutUtils.nowEpochSeconds();
-        LOGGER.info("Starting delta production from SQS queue");
-
-        // Read and process windows until done
-        while (true) {
-            if(checkJobTimeout(jobStartTime)){
-                break;
-            }
-            
-            // Read one complete 5-minute window (limited to maxMessagesPerFile)
-            SqsWindowReader.WindowReadResult windowResult = windowReader.readWindow();
-            
-            // If no messages, we're done (queue empty or messages too recent)
-            if (windowResult.isEmpty()) {
-                stoppedDueToRecentMessages = windowResult.stoppedDueToRecentMessages();
-                LOGGER.info("Delta production complete - no more eligible messages");
-                break;
-            }
-            
-            // if message limit exceeded, treat as traffic spike
-            if (windowResult.exceededMessageLimit()) {
-                LOGGER.error("Message limit exceeded ({} messages) - triggering DELAYED_PROCESSING to prevent memory exhaustion",
-                    windowResult.getMessages().size());
-                this.setDelayedProcessingOverride();
-                return new DeltaProductionResult(deltasProduced, totalEntriesProcessed, droppedRequestFilesProduced, droppedRequestsProcessed, true);
-            }
-            
-            // Create delta file buffer
-            String deltaName = OptOutUtils.newDeltaFileName(this.replicaId);
-            ByteArrayOutputStream deltaStream = new ByteArrayOutputStream();
-
-            // Create dropped request file buffer
-            JsonArray droppedRequestStream = new JsonArray();
-            String currentDroppedRequestName = String.format("%s%03d_%s_%08x.json", "optout-dropped-", replicaId, Instant.now().truncatedTo(ChronoUnit.SECONDS).toString().replace(':', '.'), OptOutUtils.rand.nextInt());
-
-            // Produce delta for this window
-            long windowStart = windowResult.getWindowStart();
-            List<SqsParsedMessage> messages = windowResult.getMessages();
-
-            writeStartOfDelta(deltaStream, windowStart);
-            
-            // Write all messages
-            List<Message> currentDeltaMessages = new ArrayList<>();
-            List<Message> droppedRequestMessages = new ArrayList<>();
-            for (SqsParsedMessage msg : messages) {
-                if (trafficFilter.isDenylisted(msg)) {
-                    this.writeDroppedRequestEntry(droppedRequestStream, msg);
-                    droppedRequestMessages.add(msg.getOriginalMessage());
-                    droppedRequestsProcessed++;
-                } else {
-                    writeOptOutEntry(deltaStream, msg.getHashBytes(), msg.getIdBytes(), msg.getTimestamp());
-                    currentDeltaMessages.add(msg.getOriginalMessage());
-                    totalEntriesProcessed++;
-                }
-            }
-
-            // check for manual override
-            if (getManualOverride().equals("DELAYED_PROCESSING")) {
-                LOGGER.info("Manual override set to DELAYED_PROCESSING, stopping production");
-                return new DeltaProductionResult(deltasProduced, totalEntriesProcessed, droppedRequestFilesProduced, droppedRequestsProcessed, true);
-            } else {
-                // Get queue attributes (including invisible messages) for traffic calculation
-                SqsMessageOperations.QueueAttributes queueAttributes = SqsMessageOperations.getQueueAttributes(this.sqsClient, this.queueUrl);
-                
-                // check traffic calculator status (including invisible messages in case of multiple consumers)
-                OptOutTrafficCalculator.TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(currentDeltaMessages, queueAttributes);
-                if (trafficStatus == OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING) {
-                    LOGGER.error("OptOut Delta Production has hit DELAYED_PROCESSING status, stopping production");
-                    this.setDelayedProcessingOverride();
-                    return new DeltaProductionResult(deltasProduced, totalEntriesProcessed, droppedRequestFilesProduced, droppedRequestsProcessed, true);
-                }
-            }
-            
-            // Upload delta file if there are non-denylisted messages
-            if (!currentDeltaMessages.isEmpty()) {
-                uploadDeltaAndDeleteMessages(deltaStream, deltaName, windowStart, currentDeltaMessages);
-                deltasProduced++;
-            }
-            
-            // Upload dropped request file if there are denylisted messages
-            if (!droppedRequestMessages.isEmpty()) {
-                this.uploadDroppedRequestsAndDeleteMessages(droppedRequestStream, currentDroppedRequestName, windowStart, droppedRequestMessages);
-                droppedRequestFilesProduced++;
-                droppedRequestMessages.clear();
-            }
-            
-            LOGGER.info("Produced delta for window [{}, {}] with {} messages",
-                windowStart, windowStart + this.deltaWindowSeconds, messages.size());
-        }
-
-        long totalDuration = OptOutUtils.nowEpochSeconds() - jobStartTime;
-        LOGGER.info("Delta production complete: took {}s, produced {} deltas, processed {} entries, produced {} dropped request files, processed {} dropped requests",
-            totalDuration, deltasProduced, totalEntriesProcessed, droppedRequestFilesProduced, droppedRequestsProcessed);
-
-        return new DeltaProductionResult(deltasProduced, totalEntriesProcessed, droppedRequestFilesProduced, droppedRequestsProcessed, stoppedDueToRecentMessages);
+        return orchestrator.produceBatchedDeltas(this::publishDeltaProducedEvent);
     }
 
-    /**
-     * Checks if job has exceeded timeout
-     */
-    private boolean checkJobTimeout(long jobStartTime) {
-        long elapsedTime = OptOutUtils.nowEpochSeconds() - jobStartTime;
-        if (elapsedTime > 3600) { // 1 hour - log warning message
-            LOGGER.error("Delta production job has been running for {} seconds",
-                elapsedTime);
-            return false;
-        }
-        if (elapsedTime > this.jobTimeoutSeconds) {
-            LOGGER.error("Delta production job has been running for {} seconds (exceeds timeout of {}s)",
-                elapsedTime, this.jobTimeoutSeconds);
-            return true; // deadline exceeded
-        }
-        return false;
-    }
-
-    /**
-     * Writes the start-of-delta entry with null hash and window start timestamp.
-     */
-    private void writeStartOfDelta(ByteArrayOutputStream stream, long windowStart) throws IOException {
-        
-        this.checkBufferSize(OptOutConst.EntrySize);
-        
-        buffer.put(OptOutUtils.nullHashBytes);
-        buffer.put(OptOutUtils.nullHashBytes);
-        buffer.putLong(windowStart);
-        
-        buffer.flip();
-        byte[] entry = new byte[buffer.remaining()];
-        buffer.get(entry);
-        
-        stream.write(entry);
-        buffer.clear();
-    }
-
-    /**
-     * Writes a single opt-out entry to the delta stream.
-     */
-    private void writeOptOutEntry(ByteArrayOutputStream stream, byte[] hashBytes, byte[] idBytes, long timestamp) throws IOException {
-        this.checkBufferSize(OptOutConst.EntrySize);
-        OptOutEntry.writeTo(buffer, hashBytes, idBytes, timestamp);
-        buffer.flip();
-        byte[] entry = new byte[buffer.remaining()];
-        buffer.get(entry);
-        stream.write(entry);
-        buffer.clear();
-    }
-
-    /**
-     * Writes the end-of-delta sentinel entry with ones hash and window end timestamp.
-     */
-    private void writeEndOfDelta(ByteArrayOutputStream stream, long windowEnd) throws IOException {
-        this.checkBufferSize(OptOutConst.EntrySize);
-        buffer.put(OptOutUtils.onesHashBytes);
-        buffer.put(OptOutUtils.onesHashBytes);
-        buffer.putLong(windowEnd);
-        buffer.flip();
-        byte[] entry = new byte[buffer.remaining()];
-        buffer.get(entry);
-        stream.write(entry);
-        buffer.clear();
-    }
-
-
-
-    // Upload a delta to S3 and delete messages from SQS after successful upload
-    private void uploadDeltaAndDeleteMessages(ByteArrayOutputStream deltaStream, String deltaName, Long windowStart, List<Message> messages) throws IOException {
-        try {
-            // Add end-of-delta entry
-            long endTimestamp = windowStart + this.deltaWindowSeconds;
-            this.writeEndOfDelta(deltaStream, endTimestamp);
-
-            // upload
-            byte[] deltaData = deltaStream.toByteArray();
-            String s3Path = this.cloudSync.toCloudPath(deltaName);
-
-            LOGGER.info("SQS Delta Upload - fileName: {}, s3Path: {}, size: {} bytes, messages: {}, window: [{}, {})",
-                deltaName, s3Path, deltaData.length, messages.size(), windowStart, endTimestamp);
-
-            boolean uploadSucceeded = false;
-            try (ByteArrayInputStream inputStream = new ByteArrayInputStream(deltaData)) {
-                this.cloudStorage.upload(inputStream, s3Path);
-                LOGGER.info("Successfully uploaded delta to S3: {}", s3Path);
-                uploadSucceeded = true;
-
-                // publish event
-                this.publishDeltaProducedEvent(deltaName);
-                this.counterDeltaProduced.increment();
-                this.counterEntriesProcessed.increment(messages.size());
-
-            } catch (Exception uploadEx) {
-                LOGGER.error("Failed to upload delta to S3: " + uploadEx.getMessage(), uploadEx);
-                throw new IOException("S3 upload failed", uploadEx);
-            }
-
-            // CRITICAL: Only delete messages from SQS after successful S3 upload
-            if (uploadSucceeded && !messages.isEmpty()) {
-                LOGGER.info("Deleting {} messages from SQS after successful S3 upload", messages.size());
-                SqsMessageOperations.deleteMessagesFromSqs(this.sqsClient, this.queueUrl, messages);
-            }
-
-            // Close the stream
-            deltaStream.close();
-
-        } catch (Exception ex) {
-            LOGGER.error("Error uploading delta: " + ex.getMessage(), ex);
-            throw new IOException("Delta upload failed", ex);
-        }
-    }
-
-    /**
-     * Writes a dropped request entry to the dropped request stream.
-     */
-    private void writeDroppedRequestEntry(JsonArray droppedRequestArray, SqsParsedMessage parsed) throws IOException {
-        String messageBody = parsed.getOriginalMessage().body();
-        JsonObject messageJson = new JsonObject(messageBody);
-        droppedRequestArray.add(messageJson);
-    }
-
-    // Upload a dropped request file to S3 and delete messages from SQS after successful upload
-    private void uploadDroppedRequestsAndDeleteMessages(JsonArray droppedRequestStream, String droppedRequestName, Long windowStart, List<Message> messages) throws IOException {
-        try {
-            // upload
-            byte[] droppedRequestData = droppedRequestStream.encode().getBytes();
-
-            LOGGER.info("SQS Dropped Requests Upload - fileName: {}, s3Path: {}, size: {} bytes, messages: {}, window: [{}, {})",
-                droppedRequestName, droppedRequestData.length, messages.size(), windowStart, windowStart + this.deltaWindowSeconds);
-
-            boolean uploadSucceeded = false;
-            try (ByteArrayInputStream inputStream = new ByteArrayInputStream(droppedRequestData)) {
-                this.cloudStorageDroppedRequests.upload(inputStream, droppedRequestName);
-                LOGGER.info("Successfully uploaded dropped requests to S3: {}", droppedRequestName);
-                uploadSucceeded = true;
-
-                // publish event
-                this.counterDroppedRequestFilesProduced.increment();
-                this.counterDroppedRequestsProcessed.increment(messages.size());
-            } catch (Exception uploadEx) {
-                LOGGER.error("Failed to upload dropped requests to S3: " + uploadEx.getMessage(), uploadEx);
-                throw new IOException("S3 upload failed", uploadEx);
-            }
-
-            // CRITICAL: Only delete messages from SQS after successful S3 upload
-            if (uploadSucceeded && !messages.isEmpty()) {
-                LOGGER.info("Deleting {} messages from SQS after successful S3 upload", messages.size());
-                SqsMessageOperations.deleteMessagesFromSqs(this.sqsClient, this.queueUrl, messages);
-            }
-
-            // Clear the array
-            droppedRequestStream.clear();
-
-        } catch (Exception ex) {
-            LOGGER.error("Error uploading dropped requests: " + ex.getMessage(), ex);
-            throw new IOException("Dropped requests upload failed", ex);
-        }
-    }
-
-    /**
-     * Upload a JSON config file to S3 containing the following:
-     * {"manual_override": "DELAYED_PROCESSING"}
-     * Manual override file is at the root of the S3 bucket
-     */
-    private void setDelayedProcessingOverride() {
-        try {
-            JsonObject config = new JsonObject().put("manual_override", "DELAYED_PROCESSING");
-            this.cloudStorage.upload(new ByteArrayInputStream(config.encode().getBytes()), this.manualOverrideS3Path);
-        } catch (Exception e) {
-            LOGGER.error("Error setting delayed processing override", e);
-        }
-    }
-
-    /**
-     * Check if there is a manual override set in S3 for DEFAULT or DELAYED_PROCESSING status
-     * Manual override file is at the root of the S3 bucket
-     */
-     private String getManualOverride() {
-        try {
-            InputStream inputStream = this.cloudStorage.download(this.manualOverrideS3Path);
-            JsonObject configJson = Utils.toJsonObject(inputStream);
-            return configJson.getString("manual_override", "");
-        } catch (Exception e) {
-            LOGGER.error("Error checking for manual override in S3: " + e.getMessage(), e);
-            return "";
-        }
-    }
-
-    private void publishDeltaProducedEvent(String newDelta) {
-        vertx.eventBus().publish(this.eventDeltaProduced, newDelta);
-        LOGGER.info("Published delta.produced event for: {}", newDelta);
-    }
-
-    private void checkBufferSize(int dataSize) {
-        ByteBuffer b = this.buffer;
-        if (b.capacity() < dataSize) {
-            int newCapacity = Integer.highestOneBit(dataSize) << 1;
-            LOGGER.warn("Expanding buffer size: current {}, need {}, new {}", b.capacity(), dataSize, newCapacity);
-            this.buffer = ByteBuffer.allocate(newCapacity).order(ByteOrder.LITTLE_ENDIAN);
-        }
+    private void publishDeltaProducedEvent(String deltaName) {
+        vertx.eventBus().publish(this.eventDeltaProduced, deltaName);
+        LOGGER.info("Published delta.produced event for: {}", deltaName);
     }
 }

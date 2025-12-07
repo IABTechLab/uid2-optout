@@ -1,4 +1,4 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.delta;
 
 import io.vertx.core.json.JsonObject;
 import java.time.Instant;
@@ -10,7 +10,7 @@ import java.time.Instant;
  * (running, completed, failed), timing information, and result or error details.
  * 
  */
-public class DeltaProduceJobStatus {
+public class DeltaProductionJobStatus {
     private final Instant startTime;
     private volatile JobState state;
     private volatile JsonObject result;
@@ -23,7 +23,7 @@ public class DeltaProduceJobStatus {
         FAILED
     }
 
-    public DeltaProduceJobStatus() {
+    public DeltaProductionJobStatus() {
         this.startTime = Instant.now();
         this.state = JobState.RUNNING;
     }

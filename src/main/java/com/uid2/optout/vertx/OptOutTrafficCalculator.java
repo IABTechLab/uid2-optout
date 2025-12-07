@@ -5,11 +5,11 @@ import com.uid2.shared.optout.OptOutCollection;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
 import com.uid2.optout.Const;
+import com.uid2.optout.sqs.SqsMessageOperations;
+
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.services.sqs.model.Message;
-import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 
 import java.nio.charset.StandardCharsets;
 
@@ -202,31 +202,15 @@ public class OptOutTrafficCalculator {
     }
     
     /**
-     * Calculate traffic status based on delta files and SQS queue messages.
+     * Calculate traffic status based on delta files and SQS queue attributes.
      * 
-     * Uses the newest delta file timestamp to anchor the 24-hour delta traffic window,
-     * and the oldest queue timestamp to anchor the 5-minute queue window.
+     * Uses the newest delta file timestamp to anchor the evaluation window,
+     * and adds the total queue depth from queue attributes.
      * 
-     * @param sqsMessages List of SQS messages in the current batch
+     * @param queueAttributes SQS queue attributes including message counts
      * @return TrafficStatus (DELAYED_PROCESSING or DEFAULT)
      */
-    public TrafficStatus calculateStatus(List<Message> sqsMessages) {
-        return calculateStatus(sqsMessages, null);
-    }
-    
-    /**
-     * Calculate traffic status based on delta files, SQS queue messages, and queue attributes.
-     * 
-     * Uses the newest delta file timestamp to anchor the 24-hour delta traffic window,
-     * and the oldest queue timestamp to anchor the 5-minute queue window.
-     * 
-     * The invisible message count from queue attributes is added in case of multiple consumers.
-     * 
-     * @param sqsMessages List of SQS messages in the current batch
-     * @param queueAttributes SQS queue attributes including invisible message count (may be null)
-     * @return TrafficStatus (DELAYED_PROCESSING or DEFAULT)
-     */
-    public TrafficStatus calculateStatus(List<Message> sqsMessages, SqsMessageOperations.QueueAttributes queueAttributes) {
+    public TrafficStatus calculateStatus(SqsMessageOperations.QueueAttributes queueAttributes) {
         
         try {
             // Get list of delta files from S3 (sorted newest to oldest)
@@ -240,10 +224,6 @@ public class OptOutTrafficCalculator {
             // Find newest delta file timestamp for delta traffic window
             long newestDeltaTs = findNewestDeltaTimestamp(deltaS3Paths);
             LOGGER.info("Traffic calculation: newestDeltaTs={}", newestDeltaTs);
-            
-            // Find oldest SQS queue message timestamp for queue window
-            long oldestQueueTs = findOldestQueueTimestamp(sqsMessages);
-            LOGGER.info("Traffic calculation: oldestQueueTs={}", oldestQueueTs);
             
             // Define start time of the delta evaluation window
             // We need evaluationWindowSeconds of non-allowlisted time, so we iteratively extend
@@ -259,7 +239,6 @@ public class OptOutTrafficCalculator {
             for (String s3Path : deltaS3Paths) {
                 List<Long> timestamps = getTimestampsFromFile(s3Path);
                 
-                boolean shouldStop = false;
                 for (long ts : timestamps) {
                     // Stop condition: record is older than our window
                     if (ts < deltaWindowStart) {
@@ -276,35 +255,24 @@ public class OptOutTrafficCalculator {
                     if (ts >= deltaWindowStart) {
                         sum++;
                     }
-                    
-                }
-                
-                if (shouldStop) {
-                    break;
                 }
             }
             
-            // Count SQS messages in [oldestQueueTs, oldestQueueTs + 5m]
-            if (sqsMessages != null && !sqsMessages.isEmpty()) {
-                int sqsCount = countSqsMessages(sqsMessages, oldestQueueTs);
-                sum += sqsCount;
-            }
-            
-            // Add invisible messages from queue attributes (messages being processed by other consumers)
-            // These represent in-flight work that will soon become delta records
-            int invisibleMessages = 0;
+            // Add total queue depth from queue attributes
+            // This includes visible, invisible (in-flight), and delayed messages
+            int queueMessages = 0;
             if (queueAttributes != null) {
-                invisibleMessages = queueAttributes.getApproximateNumberOfMessagesNotVisible();
-                sum += invisibleMessages;
-                LOGGER.info("Traffic calculation: adding {} invisible SQS messages to sum (queue: {})", 
-                           invisibleMessages, queueAttributes);
+                queueMessages = queueAttributes.getTotalMessages();
+                sum += queueMessages;
+                LOGGER.info("Traffic calculation: adding {} SQS queue messages to sum ({})", 
+                           queueMessages, queueAttributes);
             }
             
             // Determine status
             TrafficStatus status = determineStatus(sum, this.baselineTraffic);
             
-            LOGGER.info("Traffic calculation complete: sum={} (including {} invisible), baselineTraffic={}, thresholdMultiplier={}, status={}", 
-                       sum, invisibleMessages, this.baselineTraffic, this.thresholdMultiplier, status);
+            LOGGER.info("Traffic calculation complete: sum={} (deltaRecords={}, queueMessages={}), baselineTraffic={}, thresholdMultiplier={}, status={}", 
+                       sum, sum - queueMessages, queueMessages, this.baselineTraffic, this.thresholdMultiplier, status);
             
             return status;
             
@@ -456,68 +424,6 @@ public class OptOutTrafficCalculator {
         }
         
         return newestDeltaTs - evaluationWindowSeconds - allowlistDuration;
-    }
-    
-    /**
-     * Find the oldest SQS queue message timestamp
-     */
-    private long findOldestQueueTimestamp(List<Message> sqsMessages) throws IOException {
-        long oldest = System.currentTimeMillis() / 1000;
-        
-        if (sqsMessages != null && !sqsMessages.isEmpty()) {
-            for (Message msg : sqsMessages) {
-                Long ts = extractTimestampFromMessage(msg);
-                if (ts != null && ts < oldest) {
-                    oldest = ts;
-                }
-            }
-        }
-        
-        return oldest;
-    }
-    
-    /**
-     * Extract timestamp from SQS message (from SentTimestamp attribute)
-     */
-    private Long extractTimestampFromMessage(Message msg) {
-        // Get SentTimestamp attribute (milliseconds)
-        String sentTimestamp = msg.attributes().get(MessageSystemAttributeName.SENT_TIMESTAMP);
-        if (sentTimestamp != null) {
-            try {
-                return Long.parseLong(sentTimestamp) / 1000;  // Convert ms to seconds
-            } catch (NumberFormatException e) {
-                LOGGER.debug("Invalid SentTimestamp: {}", sentTimestamp);
-            }
-        }
-        
-        // Fallback: use current time
-        return System.currentTimeMillis() / 1000;
-    }
-    
-    /**
-     * Count SQS messages from oldestQueueTs to oldestQueueTs + 5 minutes
-     */
-    private int countSqsMessages(List<Message> sqsMessages, long oldestQueueTs) {
-        
-        int count = 0;
-        long windowEnd = oldestQueueTs + 5 * 60;
-        
-        for (Message msg : sqsMessages) {
-            Long ts = extractTimestampFromMessage(msg);
-
-            if (ts < oldestQueueTs || ts > windowEnd) {
-                continue;
-            }
-            
-            if (isInAllowlist(ts)) {
-                continue;
-            }
-            count++;
-            
-        }
-        
-        LOGGER.info("SQS messages: {} in window [oldestQueueTs={}, oldestQueueTs+5m={}]", count, oldestQueueTs, windowEnd);
-        return count;
     }
     
     /**

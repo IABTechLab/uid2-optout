@@ -74,7 +74,8 @@ public class OptOutSqsLogProducerTest {
               .put(Const.Config.TrafficCalcConfigPathProp, TRAFFIC_CALC_CONFIG_PATH)
               .put(Const.Config.ManualOverrideS3PathProp, MANUAL_OVERRIDE_S3_PATH)
               .put(Const.Config.OptOutS3BucketDroppedRequestsProp, TEST_BUCKET_DROPPED_REQUESTS)
-              .put(Const.Config.OptOutSqsS3FolderProp, S3_DELTA_PREFIX);
+              .put(Const.Config.OptOutSqsS3FolderProp, S3_DELTA_PREFIX)
+              .put(Const.Config.OptOutMaxMessagesPerFileProp, 100); // Low limit for circuit breaker tests
         
         // Mock cloud sync to return proper S3 paths
         when(cloudSync.toCloudPath(anyString()))
@@ -385,7 +386,7 @@ public class OptOutSqsLogProducerTest {
                     JsonObject result = finalStatus.getJsonObject("result");
                     context.assertNotNull(result);
                     context.assertEquals("skipped", result.getString("status"));
-                    context.assertEquals("No deltas produced", result.getString("reason"));
+                    context.assertEquals("MESSAGES_TOO_RECENT", result.getString("reason"));
                     
                     // No processing should occur
                     try {
@@ -1069,7 +1070,8 @@ public class OptOutSqsLogProducerTest {
                 .onComplete(context.asyncAssertSuccess(finalStatus -> {
                     context.assertEquals("completed", finalStatus.getString("state"));
                     JsonObject result = finalStatus.getJsonObject("result");
-                    context.assertEquals("success", result.getString("status"));
+                    context.assertEquals("skipped", result.getString("status"));
+                    context.assertEquals("MANUAL_OVERRIDE_ACTIVE", result.getString("reason"));
 
                     // Should not process anything - manual override checked at start
                     context.assertEquals(0, result.getInteger("entries_processed"));

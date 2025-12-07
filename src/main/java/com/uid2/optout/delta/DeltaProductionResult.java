@@ -1,4 +1,4 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.delta;
 
 import io.vertx.core.json.JsonObject;
 
@@ -13,20 +13,23 @@ public class DeltaProductionResult {
     private final int entriesProcessed;
     private final int droppedRequestFilesProduced;
     private final int droppedRequestsProcessed;
-    
-    /* 
-     * indicates that there are still messages in the queue, however,
-     * not enough time has elapsed to produce a delta file.
-     * We produce in batches of (5 minutes) 
-     */
-    private final boolean stoppedDueToRecentMessages;
+    private final StopReason stopReason;
 
-    public DeltaProductionResult(int deltasProduced, int entriesProcessed, int droppedRequestFilesProduced, int droppedRequestsProcessed, boolean stoppedDueToRecentMessages) {
+    public DeltaProductionResult(int deltasProduced, int entriesProcessed, 
+                                  int droppedRequestFilesProduced, int droppedRequestsProcessed, 
+                                  StopReason stopReason) {
         this.deltasProduced = deltasProduced;
         this.entriesProcessed = entriesProcessed;
         this.droppedRequestFilesProduced = droppedRequestFilesProduced;
         this.droppedRequestsProcessed = droppedRequestsProcessed;
-        this.stoppedDueToRecentMessages = stoppedDueToRecentMessages;
+        this.stopReason = stopReason;
+    }
+
+    /**
+     * Factory method for an empty result (no production occurred).
+     */
+    public static DeltaProductionResult empty(StopReason stopReason) {
+        return new DeltaProductionResult(0, 0, 0, 0, stopReason);
     }
 
     public int getDeltasProduced() {
@@ -37,8 +40,8 @@ public class DeltaProductionResult {
         return entriesProcessed;
     }
 
-    public boolean stoppedDueToRecentMessages() {
-        return stoppedDueToRecentMessages;
+    public StopReason getStopReason() {
+        return stopReason;
     }
 
     public int getDroppedRequestFilesProduced() {
@@ -57,7 +60,8 @@ public class DeltaProductionResult {
             .put("deltas_produced", deltasProduced)
             .put("entries_processed", entriesProcessed)
             .put("dropped_request_files_produced", droppedRequestFilesProduced)
-            .put("dropped_requests_processed", droppedRequestsProcessed);
+            .put("dropped_requests_processed", droppedRequestsProcessed)
+            .put("stop_reason", stopReason.name());
     }
 
     /**

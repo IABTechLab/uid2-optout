@@ -1,4 +1,4 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.sqs;
 
 import com.uid2.shared.optout.OptOutUtils;
 import io.vertx.core.json.JsonObject;

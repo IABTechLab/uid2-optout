@@ -1,5 +1,6 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.sqs;
 
+import com.uid2.optout.delta.StopReason;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -38,35 +39,39 @@ public class SqsWindowReader {
     }
 
     /**
-     * Update the max messages limit (e.g., after config reload).
-     */
-    public void setMaxMessagesPerWindow(int maxMessagesPerWindow) {
-        this.maxMessagesPerWindow = maxMessagesPerWindow;
-        LOGGER.info("Updated maxMessagesPerWindow to {}", maxMessagesPerWindow);
-    }
-
-    /**
      * Result of reading messages for a 5-minute window.
      */
     public static class WindowReadResult {
         private final List<SqsParsedMessage> messages;
         private final long windowStart;
-        private final boolean stoppedDueToRecentMessages;
-        private final boolean exceededMessageLimit;
+        private final StopReason stopReason;
         
-        public WindowReadResult(List<SqsParsedMessage> messages, long windowStart, 
-                               boolean stoppedDueToRecentMessages, boolean exceededMessageLimit) {
+        private WindowReadResult(List<SqsParsedMessage> messages, long windowStart, StopReason stopReason) {
             this.messages = messages;
             this.windowStart = windowStart;
-            this.stoppedDueToRecentMessages = stoppedDueToRecentMessages;
-            this.exceededMessageLimit = exceededMessageLimit;
+            this.stopReason = stopReason;
+        }
+        
+        public static WindowReadResult withMessages(List<SqsParsedMessage> messages, long windowStart) {
+            return new WindowReadResult(messages, windowStart, StopReason.NONE);
+        }
+        
+        public static WindowReadResult queueEmpty(List<SqsParsedMessage> messages, long windowStart) {
+            return new WindowReadResult(messages, windowStart, StopReason.QUEUE_EMPTY);
+        }
+        
+        public static WindowReadResult messagesTooRecent(List<SqsParsedMessage> messages, long windowStart) {
+            return new WindowReadResult(messages, windowStart, StopReason.MESSAGES_TOO_RECENT);
+        }
+        
+        public static WindowReadResult messageLimitExceeded(List<SqsParsedMessage> messages, long windowStart) {
+            return new WindowReadResult(messages, windowStart, StopReason.MESSAGE_LIMIT_EXCEEDED);
         }
         
         public List<SqsParsedMessage> getMessages() { return messages; }
         public long getWindowStart() { return windowStart; }
         public boolean isEmpty() { return messages.isEmpty(); }
-        public boolean stoppedDueToRecentMessages() { return stoppedDueToRecentMessages; }
-        public boolean exceededMessageLimit() { return exceededMessageLimit; }
+        public StopReason getStopReason() { return stopReason; }
     }
 
     /**
@@ -74,7 +79,7 @@ public class SqsWindowReader {
      * Keeps reading batches and accumulating messages until:
      * - We discover the next window
      * - Queue is empty (no more messages)
-     * - Messages are too recent (all messages younger than 5 minutes)
+     * - Messages are too recent (all messages younger than deltaWindowSeconds)
      * - Message count exceeds maxMessagesPerWindow
      * 
      * @return WindowReadResult with messages for the window, or empty if done
@@ -82,12 +87,13 @@ public class SqsWindowReader {
     public WindowReadResult readWindow() {
         List<SqsParsedMessage> windowMessages = new ArrayList<>();
         long currentWindowStart = 0;
+        int batchNumber = 0;
         
         while (true) {
             if (windowMessages.size() >= maxMessagesPerWindow) {
-                LOGGER.warn("Message limit exceeded: {} messages >= limit {}. Stopping to prevent memory exhaustion.",
+                LOGGER.warn("Message limit exceeded: {} messages >= limit {}. Closing window.",
                     windowMessages.size(), maxMessagesPerWindow);
-                return new WindowReadResult(windowMessages, currentWindowStart, false, true);
+                return WindowReadResult.messageLimitExceeded(windowMessages, currentWindowStart);
             }
             
             // Read one batch from SQS (up to 10 messages)
@@ -95,50 +101,40 @@ public class SqsWindowReader {
                 this.sqsClient, this.queueUrl, this.maxMessagesPerPoll, this.visibilityTimeout);
             
             if (rawBatch.isEmpty()) {
-                // Queue empty - return what we have
-                return new WindowReadResult(windowMessages, currentWindowStart, false, false);
+                return WindowReadResult.queueEmpty(windowMessages, currentWindowStart);
             }
             
-            // Process batch: parse, validate, filter
-            SqsBatchProcessor.BatchProcessingResult batchResult = batchProcessor.processBatch(rawBatch, 0);
+            // parse, validate, filter
+            SqsBatchProcessor.BatchProcessingResult batchResult = batchProcessor.processBatch(rawBatch, batchNumber++);
             
-            if (batchResult.isEmpty()) {
-                if (batchResult.shouldStopProcessing()) {
-                    // Messages too recent - return what we have
-                    return new WindowReadResult(windowMessages, currentWindowStart, true, false);
+            if (!batchResult.hasMessages()) {
+                if (batchResult.getStopReason() == StopReason.MESSAGES_TOO_RECENT) {
+                    return WindowReadResult.messagesTooRecent(windowMessages, currentWindowStart);
                 }
-                // corrupt messages deleted, read next messages
+                // Corrupt messages were deleted, continue reading
                 continue;
             }
             
             // Add eligible messages to current window
             boolean newWindow = false;
-            for (SqsParsedMessage msg : batchResult.getEligibleMessages()) {
+            for (SqsParsedMessage msg : batchResult.getMessages()) {
                 long msgWindowStart = (msg.getTimestamp() / this.deltaWindowSeconds) * this.deltaWindowSeconds;
                 
-                // discover start of window
+                // Discover start of window
                 if (currentWindowStart == 0) {
                     currentWindowStart = msgWindowStart;
                 }
 
-                // discover new window
+                // Discover next window
                 if (msgWindowStart > currentWindowStart + this.deltaWindowSeconds) {
                     newWindow = true;
                 }
                 
                 windowMessages.add(msg);
-                
-                // Check limit after each message addition
-                if (windowMessages.size() >= maxMessagesPerWindow) {
-                    LOGGER.warn("Message limit exceeded during batch: {} messages >= limit {}",
-                        windowMessages.size(), maxMessagesPerWindow);
-                    return new WindowReadResult(windowMessages, currentWindowStart, false, true);
-                }
             }
 
             if (newWindow) {
-                // close current window and return
-                return new WindowReadResult(windowMessages, currentWindowStart, false, false);
+                return WindowReadResult.withMessages(windowMessages, currentWindowStart);
             }
         }
     }

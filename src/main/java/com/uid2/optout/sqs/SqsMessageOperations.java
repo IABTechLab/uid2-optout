@@ -1,4 +1,4 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.sqs;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,44 +104,6 @@ public class SqsMessageOperations {
         } catch (NumberFormatException e) {
             return defaultValue;
         }
-    }
-
-    /**
-     * Receives all available messages from an SQS queue up to a maximum number of batches.
-     * 
-     * @param sqsClient The SQS client
-     * @param queueUrl The queue URL
-     * @param maxMessagesPerPoll Maximum messages to receive per poll (max 10)
-     * @param visibilityTimeout Visibility timeout in seconds
-     * @param maxBatches Maximum number of receive batches
-     * @return List of all received messages
-     */
-    public static List<Message> receiveAllAvailableMessages(
-            SqsClient sqsClient,
-            String queueUrl,
-            int maxMessagesPerPoll,
-            int visibilityTimeout,
-            int maxBatches) {
-        
-        List<Message> allMessages = new ArrayList<>();
-        int batchCount = 0;
-
-        // Keep receiving messages until we get an empty batch or hit the limit
-        while (batchCount < maxBatches) {
-            List<Message> batch = receiveMessagesFromSqs(sqsClient, queueUrl, maxMessagesPerPoll, visibilityTimeout);
-            if (batch.isEmpty()) {
-                break;
-            }
-            allMessages.addAll(batch);
-            batchCount++;
-
-            // If we got fewer messages than the max (of 10), the queue is likely empty
-            if (batch.size() < maxMessagesPerPoll) {
-                break;
-            }
-        }
-
-        return allMessages;
     }
 
     /**
