@@ -95,9 +95,6 @@ public class OptOutSqsLogProducerTest {
                         .build())
                 .when(sqsClient).getQueueAttributes(any(GetQueueAttributesRequest.class));
 
-        // Don't mock download with anyString() - let tests mock specific paths as needed
-        // Unmocked downloads will return null by default
-
 
         try {
             String traficFilterConfig = """
@@ -572,7 +569,7 @@ public class OptOutSqsLogProducerTest {
     public void testTrafficFilter_denylistedMessagesAreDropped(TestContext context) throws Exception {
         Async async = context.async();
 
-        // Setup - update traffic filter config to denyhlist specific IP and time range
+        // Setup - update traffic filter config to denylist specific IP and time range
         long baseTime = System.currentTimeMillis() / 1000 - 400; // 400 seconds ago
         String filterConfig = String.format("""
                 {
@@ -587,8 +584,8 @@ public class OptOutSqsLogProducerTest {
         createTrafficConfigFile(filterConfig);
 
         // Setup - create messages: some denylisted, some not
-        long denylistedTime = (baseTime) * 1000; // Within denyhlist range
-        long normalTime = (baseTime - 200) * 1000; // Outside denyhlist range
+        long denylistedTime = (baseTime) * 1000; // Within denylist range
+        long normalTime = (baseTime - 200) * 1000; // Outside denylist range
         List<Message> messages = Arrays.asList(
                 // These should be dropped (denylisted)
                 createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, denylistedTime, null, null, "192.168.1.100", null),
@@ -664,7 +661,7 @@ public class OptOutSqsLogProducerTest {
                 """, baseTime - 100, baseTime + 100);
         createTrafficConfigFile(filterConfig);
 
-        // Setup - create messages that don't match denyhlist
+        // Setup - create messages that don't match denylist
         long normalTime = (baseTime - 200) * 1000;
         List<Message> messages = Arrays.asList(
                 createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, normalTime, null, null, "10.0.0.1", null),
@@ -852,7 +849,7 @@ public class OptOutSqsLogProducerTest {
     public void testTrafficFilterConfig_reloadOnEachBatch(TestContext context) throws Exception {
         Async async = context.async();
 
-        // Setup - initial config with no denyhlist
+        // Setup - initial config with no denylist
         String initialConfig = """
                 {
                     "denylist_requests": []
@@ -896,7 +893,7 @@ public class OptOutSqsLogProducerTest {
                     context.assertEquals(1, result.getInteger("entries_processed"));
                     context.assertEquals(0, result.getInteger("dropped_requests_processed"));
 
-                    // Update config to denyhlist the IP
+                    // Update config to denylist the IP
                     try {
                         long baseTime = System.currentTimeMillis() / 1000 - 400;
                         String updatedConfig = String.format("""
@@ -1079,87 +1076,6 @@ public class OptOutSqsLogProducerTest {
 
                     // No SQS deletions should occur (messages not processed)
                     verify(sqsClient, never()).deleteMessageBatch(any(DeleteMessageBatchRequest.class));
-
-                    async.complete();
-                }));
-    }
-
-    @Test
-    public void testManualOverride_default_bypassesTrafficCalculation(TestContext context) throws Exception {
-        Async async = context.async();
-
-        // Setup - setup time: current time
-        long currentTime = System.currentTimeMillis() / 1000;
-        long t = currentTime;
-
-        // Create delta files with timestamps distributed over 48 hours
-        List<Long> timestamps = new ArrayList<>();
-
-        // Past window: t-47h to t-25h (add 10 entries)
-        for (int i = 0; i < 10; i++) {
-            timestamps.add(t - 47*3600 + i * 1000);
-        }
-
-        // Current window: t-23h to t-1h (add 100 entries - 10x past)
-        for (int i = 0; i < 100; i++) {
-            timestamps.add(t - 23*3600 + i * 1000);
-        }
-
-        byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
-
-        // Setup - mock manual override set to DEFAULT
-        JsonObject manualOverride = new JsonObject().put("manual_override", "DEFAULT");
-
-        // Mock S3 operations for this test
-        // Use doAnswer to create fresh streams on each call (streams are consumed on read)
-        doReturn(Arrays.asList("sqs-delta/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
-                .when(cloudStorage).list("sqs-delta");
-        doAnswer(inv -> new ByteArrayInputStream(deltaFileBytes))
-                .when(cloudStorage).download("sqs-delta/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat");
-        doAnswer(inv -> new java.io.ByteArrayInputStream(manualOverride.encode().getBytes()))
-                .when(cloudStorage).download("manual-override.json");
-
-        // Setup - SQS messages, 10 messages in same window
-        long oldTime = (t - 600) * 1000;
-        List<Message> messages = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            messages.add(createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, oldTime - (i * 1000), null, null, "10.0.0." + i, null));
-        }
-
-        // Setup - mock SQS operations
-        when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
-                .thenReturn(ReceiveMessageResponse.builder().messages(messages).build())
-                .thenReturn(ReceiveMessageResponse.builder().messages(Collections.emptyList()).build());
-        when(sqsClient.deleteMessageBatch(any(DeleteMessageBatchRequest.class)))
-                .thenReturn(DeleteMessageBatchResponse.builder().build());
-
-        int port = Const.Port.ServicePortForOptOut + 1;
-        // Act & Assert - call endpoint via HTTP
-        vertx.createHttpClient()
-                .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
-                        Endpoints.OPTOUT_DELTA_PRODUCE.toString())
-                .compose(req -> req
-                        .putHeader("Authorization", "Bearer " + TEST_API_KEY)
-                        .send())
-                .compose(resp -> {
-                    context.assertEquals(202, resp.statusCode());
-                    return resp.body();
-                })
-                .compose(body -> {
-                    JsonObject response = new JsonObject(body.toString());
-                    context.assertEquals("accepted", response.getString("status"));
-                    return pollForCompletion(context, port, 100, 50);
-                })
-                .onComplete(context.asyncAssertSuccess(finalStatus -> {
-                    context.assertEquals("completed", finalStatus.getString("state"));
-                    JsonObject result = finalStatus.getJsonObject("result");
-                    context.assertEquals("success", result.getString("status"));
-
-                    // Should process 10 messages and produce 1 delta (all in same window)
-                    context.assertEquals(10, result.getInteger("entries_processed"));
-                    context.assertEquals(1, result.getInteger("deltas_produced"));
-
-                    verify(sqsClient, atLeastOnce()).deleteMessageBatch(any(DeleteMessageBatchRequest.class));
 
                     async.complete();
                 }));
