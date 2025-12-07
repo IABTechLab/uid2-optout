@@ -246,6 +246,8 @@ public class OptOutTrafficCalculator {
             evictOldCacheEntries(deltaWindowStart);
             
             // Process delta files and count records in [deltaWindowStart, newestDeltaTs]
+            // Files are sorted newest to oldest, records within files are sorted newest to oldest
+            // Stop when the newest record in a file is older than the window
             int sum = 0;
             int deltaRecordsCount = 0;
             int filesProcessed = 0;
@@ -263,7 +265,12 @@ public class OptOutTrafficCalculator {
                 List<Long> timestamps = getTimestampsFromFile(s3Path);
                 filesProcessed++;
                 
-                boolean shouldStop = false;
+                // Check newest record in file - if older than window, stop processing remaining files
+                long newestRecordTs = timestamps.get(0);
+                if (newestRecordTs < deltaWindowStart) {
+                    break;
+                }
+                
                 for (long ts : timestamps) {
                     // Stop condition: record is older than our window
                     if (ts < deltaWindowStart) {
@@ -280,11 +287,6 @@ public class OptOutTrafficCalculator {
                         deltaRecordsCount++;
                         sum++;
                     }
-                    
-                }
-                
-                if (shouldStop) {
-                    break;
                 }
             }
             
@@ -591,12 +593,12 @@ public class OptOutTrafficCalculator {
         }
         
         if (sumCurrent >= thresholdMultiplier * baselineTraffic) {
-            LOGGER.error("delayed_processing threshold breached: sumCurrent={} >= {}×baselineTraffic={}", 
+            LOGGER.error("delayed_processing threshold breached: sumCurrent={}, thresholdMultiplier={}, baselineTraffic={}", 
                        sumCurrent, thresholdMultiplier, baselineTraffic);
             return TrafficStatus.DELAYED_PROCESSING;
         }
         
-        LOGGER.info("traffic within normal range: sumCurrent={} < {}×baselineTraffic={}", 
+        LOGGER.info("traffic within normal range: sumCurrent={}, thresholdMultiplier={}, baselineTraffic={}", 
                    sumCurrent, thresholdMultiplier, baselineTraffic);
         return TrafficStatus.DEFAULT;
     }

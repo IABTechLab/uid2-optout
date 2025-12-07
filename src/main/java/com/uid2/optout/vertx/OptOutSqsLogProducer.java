@@ -122,7 +122,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         // Configuration values for orchestrator setup
         int replicaId = OptOutUtils.getReplicaId(jsonConfig);
         int maxMessagesPerPoll = 10; // SQS max is 10
-        int deltaWindowSeconds = 300; // Fixed 5 minutes for all deltas
+        int deltaWindowSeconds = jsonConfig.getInteger(Const.Config.OptOutSqsDeltaWindowSecondsProp, 300); // fixed 5 minutes, allow config for testing
         int visibilityTimeout = jsonConfig.getInteger(Const.Config.OptOutSqsVisibilityTimeoutProp, 240);
         int jobTimeoutSeconds = jsonConfig.getInteger(Const.Config.OptOutDeltaJobTimeoutSecondsProp, 10800);
         int maxMessagesPerFile = jsonConfig.getInteger(Const.Config.OptOutMaxMessagesPerFileProp, 10000);
