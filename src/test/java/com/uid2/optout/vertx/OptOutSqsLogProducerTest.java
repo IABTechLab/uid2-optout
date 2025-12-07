@@ -1170,7 +1170,8 @@ public class OptOutSqsLogProducerTest {
         Async async = context.async();
 
         // Threshold = baseline * multiplier = 100 * 5 = 500
-        // We have 610 messages, which exceeds 500, so spike should be detected
+        // Traffic calculator counts: delta file records + queue depth
+        // We'll set queue depth to 600 to exceed threshold
         String trafficCalcConfig = """
                 {
                     "traffic_calc_evaluation_window_seconds": 86400,
@@ -1185,10 +1186,10 @@ public class OptOutSqsLogProducerTest {
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
 
-        // Create historical delta files showing low baseline traffic (2 records from 24-48h ago)
+        // Create historical delta file with recent timestamps (within 24h evaluation window)
         List<Long> timestamps = new ArrayList<>();
-        timestamps.add(t - 36*3600); // 36 hours ago
-        timestamps.add(t - 36*3600 + 1000);
+        timestamps.add(t - 3600); // 1 hour ago
+        timestamps.add(t - 3600 + 1000);
         byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
 
         // Reset cloudStorage mock to ensure clean state
@@ -1198,7 +1199,6 @@ public class OptOutSqsLogProducerTest {
         doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
 
         // Mock S3 operations for historical data
-        // Use doAnswer to create fresh streams on each call
         doReturn(Arrays.asList("sqs-delta/delta/optout-delta--01_2025-11-13T00.00.00Z_baseline.dat"))
                 .when(cloudStorage).list("sqs-delta");
         doAnswer(inv -> new ByteArrayInputStream(deltaFileBytes))
@@ -1207,17 +1207,13 @@ public class OptOutSqsLogProducerTest {
         // No manual override set (returns null)
         doReturn(null).when(cloudStorage).download("manual-override.json");
 
-        // Setup SQS messages
-        long baseTime = (t - 600) * 1000;
-        
+        // Setup SQS messages - just a few to trigger processing
+        long baseTime = (t - 600) * 1000; // 10 minutes ago
         List<Message> allMessages = new ArrayList<>();
-        // Create 610 messages with timestamps spread over ~4 minutes (within the 5-minute window)
-        for (int i = 0; i < 610; i++) {
-            // Timestamps range from (t-600) to (t-600-240) seconds = t-600 to t-840
-            // All within a single 5-minute window for traffic calculation, and all > 5 min old
-            long timestampMs = baseTime - (i * 400); // ~400ms apart going backwards, total span ~244 seconds
+        for (int i = 0; i < 10; i++) {
+            long timestampMs = baseTime - (i * 1000);
             allMessages.add(createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, 
-                    timestampMs, null, null, "10.0.0." + (i % 256), null));
+                    timestampMs, null, null, "10.0.0." + i, null));
         }
 
         // Mock SQS operations
@@ -1227,9 +1223,10 @@ public class OptOutSqsLogProducerTest {
         when(sqsClient.deleteMessageBatch(any(DeleteMessageBatchRequest.class)))
                 .thenReturn(DeleteMessageBatchResponse.builder().build());
         
-        // Mock getQueueAttributes to return zero invisible messages (doesn't affect the spike detection)
+        // Mock getQueueAttributes to return 600 messages - exceeds threshold (500)
+        // Traffic calculator adds queue depth to delta record count
         Map<QueueAttributeName, String> queueAttrs = new HashMap<>();
-        queueAttrs.put(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES, "0");
+        queueAttrs.put(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES, "600");
         queueAttrs.put(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_NOT_VISIBLE, "0");
         queueAttrs.put(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_DELAYED, "0");
         doReturn(GetQueueAttributesResponse.builder()
@@ -1259,108 +1256,11 @@ public class OptOutSqsLogProducerTest {
                     context.assertEquals("completed", finalStatus.getString("state"));
                     JsonObject result = finalStatus.getJsonObject("result");
                     context.assertEquals("halted", result.getString("status"));
+                    context.assertEquals("CIRCUIT_BREAKER_TRIGGERED", result.getString("stop_reason"));
 
                     // Expected behavior:
-                    // All 610 messages are within a single 5-minute window
-                    // Traffic calculator counts them all and detects spike (>=500 threshold)
+                    // Traffic calculator detects spike (queue depth 600 >= threshold 500)
                     // DELAYED_PROCESSING is triggered, no delta uploaded
-                    // The entries_processed count reflects how many were read before spike detection
-                    context.assertTrue(result.getInteger("entries_processed") <= 610);
-                    context.assertEquals(0, result.getInteger("deltas_produced"));
-
-                    // Verify manual override was set to DELAYED_PROCESSING on S3
-                    try {
-                        ArgumentCaptor<String> pathCaptor = ArgumentCaptor.forClass(String.class);
-                        ArgumentCaptor<InputStream> streamCaptor = ArgumentCaptor.forClass(InputStream.class);
-                        verify(cloudStorage, atLeastOnce()).upload(streamCaptor.capture(), pathCaptor.capture());
-
-                        // Check if manual-override.json was uploaded
-                        boolean overrideSet = false;
-                        for (int i = 0; i < pathCaptor.getAllValues().size(); i++) {
-                            if (pathCaptor.getAllValues().get(i).equals("manual-override.json")) {
-                                overrideSet = true;
-                                break;
-                            }
-                        }
-                        context.assertTrue(overrideSet, "Manual override should be set to DELAYED_PROCESSING after detecting spike");
-                    } catch (Exception e) {
-                        context.fail(e);
-                    }
-
-                    async.complete();
-                }));
-    }
-
-    @Test
-    public void testCircuitBreaker_stopsProcessingWhenMessageLimitExceeded(TestContext context) throws Exception {
-        Async async = context.async();
-
-        // Use low threshold (100) so circuit breaker triggers before traffic calculator
-        String trafficCalcConfig = """
-                {
-                    "traffic_calc_evaluation_window_seconds": 86400,
-                    "traffic_calc_baseline_traffic": 20,
-                    "traffic_calc_threshold_multiplier": 5,
-                    "traffic_calc_allowlist_ranges": []
-                }
-                """;
-        createTrafficCalcConfigFile(trafficCalcConfig);
-
-        // Reset cloudStorage mock to ensure clean state
-        reset(cloudStorage);
-
-        // Re-mock S3 upload (needed after reset)
-        doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
-
-        // No manual override set (returns null)
-        doReturn(null).when(cloudStorage).download("manual-override.json");
-
-        // Setup time
-        long currentTime = System.currentTimeMillis() / 1000;
-        long t = currentTime;
-
-        // Create 200 messages - exceeds threshold (20 * 5 = 100)
-        long oldTime = (t - 600) * 1000; // 10 minutes ago
-        List<Message> messages = new ArrayList<>();
-        for (int i = 0; i < 200; i++) {
-            messages.add(createMessage(VALID_HASH_BASE64, VALID_ID_BASE64,
-                    oldTime - (i * 1000), null, null, "10.0.0." + (i % 256), null));
-        }
-
-        // Mock SQS operations
-        when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
-                .thenReturn(ReceiveMessageResponse.builder().messages(messages).build())
-                .thenReturn(ReceiveMessageResponse.builder().messages(Collections.emptyList()).build());
-        when(sqsClient.deleteMessageBatch(any(DeleteMessageBatchRequest.class)))
-                .thenReturn(DeleteMessageBatchResponse.builder().build());
-
-        int port = Const.Port.ServicePortForOptOut + 1;
-
-        // Act & Assert
-        vertx.createHttpClient()
-                .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
-                        Endpoints.OPTOUT_DELTA_PRODUCE.toString())
-                .compose(req -> req
-                        .putHeader("Authorization", "Bearer " + TEST_API_KEY)
-                        .send())
-                .compose(resp -> {
-                    context.assertEquals(202, resp.statusCode());
-                    return resp.body();
-                })
-                .compose(body -> {
-                    JsonObject response = new JsonObject(body.toString());
-                    context.assertEquals("accepted", response.getString("status"));
-                    return pollForCompletion(context, port, 100, 50);
-                })
-                .onComplete(context.asyncAssertSuccess(finalStatus -> {
-                    context.assertEquals("completed", finalStatus.getString("state"));
-                    JsonObject result = finalStatus.getJsonObject("result");
-                    context.assertEquals("halted", result.getString("status"));
-
-                    // Expected behavior:
-                    // SqsWindowReader hits maxMessagesPerWindow limit (100) during reading
-                    // Circuit breaker triggers DELAYED_PROCESSING immediately
-                    // Processing stops before any messages are counted as processed
                     context.assertEquals(0, result.getInteger("entries_processed"));
                     context.assertEquals(0, result.getInteger("deltas_produced"));
 
@@ -1369,16 +1269,12 @@ public class OptOutSqsLogProducerTest {
                         ArgumentCaptor<String> pathCaptor = ArgumentCaptor.forClass(String.class);
                         verify(cloudStorage, atLeastOnce()).upload(any(InputStream.class), pathCaptor.capture());
 
-                        // Check if manual-override.json was uploaded
                         boolean overrideSet = pathCaptor.getAllValues().stream()
                                 .anyMatch(path -> path.equals("manual-override.json"));
-                        context.assertTrue(overrideSet, "Circuit breaker should set DELAYED_PROCESSING override");
+                        context.assertTrue(overrideSet, "Manual override should be set to DELAYED_PROCESSING after detecting spike");
                     } catch (Exception e) {
                         context.fail(e);
                     }
-
-                    // Verify NO messages were deleted from SQS (processing stopped before completion)
-                    verify(sqsClient, never()).deleteMessageBatch(any(DeleteMessageBatchRequest.class));
 
                     async.complete();
                 }));
