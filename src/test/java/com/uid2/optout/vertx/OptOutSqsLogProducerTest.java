@@ -1170,8 +1170,8 @@ public class OptOutSqsLogProducerTest {
         Async async = context.async();
 
         // Threshold = baseline * multiplier = 100 * 5 = 500
-        // Traffic calculator counts: delta file records + queue depth
-        // We'll set queue depth to 600 to exceed threshold
+        // Traffic calculator counts: delta file records + SQS messages (with allowlist filtering)
+        // We'll create 600 SQS messages to exceed threshold
         String trafficCalcConfig = """
                 {
                     "traffic_calc_evaluation_window_seconds": 86400,
@@ -1207,13 +1207,14 @@ public class OptOutSqsLogProducerTest {
         // No manual override set (returns null)
         doReturn(null).when(cloudStorage).download("manual-override.json");
 
-        // Setup SQS messages - just a few to trigger processing
+        // Setup SQS messages - 600 messages to exceed threshold (500)
+        // Traffic calculator counts SQS messages and can apply allowlist filtering
         long baseTime = (t - 600) * 1000; // 10 minutes ago
         List<Message> allMessages = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            long timestampMs = baseTime - (i * 1000);
+        for (int i = 0; i < 600; i++) {
+            long timestampMs = baseTime - (i * 100); // spread over ~60 seconds
             allMessages.add(createMessage(VALID_HASH_BASE64, VALID_ID_BASE64, 
-                    timestampMs, null, null, "10.0.0." + i, null));
+                    timestampMs, null, null, "10.0.0." + (i % 256), null));
         }
 
         // Mock SQS operations
@@ -1222,17 +1223,6 @@ public class OptOutSqsLogProducerTest {
                 .thenReturn(ReceiveMessageResponse.builder().messages(Collections.emptyList()).build());
         when(sqsClient.deleteMessageBatch(any(DeleteMessageBatchRequest.class)))
                 .thenReturn(DeleteMessageBatchResponse.builder().build());
-        
-        // Mock getQueueAttributes to return 600 messages - exceeds threshold (500)
-        // Traffic calculator adds queue depth to delta record count
-        Map<QueueAttributeName, String> queueAttrs = new HashMap<>();
-        queueAttrs.put(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES, "600");
-        queueAttrs.put(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_NOT_VISIBLE, "0");
-        queueAttrs.put(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_DELAYED, "0");
-        doReturn(GetQueueAttributesResponse.builder()
-                        .attributes(queueAttrs)
-                        .build())
-                .when(sqsClient).getQueueAttributes(any(GetQueueAttributesRequest.class));
 
         int port = Const.Port.ServicePortForOptOut + 1;
 
@@ -1259,7 +1249,7 @@ public class OptOutSqsLogProducerTest {
                     context.assertEquals("CIRCUIT_BREAKER_TRIGGERED", result.getString("stop_reason"));
 
                     // Expected behavior:
-                    // Traffic calculator detects spike (queue depth 600 >= threshold 500)
+                    // Traffic calculator detects spike (delta records + SQS messages >= threshold 500)
                     // DELAYED_PROCESSING is triggered, no delta uploaded
                     context.assertEquals(0, result.getInteger("entries_processed"));
                     context.assertEquals(0, result.getInteger("deltas_produced"));

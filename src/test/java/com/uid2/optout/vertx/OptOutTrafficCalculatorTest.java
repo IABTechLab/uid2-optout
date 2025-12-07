@@ -5,8 +5,6 @@ import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.optout.OptOutCollection;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.optout.Const;
-import com.uid2.optout.sqs.SqsMessageOperations;
-
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import java.nio.file.Files;
@@ -22,6 +20,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import software.amazon.awssdk.services.sqs.model.Message;
+import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 
 import com.uid2.optout.vertx.OptOutTrafficCalculator.MalformedTrafficCalcConfigException;
 import java.io.ByteArrayInputStream;
@@ -1066,6 +1066,31 @@ public class OptOutTrafficCalculatorTest {
     // ============================================================================
 
     /**
+     * Create a mock SQS message with specified timestamp
+     */
+    private Message createSqsMessage(long timestampSeconds) {
+        Map<MessageSystemAttributeName, String> attributes = new HashMap<>();
+        attributes.put(MessageSystemAttributeName.SENT_TIMESTAMP, String.valueOf(timestampSeconds * 1000));
+
+        return Message.builder()
+            .messageId("test-msg-" + timestampSeconds)
+            .body("{\"test\": \"data\"}")
+            .attributes(attributes)
+            .build();
+    }
+
+    /**
+     * Create a mock SQS message without timestamp
+     */
+    private Message createSqsMessageWithoutTimestamp() {
+        return Message.builder()
+            .messageId("test-msg-no-timestamp")
+            .body("{\"test\": \"data\"}")
+            .attributes(new HashMap<>())
+            .build();
+    }
+
+    /**
      * Create delta file bytes with specified timestamps
      */
     private byte[] createDeltaFileBytes(List<Long> timestamps) throws Exception {
@@ -1096,7 +1121,7 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(null);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null);
 
         // Assert - should return DEFAULT when no delta files
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1108,10 +1133,10 @@ public class OptOutTrafficCalculatorTest {
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
         
-        // Create delta files with timestamps distributed over 24 hours
+        // Create delta files with timestamps distributed over 48 hours
         List<Long> timestamps = new ArrayList<>();
         
-        // add 49 entries in current window
+        // add 499 entries in current window
         for (int i = 0; i < 49; i++) {
             timestamps.add(t - 23*3600 + i * 60);
         }
@@ -1125,11 +1150,11 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - pass queue attributes with 1 message
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(1, 0, 0);
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(queueAttributes);
+        // Act
+        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null);
 
-        // Assert - 49 + 1 = 50 < 5 * 100 = 500, so should be DEFAULT
+        // Assert - 100+1 < 5 * 50 = 250, so should be DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
     }
 
@@ -1156,16 +1181,16 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - 500 delta + 1 queue = 501 >= 500
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(1, 0, 0);
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(queueAttributes);
+        // Act
+        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null);
 
-        // Assert - 500 + 1 >= 5 * 100 = 500, DELAYED_PROCESSING
+        // Assert - 100+1 >= 5 * 10 = 50, DELAYED_PROCESSING
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
     }
 
     @Test
-    void testCalculateStatus_nullQueueAttributes() throws Exception {
+    void testCalculateStatus_noSqsMessages() throws Exception {
         // Setup - create delta files with some entries
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
@@ -1180,15 +1205,15 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - null queue attributes
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(null);
+        // Act - null SQS messages
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(null, null);
 
         // Assert - should still calculate based on delta files, DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
     }
 
     @Test
-    void testCalculateStatus_emptyQueue() throws Exception {
+    void testCalculateStatus_emptySqsMessages() throws Exception {
         // Setup - create delta files with some entries
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
@@ -1203,22 +1228,21 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - empty queue
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(0, 0, 0);
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(queueAttributes);
+        // Act - empty SQS messages
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null);
 
         // Assert - should still calculate based on delta files, DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
     }
 
     @Test
-    void testCalculateStatus_queueMessagesPushOverThreshold() throws Exception {
-        // Setup - create delta files with entries just under threshold
+    void testCalculateStatus_multipleSqsMessages() throws Exception {
+        // Setup - create delta files with some entries
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
         
         List<Long> timestamps = new ArrayList<>();
-        // add 470 entries in window (under threshold of 500)
+        // add 470 entries in window
         for (int i = 0; i < 470; i++) {
             timestamps.add(t - 24*3600 + i * 60); 
         }
@@ -1232,10 +1256,12 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Add 30 messages in queue to push over threshold
-        // 470 + 30 = 500 >= 500
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(30, 0, 0);
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(queueAttributes);
+        // Add 30 SQS entries in [t, t+5min]
+        List<Message> sqsMessages = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            sqsMessages.add(createSqsMessage(t - i * 10));
+        }
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null);
 
         // Assert - DELAYED_PROCESSING
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
@@ -1277,11 +1303,11 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(1, 0, 0);
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(queueAttributes);
+        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null);
 
-        // Assert - should filter out entries in allowlist ranges
-        // Only 300 from window count (not in allowlist ranges) + 1 queue = 301
+        // Assert - should filter out entries in traffic calc config ranges
+        // Only 300 from window count (not in traffic calc config ranges) + 1 SQS = 301
         // 301 < 5*100, so DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
     }
@@ -1303,14 +1329,14 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - first call should populate cache
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(1, 0, 0);
-        calculator.calculateStatus(queueAttributes);
+        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        calculator.calculateStatus(sqsMessages, null);
 
         Map<String, Object> stats = calculator.getCacheStats();
         int cachedFiles = (Integer) stats.get("cached_files");
 
         // Second call should use cache (no additional S3 download)
-        calculator.calculateStatus(queueAttributes);
+        calculator.calculateStatus(sqsMessages, null);
 
         Map<String, Object> stats2 = calculator.getCacheStats();
         int cachedFiles2 = (Integer) stats2.get("cached_files");
@@ -1332,7 +1358,7 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - should not throw exception
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(null);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null);
 
         // Assert - DEFAULT on error
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1348,10 +1374,34 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - empty queue
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(null);
+        // Act - empty SQS messages
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null);
 
         // Assert - DEFAULT on error
+        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
+    }
+
+    @Test
+    void testCalculateStatus_invalidSqsMessageTimestamp() throws Exception {
+        // Setup - create delta files with some entries
+        long currentTime = System.currentTimeMillis() / 1000;
+        long t = currentTime;
+        
+        List<Long> timestamps = Arrays.asList(t - 3600);
+        byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
+        
+        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
+        when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
+            .thenReturn(new ByteArrayInputStream(deltaFileBytes));
+
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
+
+        // Act - SQS message without timestamp (should use current time)
+        List<Message> sqsMessages = Arrays.asList(createSqsMessageWithoutTimestamp());
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null);
+
+        // Assert - DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
     }
 
@@ -1388,8 +1438,8 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(1, 0, 0);
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(queueAttributes);
+        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null);
 
         // Assert - DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1422,10 +1472,10 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(1, 0, 0);
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(queueAttributes);
+        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null);
 
-        // Assert - 500 + 1 >= 500, DELAYED_PROCESSING
+        // Assert - DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
     }
 
@@ -1446,8 +1496,8 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(1, 0, 0);
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(queueAttributes);
+        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null);
 
         // Assert
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1458,21 +1508,21 @@ public class OptOutTrafficCalculatorTest {
     }
 
     // ============================================================================
-    // SECTION 10: Tests for calculateStatus() with QueueAttributes
+    // SECTION 10: Tests for queue attributes (invisible messages from other consumers)
     // ============================================================================
 
     @Test
-    void testCalculateStatus_withQueueAttributes_allTypesAddedToSum() throws Exception {
-        // Setup - create delta files with entries just under threshold
+    void testCalculateStatus_delayedProcessingFromQueueAttributesOnly() throws Exception {
+        // Setup - delta files with low traffic (10 records)
+        // Threshold = 100 * 5 = 500
+        // Queue attributes will have 600 invisible messages (other consumers processing)
         long currentTime = System.currentTimeMillis() / 1000;
         long t = currentTime;
         
-        // Create 490 entries (just under threshold of 500 = 5 * 100)
         List<Long> timestamps = new ArrayList<>();
-        for (int i = 0; i < 490; i++) {
-            timestamps.add(t - 23*3600 + i * 60);
+        for (int i = 0; i < 10; i++) {
+            timestamps.add(t - 3600 + i); // 10 entries from 1 hour ago
         }
-        
         byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
         
         when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
@@ -1482,118 +1532,58 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - with only 1 queue message, should be DEFAULT: 490 + 1 = 491 < 500
-        SqsMessageOperations.QueueAttributes queueAttributesSmall = createQueueAttributes(1, 0, 0);
-        OptOutTrafficCalculator.TrafficStatus statusDefault = calculator.calculateStatus(queueAttributesSmall);
+        // Act - 1 message read by us, but 600 invisible messages from other consumers
+        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
         
-        // With more queue messages that push over threshold, should be DELAYED_PROCESSING
-        // 490 (delta) + 5 (visible) + 10 (invisible) = 505 >= 500
-        SqsMessageOperations.QueueAttributes queueAttributesLarge = createQueueAttributes(5, 5, 5);
-        OptOutTrafficCalculator.TrafficStatus statusDelayed = calculator.calculateStatus(queueAttributesLarge);
-
-        // Assert
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, statusDefault);
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, statusDelayed);
-    }
-
-    @Test
-    void testCalculateStatus_withQueueAttributes_zeroMessages() throws Exception {
-        // Setup - create delta files with some entries
-        long currentTime = System.currentTimeMillis() / 1000;
-        long t = currentTime;
+        // QueueAttributes: 0 visible, 600 invisible (other consumers), 0 delayed
+        // Since we read 1 message, otherConsumers = 600 - 1 = 599
+        // Total = 10 (delta) + 1 (our message) + 599 (other consumers) = 610 >= 500 threshold
+        com.uid2.optout.sqs.SqsMessageOperations.QueueAttributes queueAttributes = 
+            new com.uid2.optout.sqs.SqsMessageOperations.QueueAttributes(0, 600, 0);
         
-        List<Long> timestamps = Arrays.asList(t - 3600, t - 7200);
-        byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
-        
-        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
-        when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
-            .thenReturn(new ByteArrayInputStream(deltaFileBytes));
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes);
 
-        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
-            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
-
-        // Act - queue attributes with zero messages
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(0, 0, 0);
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(queueAttributes);
-
-        // Assert - DEFAULT (only delta records count)
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
-    }
-
-    @Test
-    void testCalculateStatus_withQueueAttributes_largeQueueCount() throws Exception {
-        // Setup - create delta files with minimal entries
-        long currentTime = System.currentTimeMillis() / 1000;
-        long t = currentTime;
-        
-        List<Long> timestamps = Arrays.asList(t - 3600);
-        byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
-        
-        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
-        when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
-            .thenReturn(new ByteArrayInputStream(deltaFileBytes));
-
-        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
-            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
-
-        // Act - large queue count alone should trigger DELAYED_PROCESSING
-        // threshold = 5 * 100 = 500
-        // 1 (delta) + 500 (total queue) = 501 >= 500
-        SqsMessageOperations.QueueAttributes queueAttributes = createQueueAttributes(200, 200, 100);
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(queueAttributes);
-
-        // Assert - DELAYED_PROCESSING due to queue messages
+        // Assert - DELAYED_PROCESSING due to high invisible message count from other consumers
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
     }
 
-    // ============================================================================
-    // SECTION 11: Tests for QueueAttributes class
-    // ============================================================================
-
-    /**
-     * Create a QueueAttributes object for testing
-     */
-    private SqsMessageOperations.QueueAttributes createQueueAttributes(int visible, int invisible, int delayed) {
-        return new SqsMessageOperations.QueueAttributes(visible, invisible, delayed);
-    }
-
     @Test
-    void testQueueAttributes_getters() {
-        // Setup
-        SqsMessageOperations.QueueAttributes attrs = createQueueAttributes(10, 20, 5);
+    void testCalculateStatus_delayedProcessingFromBothQueueAndMessages() throws Exception {
+        // Setup - delta files with moderate traffic (100 records)
+        // Threshold = 100 * 5 = 500
+        // We'll have 200 messages + 250 invisible from other consumers = 550 > 500
+        long currentTime = System.currentTimeMillis() / 1000;
+        long t = currentTime;
+        
+        List<Long> timestamps = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            timestamps.add(t - 3600 + i); // 100 entries from 1 hour ago
+        }
+        byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
+        
+        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
+        when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
+            .thenReturn(new ByteArrayInputStream(deltaFileBytes));
 
-        // Assert
-        assertEquals(10, attrs.getApproximateNumberOfMessages());
-        assertEquals(20, attrs.getApproximateNumberOfMessagesNotVisible());
-        assertEquals(5, attrs.getApproximateNumberOfMessagesDelayed());
-        assertEquals(35, attrs.getTotalMessages());
-    }
+        OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
+            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-    @Test
-    void testQueueAttributes_toString() {
-        // Setup
-        SqsMessageOperations.QueueAttributes attrs = createQueueAttributes(100, 50, 25);
+        // Act - 200 messages read by us + 450 invisible (200 are ours + 250 from others)
+        List<Message> sqsMessages = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            sqsMessages.add(createSqsMessage(t - i * 10));
+        }
+        
+        // QueueAttributes: 0 visible, 450 invisible (200 ours + 250 others), 0 delayed
+        // otherConsumers = 450 - 200 = 250
+        // Total = 100 (delta) + 200 (our messages) + 250 (other consumers) = 550 >= 500 threshold
+        com.uid2.optout.sqs.SqsMessageOperations.QueueAttributes queueAttributes = 
+            new com.uid2.optout.sqs.SqsMessageOperations.QueueAttributes(0, 450, 0);
+        
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes);
 
-        // Act
-        String str = attrs.toString();
-
-        // Assert - should contain all values
-        assertTrue(str.contains("visible=100"));
-        assertTrue(str.contains("invisible=50"));
-        assertTrue(str.contains("delayed=25"));
-        assertTrue(str.contains("total=175"));
-    }
-
-    @Test
-    void testQueueAttributes_zeroValues() {
-        // Setup
-        SqsMessageOperations.QueueAttributes attrs = createQueueAttributes(0, 0, 0);
-
-        // Assert
-        assertEquals(0, attrs.getApproximateNumberOfMessages());
-        assertEquals(0, attrs.getApproximateNumberOfMessagesNotVisible());
-        assertEquals(0, attrs.getApproximateNumberOfMessagesDelayed());
-        assertEquals(0, attrs.getTotalMessages());
+        // Assert - DELAYED_PROCESSING due to combined count exceeding threshold
+        assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
     }
 
 }

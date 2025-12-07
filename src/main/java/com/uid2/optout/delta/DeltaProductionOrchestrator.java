@@ -181,7 +181,7 @@ public class DeltaProductionOrchestrator {
 
         // check traffic calculator
         SqsMessageOperations.QueueAttributes queueAttributes = SqsMessageOperations.getQueueAttributes(this.sqsClient, this.queueUrl);
-        OptOutTrafficCalculator.TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(queueAttributes);
+        OptOutTrafficCalculator.TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(deltaMessages, queueAttributes);
         
         if (trafficStatus == OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING) {
             LOGGER.error("optout delta production has hit DELAYED_PROCESSING status, stopping production and setting manual override");
