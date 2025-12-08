@@ -179,9 +179,9 @@ public class DeltaProductionOrchestrator {
             }
         }
 
-        // check traffic calculator
+        // check traffic calculator - pass denylisted count for accurate invisible message deduplication
         SqsMessageOperations.QueueAttributes queueAttributes = SqsMessageOperations.getQueueAttributes(this.sqsClient, this.queueUrl);
-        OptOutTrafficCalculator.TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(deltaMessages, queueAttributes);
+        OptOutTrafficCalculator.TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(deltaMessages, queueAttributes, droppedMessages.size());
         
         if (trafficStatus == OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING) {
             LOGGER.error("optout delta production has hit DELAYED_PROCESSING status, stopping production and setting manual override");

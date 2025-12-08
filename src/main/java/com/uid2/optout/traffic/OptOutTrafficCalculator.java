@@ -214,11 +214,12 @@ public class OptOutTrafficCalculator {
      * - SQS messages passed in (with allowlist filtering)
      * - Invisible messages from other consumers (from queue attributes, avoiding double count)
      * 
-     * @param sqsMessages List of SQS messages this consumer has read
+     * @param sqsMessages List of SQS messages this consumer has read (non-denylisted)
      * @param queueAttributes Queue attributes including invisible message count (can be null)
+     * @param denylistedCount Number of denylisted messages read by this consumer (for invisible deduplication)
      * @return TrafficStatus (DELAYED_PROCESSING or DEFAULT)
      */
-    public TrafficStatus calculateStatus(List<Message> sqsMessages, SqsMessageOperations.QueueAttributes queueAttributes) {
+    public TrafficStatus calculateStatus(List<Message> sqsMessages, SqsMessageOperations.QueueAttributes queueAttributes, int denylistedCount) {
         
         try {
             // Get list of delta files from S3 (sorted newest to oldest)
@@ -302,10 +303,11 @@ public class OptOutTrafficCalculator {
             
             // Add invisible messages being processed by OTHER consumers
             // (notVisible count includes our messages, so subtract what we've read to avoid double counting)
+            // ourMessages = delta messages + denylisted messages (all messages we've read from the queue)
             int otherConsumersMessages = 0;
             if (queueAttributes != null) {
                 int totalInvisible = queueAttributes.getApproximateNumberOfMessagesNotVisible();
-                int ourMessages = sqsMessages != null ? sqsMessages.size() : 0;
+                int ourMessages = (sqsMessages != null ? sqsMessages.size() : 0) + denylistedCount;
                 otherConsumersMessages = Math.max(0, totalInvisible - ourMessages);
                 sum += otherConsumersMessages;
                 LOGGER.info("traffic calculation: adding {} invisible messages from other consumers (totalInvisible={}, ourMessages={})",
