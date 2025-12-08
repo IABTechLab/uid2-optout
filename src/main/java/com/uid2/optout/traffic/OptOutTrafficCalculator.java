@@ -216,10 +216,11 @@ public class OptOutTrafficCalculator {
      * 
      * @param sqsMessages List of SQS messages this consumer has read (non-denylisted)
      * @param queueAttributes Queue attributes including invisible message count (can be null)
-     * @param denylistedCount Number of denylisted messages read by this consumer (for invisible deduplication)
+     * @param denylistedCount Number of denylisted messages read by this consumer
+     * @param filteredAsTooRecentCount Number of messages filtered as "too recent" by window reader
      * @return TrafficStatus (DELAYED_PROCESSING or DEFAULT)
      */
-    public TrafficStatus calculateStatus(List<Message> sqsMessages, SqsMessageOperations.QueueAttributes queueAttributes, int denylistedCount) {
+    public TrafficStatus calculateStatus(List<Message> sqsMessages, SqsMessageOperations.QueueAttributes queueAttributes, int denylistedCount, int filteredAsTooRecentCount) {
         
         try {
             // Get list of delta files from S3 (sorted newest to oldest)
@@ -303,11 +304,11 @@ public class OptOutTrafficCalculator {
             
             // Add invisible messages being processed by OTHER consumers
             // (notVisible count includes our messages, so subtract what we've read to avoid double counting)
-            // ourMessages = delta messages + denylisted messages (all messages we've read from the queue)
+            // ourMessages = delta messages + denylisted messages + filtered "too recent" messages
             int otherConsumersMessages = 0;
             if (queueAttributes != null) {
                 int totalInvisible = queueAttributes.getApproximateNumberOfMessagesNotVisible();
-                int ourMessages = (sqsMessages != null ? sqsMessages.size() : 0) + denylistedCount;
+                int ourMessages = (sqsMessages != null ? sqsMessages.size() : 0) + denylistedCount + filteredAsTooRecentCount;
                 otherConsumersMessages = Math.max(0, totalInvisible - ourMessages);
                 sum += otherConsumersMessages;
                 LOGGER.info("traffic calculation: adding {} invisible messages from other consumers (totalInvisible={}, ourMessages={})",

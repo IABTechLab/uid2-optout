@@ -1123,7 +1123,7 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0, 0);
 
         // Assert - should return DEFAULT when no delta files
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1154,7 +1154,7 @@ public class OptOutTrafficCalculatorTest {
 
         // Act
         List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - 100+1 < 5 * 50 = 250, so should be DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1185,7 +1185,7 @@ public class OptOutTrafficCalculatorTest {
 
         // Act
         List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - 100+1 >= 5 * 10 = 50, DELAYED_PROCESSING
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
@@ -1208,7 +1208,7 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - null SQS messages
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(null, null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(null, null, 0, 0);
 
         // Assert - should still calculate based on delta files, DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1231,7 +1231,7 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - empty SQS messages
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0, 0);
 
         // Assert - should still calculate based on delta files, DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1263,7 +1263,7 @@ public class OptOutTrafficCalculatorTest {
         for (int i = 0; i < 30; i++) {
             sqsMessages.add(createSqsMessage(t - i * 10));
         }
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - DELAYED_PROCESSING
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
@@ -1306,7 +1306,7 @@ public class OptOutTrafficCalculatorTest {
 
         // Act
         List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - should filter out entries in traffic calc config ranges
         // Only 300 from window count (not in traffic calc config ranges) + 1 SQS = 301
@@ -1332,13 +1332,13 @@ public class OptOutTrafficCalculatorTest {
 
         // Act - first call should populate cache
         List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
-        calculator.calculateStatus(sqsMessages, null, 0);
+        calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         Map<String, Object> stats = calculator.getCacheStats();
         int cachedFiles = (Integer) stats.get("cached_files");
 
         // Second call should use cache (no additional S3 download)
-        calculator.calculateStatus(sqsMessages, null, 0);
+        calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         Map<String, Object> stats2 = calculator.getCacheStats();
         int cachedFiles2 = (Integer) stats2.get("cached_files");
@@ -1360,7 +1360,7 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - should not throw exception
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0, 0);
 
         // Assert - DEFAULT on error
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1377,7 +1377,7 @@ public class OptOutTrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - empty SQS messages
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0, 0);
 
         // Assert - DEFAULT on error
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1401,7 +1401,7 @@ public class OptOutTrafficCalculatorTest {
 
         // Act - SQS message without timestamp (should use current time)
         List<Message> sqsMessages = Arrays.asList(createSqsMessageWithoutTimestamp());
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1441,7 +1441,7 @@ public class OptOutTrafficCalculatorTest {
 
         // Act
         List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1475,7 +1475,7 @@ public class OptOutTrafficCalculatorTest {
 
         // Act
         List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - DEFAULT
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
@@ -1499,7 +1499,7 @@ public class OptOutTrafficCalculatorTest {
 
         // Act
         List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1543,7 +1543,7 @@ public class OptOutTrafficCalculatorTest {
         SqsMessageOperations.QueueAttributes queueAttributes = 
             new SqsMessageOperations.QueueAttributes(0, 600, 0);
         
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes, 0, 0);
 
         // Assert - DELAYED_PROCESSING due to high invisible message count from other consumers
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
@@ -1583,7 +1583,7 @@ public class OptOutTrafficCalculatorTest {
         SqsMessageOperations.QueueAttributes queueAttributes = 
             new SqsMessageOperations.QueueAttributes(0, 450, 0);
         
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes, 0);
+        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes, 0, 0);
 
         // Assert - DELAYED_PROCESSING due to combined count exceeding threshold
         assertEquals(OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);

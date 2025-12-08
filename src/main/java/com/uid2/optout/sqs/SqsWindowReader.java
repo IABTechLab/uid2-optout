@@ -45,33 +45,37 @@ public class SqsWindowReader {
         private final List<SqsParsedMessage> messages;
         private final long windowStart;
         private final StopReason stopReason;
+        private final int rawMessagesRead;  // total messages pulled from SQS
         
-        private WindowReadResult(List<SqsParsedMessage> messages, long windowStart, StopReason stopReason) {
+        private WindowReadResult(List<SqsParsedMessage> messages, long windowStart, StopReason stopReason, int rawMessagesRead) {
             this.messages = messages;
             this.windowStart = windowStart;
             this.stopReason = stopReason;
+            this.rawMessagesRead = rawMessagesRead;
         }
         
-        public static WindowReadResult withMessages(List<SqsParsedMessage> messages, long windowStart) {
-            return new WindowReadResult(messages, windowStart, StopReason.NONE);
+        public static WindowReadResult withMessages(List<SqsParsedMessage> messages, long windowStart, int rawMessagesRead) {
+            return new WindowReadResult(messages, windowStart, StopReason.NONE, rawMessagesRead);
         }
         
-        public static WindowReadResult queueEmpty(List<SqsParsedMessage> messages, long windowStart) {
-            return new WindowReadResult(messages, windowStart, StopReason.QUEUE_EMPTY);
+        public static WindowReadResult queueEmpty(List<SqsParsedMessage> messages, long windowStart, int rawMessagesRead) {
+            return new WindowReadResult(messages, windowStart, StopReason.QUEUE_EMPTY, rawMessagesRead);
         }
         
-        public static WindowReadResult messagesTooRecent(List<SqsParsedMessage> messages, long windowStart) {
-            return new WindowReadResult(messages, windowStart, StopReason.MESSAGES_TOO_RECENT);
+        public static WindowReadResult messagesTooRecent(List<SqsParsedMessage> messages, long windowStart, int rawMessagesRead) {
+            return new WindowReadResult(messages, windowStart, StopReason.MESSAGES_TOO_RECENT, rawMessagesRead);
         }
         
-        public static WindowReadResult messageLimitExceeded(List<SqsParsedMessage> messages, long windowStart) {
-            return new WindowReadResult(messages, windowStart, StopReason.MESSAGE_LIMIT_EXCEEDED);
+        public static WindowReadResult messageLimitExceeded(List<SqsParsedMessage> messages, long windowStart, int rawMessagesRead) {
+            return new WindowReadResult(messages, windowStart, StopReason.MESSAGE_LIMIT_EXCEEDED, rawMessagesRead);
         }
         
         public List<SqsParsedMessage> getMessages() { return messages; }
         public long getWindowStart() { return windowStart; }
         public boolean isEmpty() { return messages.isEmpty(); }
         public StopReason getStopReason() { return stopReason; }
+        /** Total raw messages pulled from SQS */
+        public int getRawMessagesRead() { return rawMessagesRead; }
     }
 
     /**
@@ -88,11 +92,12 @@ public class SqsWindowReader {
         List<SqsParsedMessage> windowMessages = new ArrayList<>();
         long currentWindowStart = 0;
         int batchNumber = 0;
+        int rawMessagesRead = 0;  // track total messages pulled from SQS
         
         while (true) {
             if (windowMessages.size() >= maxMessagesPerWindow) {
                 LOGGER.warn("message limit exceeded: {} messages >= limit {}", windowMessages.size(), maxMessagesPerWindow);
-                return WindowReadResult.messageLimitExceeded(windowMessages, currentWindowStart);
+                return WindowReadResult.messageLimitExceeded(windowMessages, currentWindowStart, rawMessagesRead);
             }
             
             // Read one batch from SQS (up to 10 messages)
@@ -100,15 +105,17 @@ public class SqsWindowReader {
                 this.sqsClient, this.queueUrl, this.maxMessagesPerPoll, this.visibilityTimeout);
             
             if (rawBatch.isEmpty()) {
-                return WindowReadResult.queueEmpty(windowMessages, currentWindowStart);
+                return WindowReadResult.queueEmpty(windowMessages, currentWindowStart, rawMessagesRead);
             }
+            
+            rawMessagesRead += rawBatch.size();
             
             // parse, validate, filter
             SqsBatchProcessor.BatchProcessingResult batchResult = batchProcessor.processBatch(rawBatch, batchNumber++);
             
             if (!batchResult.hasMessages()) {
                 if (batchResult.getStopReason() == StopReason.MESSAGES_TOO_RECENT) {
-                    return WindowReadResult.messagesTooRecent(windowMessages, currentWindowStart);
+                    return WindowReadResult.messagesTooRecent(windowMessages, currentWindowStart, rawMessagesRead);
                 }
                 // Corrupt messages were deleted, continue reading
                 continue;
@@ -133,7 +140,7 @@ public class SqsWindowReader {
             }
 
             if (newWindow) {
-                return WindowReadResult.withMessages(windowMessages, currentWindowStart);
+                return WindowReadResult.withMessages(windowMessages, currentWindowStart, rawMessagesRead);
             }
         }
     }
