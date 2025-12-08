@@ -253,7 +253,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         try {
             this.trafficFilter.reloadTrafficFilterConfig();
         } catch (MalformedTrafficFilterConfigException e) {
-            LOGGER.error("error reloading traffic filter config", e);
+            LOGGER.error("circuit_breaker_config_error: failed to reload traffic filter config: {}", e.getMessage(), e);
             sendError(resp, e);
             return;
         }
@@ -261,7 +261,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         try {
             this.trafficCalculator.reloadTrafficCalcConfig();
         } catch (MalformedTrafficCalcConfigException e) {
-            LOGGER.error("error reloading traffic calculator config", e);
+            LOGGER.error("circuit_breaker_config_error: failed to reload traffic calc config: {}", e.getMessage(), e);
             sendError(resp, e);
             return;
         }
