@@ -252,6 +252,7 @@ public class OptOutTrafficCalculator {
             // Stop when the newest record in a file is older than the window
             int sum = 0;
             int deltaRecordsCount = 0;
+            int deltaAllowlistedCount = 0;
             int filesProcessed = 0;
             int cacheHits = 0;
             int cacheMisses = 0;
@@ -281,6 +282,7 @@ public class OptOutTrafficCalculator {
                     
                     // skip records in allowlisted ranges
                     if (isInAllowlist(ts)) {
+                        deltaAllowlistedCount++;
                         continue;
                     }
                     
@@ -292,8 +294,8 @@ public class OptOutTrafficCalculator {
                 }
             }
             
-            LOGGER.info("delta files: processed={}, deltaRecords={}, cache hits={}, misses={}, cacheSize={}", 
-                       filesProcessed, deltaRecordsCount, cacheHits, cacheMisses, deltaFileCache.size());
+            LOGGER.info("delta files: processed={}, deltaRecords={}, allowlisted={}, cache hits={}, misses={}, cacheSize={}", 
+                       filesProcessed, deltaRecordsCount, deltaAllowlistedCount, cacheHits, cacheMisses, deltaFileCache.size());
             
             // Count SQS messages in [oldestQueueTs, oldestQueueTs + 5m] with allowlist filtering
             int sqsCount = 0;
@@ -522,25 +524,27 @@ public class OptOutTrafficCalculator {
      * Count SQS messages from oldestQueueTs to oldestQueueTs + 5 minutes
      */
     private int countSqsMessages(List<Message> sqsMessages, long oldestQueueTs) {
-        
+
         int count = 0;
+        int allowlistedCount = 0;
         long windowEnd = oldestQueueTs + 5 * 60;
-        
+
         for (Message msg : sqsMessages) {
             Long ts = extractTimestampFromMessage(msg);
 
             if (ts < oldestQueueTs || ts > windowEnd) {
                 continue;
             }
-            
+
             if (isInAllowlist(ts)) {
+                allowlistedCount++;
                 continue;
             }
             count++;
-            
+
         }
-        
-        LOGGER.info("sqs messages: {} in window [oldestQueueTs={}, oldestQueueTs+5m={}]", count, oldestQueueTs, windowEnd);
+
+        LOGGER.info("sqs messages: {} in window, {} allowlisted [oldestQueueTs={}, oldestQueueTs+5m={}]", count, allowlistedCount, oldestQueueTs, windowEnd);
         return count;
     }
     
