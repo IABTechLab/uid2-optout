@@ -82,14 +82,14 @@ public class SqsBatchProcessor {
         if (parsedBatch.size() < messageBatch.size()) {
             List<Message> invalidMessages = identifyInvalidMessages(messageBatch, parsedBatch);
             if (!invalidMessages.isEmpty()) {
-                LOGGER.error("found {} invalid messages in batch {}, deleting", invalidMessages.size(), batchNumber);
+                LOGGER.error("sqs_error: found {} invalid messages in batch {}, deleting", invalidMessages.size(), batchNumber);
                 SqsMessageOperations.deleteMessagesFromSqs(this.sqsClient, this.queueUrl, invalidMessages);
             }
         }
         
         // No valid messages after deleting corrupt ones, continue reading
         if (parsedBatch.isEmpty()) {
-            LOGGER.error("no valid messages in batch {}", batchNumber);
+            LOGGER.info("no valid messages in batch {} after removing invalid messages", batchNumber);
             return BatchProcessingResult.corruptMessagesDeleted();
         }
 

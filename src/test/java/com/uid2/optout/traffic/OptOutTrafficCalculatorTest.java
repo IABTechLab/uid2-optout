@@ -858,11 +858,8 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - should return DEFAULT to avoid crash
-        OptOutTrafficCalculator.TrafficStatus status = calculator.determineStatus(100, 0);
-
-        // Assert
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
+        // Act & Assert - should throw exception for invalid config
+        assertThrows(RuntimeException.class, () -> calculator.determineStatus(100, 0));
     }
 
     @Test
@@ -871,11 +868,8 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - should return DEFAULT to avoid crash
-        OptOutTrafficCalculator.TrafficStatus status = calculator.determineStatus(0, 0);
-
-        // Assert
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
+        // Act & Assert - should throw exception for invalid config
+        assertThrows(RuntimeException.class, () -> calculator.determineStatus(0, 0));
     }
 
     @Test
@@ -1122,11 +1116,8 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0, 0);
-
-        // Assert - should return DEFAULT when no delta files
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
+        // Act & Assert - should throw exception when no delta files
+        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0, 0));
     }
 
     @Test
@@ -1297,8 +1288,8 @@ public class OptOutTrafficCalculatorTest {
         byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
         
         createConfigFromPartialJson(trafficCalcConfigJson);
-        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/delta-001.dat"));
-        when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
+        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta-001_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
+        when(cloudStorage.download("optout-v2/delta/optout-delta-001_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
             .thenReturn(new ByteArrayInputStream(deltaFileBytes));
 
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
@@ -1359,11 +1350,8 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - should not throw exception
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0, 0);
-
-        // Assert - DEFAULT on error
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
+        // Act & Assert - should throw exception on S3 error
+        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0, 0));
     }
 
     @Test
@@ -1376,11 +1364,8 @@ public class OptOutTrafficCalculatorTest {
         OptOutTrafficCalculator calculator = new OptOutTrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act - empty SQS messages
-        OptOutTrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0, 0);
-
-        // Assert - DEFAULT on error
-        assertEquals(OptOutTrafficCalculator.TrafficStatus.DEFAULT, status);
+        // Act & Assert - should throw exception on S3 download error
+        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0, 0));
     }
 
     @Test

@@ -89,7 +89,7 @@ public class OptOutTrafficFilter {
             LOGGER.info("loaded traffic filter config: filterRules={}", filterRules.size());
 
         } catch (Exception e) {
-            LOGGER.warn("no traffic filter config found at: {}", trafficFilterConfigPath, e);
+            LOGGER.error("circuit_breaker_config_error: no traffic filter config found at {}", trafficFilterConfigPath, e);
             throw new MalformedTrafficFilterConfigException(e.getMessage());
         } 
     }
@@ -102,7 +102,7 @@ public class OptOutTrafficFilter {
         try {
             JsonArray denylistRequests = config.getJsonArray("denylist_requests");
             if (denylistRequests == null) {
-                LOGGER.error("invalid traffic filter config: denylist_requests is null");
+                LOGGER.error("circuit_breaker_config_error: denylist_requests is null");
                 throw new MalformedTrafficFilterConfigException("invalid traffic filter config: denylist_requests is null");
             }
             for (int i = 0; i < denylistRequests.size(); i++) {
@@ -116,7 +116,7 @@ public class OptOutTrafficFilter {
                     long end = rangeJson.getLong(1);
 
                     if (start >= end) {
-                        LOGGER.error("invalid traffic filter rule, range start must be less than end: {}", ruleJson.encode());
+                        LOGGER.error("circuit_breaker_config_error: rule range start must be less than end, rule={}", ruleJson.encode());
                         throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: range start must be less than end");
                     }
                     range.add(start);
@@ -125,7 +125,7 @@ public class OptOutTrafficFilter {
 
                 // log error and throw exception if range is not 2 elements
                 if (range.size() != 2) {
-                    LOGGER.error("invalid traffic filter rule, range is not 2 elements: {}", ruleJson.encode());
+                    LOGGER.error("circuit_breaker_config_error: rule range is not 2 elements, rule={}", ruleJson.encode());
                     throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: range is not 2 elements");
                 }
 
@@ -140,13 +140,13 @@ public class OptOutTrafficFilter {
 
                 // log error and throw exception if IPs is empty
                 if (ipAddresses.size() == 0) {
-                    LOGGER.error("invalid traffic filter rule, IPs is empty: {}", ruleJson.encode());
+                    LOGGER.error("circuit_breaker_config_error: rule IPs is empty, rule={}", ruleJson.encode());
                     throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: IPs is empty");
                 }
 
                 // log error and throw exception if rule is invalid
                 if (range.get(1) - range.get(0) > 86400) { // range must be 24 hours or less
-                    LOGGER.error("invalid traffic filter rule, range must be 24 hours or less: {}", ruleJson.encode());
+                    LOGGER.error("circuit_breaker_config_error: rule range must be 24 hours or less, rule={}", ruleJson.encode());
                     throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: range must be 24 hours or less");
                 }
 
@@ -157,7 +157,7 @@ public class OptOutTrafficFilter {
             }
             return rules;
         } catch (Exception e) {
-            LOGGER.error("failed to parse traffic filter rules: config={}, error={}", config.encode(), e.getMessage());
+            LOGGER.error("circuit_breaker_config_error: failed to parse rules, config={}, error={}", config.encode(), e.getMessage());
             throw new MalformedTrafficFilterConfigException(e.getMessage());
         }
     }
@@ -167,7 +167,7 @@ public class OptOutTrafficFilter {
         String clientIp = message.getClientIp();
 
         if (clientIp == null || clientIp.isEmpty()) {
-            LOGGER.error("request does not contain client ip, timestamp={}", timestamp);
+            LOGGER.error("sqs_error: request does not contain client ip, messageId={}", message.getOriginalMessage().messageId());
             return false;
         }
 

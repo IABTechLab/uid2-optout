@@ -185,7 +185,7 @@ public class DeltaProductionOrchestrator {
         OptOutTrafficCalculator.TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(deltaMessages, queueAttributes, droppedMessages.size(), filteredAsTooRecentCount);
         
         if (trafficStatus == OptOutTrafficCalculator.TrafficStatus.DELAYED_PROCESSING) {
-            LOGGER.error("optout delta production has hit DELAYED_PROCESSING status, stopping production and setting manual override");
+            LOGGER.error("circuit_breaker_triggered: traffic spike detected, stopping production and setting manual override");
             manualOverrideService.setDelayedProcessing();
             return true;
         }
@@ -262,11 +262,11 @@ public class DeltaProductionOrchestrator {
         long elapsedTime = OptOutUtils.nowEpochSeconds() - jobStartTime;
         
         if (elapsedTime > 3600) { // 1 hour - log warning
-            LOGGER.error("delta production job has been running for {} seconds", elapsedTime);
+            LOGGER.error("delta_job_timeout: job has been running for {} seconds", elapsedTime);
         }
         
         if (elapsedTime > this.jobTimeoutSeconds) {
-            LOGGER.error("delta production job has been running for {} seconds (exceeds timeout of {}s)",
+            LOGGER.error("delta_job_timeout: job exceeded timeout, running for {} seconds (timeout: {}s)",
                     elapsedTime, this.jobTimeoutSeconds);
             return true;
         }

@@ -271,7 +271,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         // If there's an existing job, check if it's still running
         if (existingJob != null) {
             if (existingJob.getState() == DeltaProductionJobStatus.JobState.RUNNING) {
-                LOGGER.warn("job already running");
+                LOGGER.info("job already running, returning conflict");
                 sendConflict(resp, "job already running on this pod");
                 return;
             }
@@ -304,7 +304,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                 job.complete(ar.result());
             } else {
                 job.fail(ar.cause().getMessage());
-                LOGGER.error("job failed", ar.cause());
+                LOGGER.error("delta_job_failed: {}", ar.cause().getMessage(), ar.cause());
             }
         });
     }

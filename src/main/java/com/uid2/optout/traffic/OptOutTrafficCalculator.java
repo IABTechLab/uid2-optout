@@ -139,10 +139,10 @@ public class OptOutTrafficCalculator {
                        this.evaluationWindowSeconds, this.baselineTraffic, this.thresholdMultiplier, ranges.size());
             
         } catch (MalformedTrafficCalcConfigException e) {
-            LOGGER.warn("failed to load traffic calc config, config is malformed: {}", trafficCalcConfigPath, e);
+            LOGGER.error("circuit_breaker_config_error: config is malformed, configPath={}", trafficCalcConfigPath, e);
             throw e;
         } catch (Exception e) {
-            LOGGER.warn("failed to load traffic calc config, config is malformed or missing: {}", trafficCalcConfigPath, e);
+            LOGGER.error("circuit_breaker_config_error: config is malformed or missing, configPath={}", trafficCalcConfigPath, e);
             throw new MalformedTrafficCalcConfigException("failed to load traffic calc config: " + e.getMessage());
         }
     }
@@ -163,12 +163,12 @@ public class OptOutTrafficCalculator {
                         long end = rangeArray.getLong(1);
                         
                         if(start >= end) {
-                            LOGGER.error("invalid allowlist range: start must be less than end: [{}, {}]", start, end);
+                            LOGGER.error("circuit_breaker_config_error: allowlist range start must be less than end, range=[{}, {}]", start, end);
                             throw new MalformedTrafficCalcConfigException("invalid allowlist range at index " + i + ": start must be less than end");
                         }
 
                         if (end - start > 86400) {
-                            LOGGER.error("invalid allowlist range: range must be less than 24 hours: [{}, {}]", start, end);
+                            LOGGER.error("circuit_breaker_config_error: allowlist range must be less than 24 hours, range=[{}, {}]", start, end);
                             throw new MalformedTrafficCalcConfigException("invalid allowlist range at index " + i + ": range must be less than 24 hours");
                         }
                         
@@ -186,7 +186,7 @@ public class OptOutTrafficCalculator {
                 long currentEnd = ranges.get(i).get(1);
                 long nextStart = ranges.get(i + 1).get(0);
                 if (currentEnd >= nextStart) {
-                    LOGGER.error("overlapping allowlist ranges detected: [{}, {}] overlaps with [{}, {}]",
+                    LOGGER.error("circuit_breaker_config_error: overlapping allowlist ranges, range=[{}, {}] overlaps with range=[{}, {}]",
                             ranges.get(i).get(0), currentEnd, nextStart, ranges.get(i + 1).get(1));
                     throw new MalformedTrafficCalcConfigException(
                             "overlapping allowlist ranges detected at indices " + i + " and " + (i + 1));
@@ -196,7 +196,7 @@ public class OptOutTrafficCalculator {
         } catch (MalformedTrafficCalcConfigException e) {
             throw e;
         } catch (Exception e) {
-            LOGGER.error("failed to parse allowlist ranges", e);
+            LOGGER.error("circuit_breaker_config_error: failed to parse allowlist ranges", e);
             throw new MalformedTrafficCalcConfigException("failed to parse allowlist ranges: " + e.getMessage());
         }
         
@@ -227,8 +227,8 @@ public class OptOutTrafficCalculator {
             List<String> deltaS3Paths = listDeltaFiles();
             
             if (deltaS3Paths.isEmpty()) {
-                LOGGER.warn("no delta files found in s3 with prefix: {}", s3DeltaPrefix);
-                return TrafficStatus.DEFAULT;
+                LOGGER.error("s3_error: no delta files found in s3 at prefix={}", s3DeltaPrefix);
+                throw new RuntimeException("no delta files found in s3 at prefix=" + s3DeltaPrefix);
             }
             
             // Find newest delta file timestamp for delta traffic window
@@ -326,8 +326,8 @@ public class OptOutTrafficCalculator {
             return status;
             
         } catch (Exception e) {
-            LOGGER.error("error calculating traffic status", e);
-            return TrafficStatus.DEFAULT;
+            LOGGER.error("delta_job_failed: error calculating traffic status", e);
+            throw new RuntimeException("error calculating traffic status", e);
         }
     }
     
@@ -345,7 +345,7 @@ public class OptOutTrafficCalculator {
         List<Long> timestamps = getTimestampsFromFile(newestDeltaPath);
         
         if (timestamps.isEmpty()) {
-            LOGGER.warn("newest delta file has no timestamps: {}", newestDeltaPath);
+            LOGGER.error("s3_error: newest delta file has no timestamps, path={}", newestDeltaPath);
             return System.currentTimeMillis() / 1000;
         }
         
@@ -372,7 +372,7 @@ public class OptOutTrafficCalculator {
             return deltaFiles;
                 
         } catch (Exception e) {
-            LOGGER.error("failed to list delta files from s3 with prefix: {}", s3DeltaPrefix, e);
+            LOGGER.error("s3_error: failed to list delta files at prefix={}", s3DeltaPrefix, e);
             return Collections.emptyList();
         }
     }
@@ -429,7 +429,7 @@ public class OptOutTrafficCalculator {
             
             return timestamps;
         } catch (Exception e) {
-            LOGGER.error("failed to read delta file from s3: {}", s3Path, e);
+            LOGGER.error("s3_error: failed to read delta file at path={}", s3Path, e);
             throw new IOException("failed to read delta file from s3: " + s3Path, e);
         }
     }
@@ -512,7 +512,7 @@ public class OptOutTrafficCalculator {
             try {
                 return Long.parseLong(sentTimestamp) / 1000;  // Convert ms to seconds
             } catch (NumberFormatException e) {
-                LOGGER.warn("invalid sentTimestamp: {}", sentTimestamp);
+                LOGGER.error("sqs_error: invalid sentTimestamp, messageId={}, sentTimestamp={}", msg.messageId(), sentTimestamp);
             }
         }
         
@@ -590,23 +590,38 @@ public class OptOutTrafficCalculator {
     }
     
     /**
-     * Determine traffic status based on current vs past counts
+     * Determine traffic status based on current vs baseline traffic.
+     * Logs warnings at 50%, 75%, and 90% of the circuit breaker threshold.
      */
     TrafficStatus determineStatus(int sumCurrent, int baselineTraffic) {
         if (baselineTraffic == 0 || thresholdMultiplier == 0) {
-            // Avoid division by zero - if no baseline traffic, return DEFAULT status
-            LOGGER.warn("baselineTraffic is 0 or thresholdMultiplier is 0, returning default status");
-            return TrafficStatus.DEFAULT;
+            LOGGER.error("circuit_breaker_config_error: baselineTraffic is 0 or thresholdMultiplier is 0");
+            throw new RuntimeException("invalid circuit breaker config: baselineTraffic=" + baselineTraffic + ", thresholdMultiplier=" + thresholdMultiplier);
         }
         
-        if (sumCurrent >= thresholdMultiplier * baselineTraffic) {
-            LOGGER.error("delayed_processing threshold breached: sumCurrent={}, thresholdMultiplier={}, baselineTraffic={}", 
-                       sumCurrent, thresholdMultiplier, baselineTraffic);
+        int threshold = thresholdMultiplier * baselineTraffic;
+        double thresholdPercent = (double) sumCurrent / threshold * 100;
+        
+        // Log warnings at increasing thresholds before circuit breaker triggers
+        if (thresholdPercent >= 90.0) {
+            LOGGER.warn("high_message_volume: 90% of threshold reached, sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
+                       sumCurrent, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
+        } else if (thresholdPercent >= 75.0) {
+            LOGGER.warn("high_message_volume: 75% of threshold reached, sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
+                       sumCurrent, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
+        } else if (thresholdPercent >= 50.0) {
+            LOGGER.warn("high_message_volume: 50% of threshold reached, sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
+                       sumCurrent, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
+        }
+        
+        if (sumCurrent >= threshold) {
+            LOGGER.error("circuit_breaker_triggered: traffic threshold breached, sumCurrent={}, threshold={} ({}x{})", 
+                       sumCurrent, threshold, thresholdMultiplier, baselineTraffic);
             return TrafficStatus.DELAYED_PROCESSING;
         }
         
-        LOGGER.info("traffic within normal range: sumCurrent={}, thresholdMultiplier={}, baselineTraffic={}", 
-                   sumCurrent, thresholdMultiplier, baselineTraffic);
+        LOGGER.info("traffic within normal range: sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
+                   sumCurrent, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
         return TrafficStatus.DEFAULT;
     }
     

@@ -62,7 +62,7 @@ public class ManualOverrideService {
             LOGGER.info("set manual override to DELAYED_PROCESSING: {}", overrideS3Path);
             return true;
         } catch (Exception e) {
-            LOGGER.error("error setting manual override: {}", overrideS3Path, e);
+            LOGGER.error("manual_override_error: failed to set override at {}", overrideS3Path, e);
             return false;
         }
     }
@@ -76,7 +76,7 @@ public class ManualOverrideService {
             JsonObject configJson = Utils.toJsonObject(inputStream);
             return configJson.getString(OVERRIDE_KEY, "");
         } catch (Exception e) {
-            LOGGER.error("no manual override found: {}", overrideS3Path);
+            LOGGER.error("manual_override_error: no manual override file found at {}", overrideS3Path);
             return "";
         }
     }

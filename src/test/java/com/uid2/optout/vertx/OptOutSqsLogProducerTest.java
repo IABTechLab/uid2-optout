@@ -25,6 +25,7 @@ import java.util.concurrent.CountDownLatch;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.doAnswer;
 import org.mockito.ArgumentCaptor;
@@ -84,6 +85,13 @@ public class OptOutSqsLogProducerTest {
         // Mock S3 upload to succeed by default
         doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
         doAnswer(inv -> null).when(cloudStorageDroppedRequests).upload(any(InputStream.class), anyString());
+
+        // Mock S3 list for traffic calculator (required for delta production)
+        when(cloudStorage.list(anyString())).thenReturn(Arrays.asList("sqs-delta/delta/optout-delta-001_2025-01-01T00.00.00Z_aaaaaaaa.dat"));
+        // Mock S3 download - manual override returns null (not found), delta files return valid bytes
+        when(cloudStorage.download(MANUAL_OVERRIDE_S3_PATH)).thenReturn(null);
+        when(cloudStorage.download(argThat(path -> path != null && path.contains("optout-delta"))))
+            .thenAnswer(inv -> new ByteArrayInputStream(createMinimalDeltaFileBytes()));
 
         // Mock getQueueAttributes by default (returns zero messages)
         Map<QueueAttributeName, String> defaultQueueAttrs = new HashMap<>();
@@ -921,6 +929,12 @@ public class OptOutSqsLogProducerTest {
                         doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
                         doAnswer(inv -> null).when(cloudStorageDroppedRequests).upload(any(InputStream.class), anyString());
 
+                        // Re-mock S3 list and download for traffic calculator after reset
+                        when(cloudStorage.list(anyString())).thenReturn(Arrays.asList("sqs-delta/delta/optout-delta-001_2025-01-01T00.00.00Z_aaaaaaaa.dat"));
+                        when(cloudStorage.download(MANUAL_OVERRIDE_S3_PATH)).thenReturn(null);
+                        when(cloudStorage.download(argThat(path -> path != null && path.contains("optout-delta"))))
+                            .thenAnswer(inv -> new ByteArrayInputStream(createMinimalDeltaFileBytes()));
+
                         // Act & Assert - second request - should now be denylisted
                         vertx.createHttpClient()
                                 .request(io.vertx.core.http.HttpMethod.POST, port, "127.0.0.1",
@@ -966,9 +980,7 @@ public class OptOutSqsLogProducerTest {
                 """;
         createTrafficCalcConfigFile(trafficCalcConfig);
 
-        // Setup - no manual override
-        when(cloudStorage.download(anyString()))
-                .thenReturn(null);
+        // Note: manual override is already mocked to return null in setup
 
         // Setup - create messages that will result in DEFAULT status
         long oldTime = System.currentTimeMillis() - 400_000;
@@ -1190,9 +1202,7 @@ public class OptOutSqsLogProducerTest {
     public void testManualOverride_notSet(TestContext context) throws Exception {
         Async async = context.async();
 
-        // Setup - mock no manual override file
-        when(cloudStorage.download(anyString()))
-                .thenReturn(null);
+        // Note: manual override is already mocked to return null in setup
 
         // Setup - create messages
         long oldTime = System.currentTimeMillis() - 400_000;
@@ -1444,6 +1454,20 @@ public class OptOutSqsLogProducerTest {
         // Create OptOutCollection
         OptOutCollection collection = new OptOutCollection(entries.toArray(new OptOutEntry[0]));
         return collection.getStore();
+    }
+
+    /**
+     * Create minimal delta file bytes with a single recent timestamp for traffic calculator
+     */
+    private static byte[] createMinimalDeltaFileBytes() {
+        try {
+            long timestamp = System.currentTimeMillis() / 1000 - 3600; // 1 hour ago
+            OptOutEntry entry = OptOutEntry.newTestEntry(1, timestamp);
+            OptOutCollection collection = new OptOutCollection(new OptOutEntry[]{entry});
+            return collection.getStore();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create minimal delta file bytes", e);
+        }
     }
 }
 

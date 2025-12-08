@@ -96,7 +96,7 @@ public class SqsWindowReader {
         
         while (true) {
             if (windowMessages.size() >= maxMessagesPerWindow) {
-                LOGGER.warn("message limit exceeded: {} messages >= limit {}", windowMessages.size(), maxMessagesPerWindow);
+                LOGGER.warn("high_message_volume: message limit exceeded while reading window, {} messages >= limit {}", windowMessages.size(), maxMessagesPerWindow);
                 return WindowReadResult.messageLimitExceeded(windowMessages, currentWindowStart, rawMessagesRead);
             }
             

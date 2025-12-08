@@ -136,7 +136,7 @@ public class SqsMessageOperations {
             return response.messages();
 
         } catch (Exception e) {
-            LOGGER.error("error receiving messages", e);
+            LOGGER.error("sqs_error: failed to receive messages", e);
             return new ArrayList<>();
         }
     }
@@ -174,7 +174,7 @@ public class SqsMessageOperations {
                     DeleteMessageBatchResponse deleteResponse = sqsClient.deleteMessageBatch(deleteRequest);
 
                     if (!deleteResponse.failed().isEmpty()) {
-                        LOGGER.error("failed to delete {} messages", deleteResponse.failed().size());
+                        LOGGER.error("sqs_error: failed to delete {} messages", deleteResponse.failed().size());
                     } else {
                         totalDeleted += entries.size();
                     }
@@ -186,7 +186,7 @@ public class SqsMessageOperations {
             LOGGER.info("deleted {} messages", totalDeleted);
 
         } catch (Exception e) {
-            LOGGER.error("error deleting messages", e);
+            LOGGER.error("sqs_error: exception during message deletion", e);
         }
     }
 }
