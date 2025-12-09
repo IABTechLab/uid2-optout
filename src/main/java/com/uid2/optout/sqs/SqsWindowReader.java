@@ -58,8 +58,8 @@ public class SqsWindowReader {
             return new WindowReadResult(messages, windowStart, StopReason.NONE, rawMessagesRead);
         }
         
-        public static WindowReadResult queueEmpty(List<SqsParsedMessage> messages, long windowStart) {
-            return new WindowReadResult(messages, windowStart, StopReason.QUEUE_EMPTY, 0);
+        public static WindowReadResult queueEmpty(List<SqsParsedMessage> messages, long windowStart, int rawMessagesRead) {
+            return new WindowReadResult(messages, windowStart, StopReason.QUEUE_EMPTY, rawMessagesRead);
         }
         
         public static WindowReadResult messagesTooRecent(List<SqsParsedMessage> messages, long windowStart, int rawMessagesRead) {
@@ -105,7 +105,7 @@ public class SqsWindowReader {
                 this.sqsClient, this.queueUrl, this.maxMessagesPerPoll, this.visibilityTimeout);
             
             if (rawBatch.isEmpty()) {
-                return WindowReadResult.queueEmpty(windowMessages, currentWindowStart);
+                return WindowReadResult.queueEmpty(windowMessages, currentWindowStart, rawMessagesRead);
             }
             
             rawMessagesRead += rawBatch.size();

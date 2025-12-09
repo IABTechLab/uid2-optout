@@ -78,7 +78,7 @@ public class OptOutSqsLogProducerTest {
             vertx.close(context.asyncAssertSuccess());
         }
     }
-    
+
     private Message createMessage(String hash, String id, long timestampMs) {
         JsonObject body = new JsonObject()
                 .put("identity_hash", hash)
