@@ -122,14 +122,19 @@ public class SqsWindowReaderTest {
         for (int i = 0; i < 10; i++) {
             batch.add(createMessage(windowStartSeconds + i * 10));
         }
+        List<Message> batch2 = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            batch2.add(createMessage(windowStartSeconds + i * 10));
+        }
 
         when(mockSqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
-            .thenReturn(ReceiveMessageResponse.builder().messages(batch).build());
+            .thenReturn(ReceiveMessageResponse.builder().messages(batch).build())
+            .thenReturn(ReceiveMessageResponse.builder().messages(batch2).build());
 
         SqsWindowReader.WindowReadResult result = smallLimitReader.readWindow();
 
         assertEquals(StopReason.MESSAGE_LIMIT_EXCEEDED, result.getStopReason());
-        assertTrue(result.getMessages().size() >= 5);
+        assertEquals(10, result.getMessages().size());
     }
 
     @Test
