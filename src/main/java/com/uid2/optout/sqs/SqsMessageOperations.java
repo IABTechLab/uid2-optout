@@ -8,6 +8,7 @@ import software.amazon.awssdk.services.sqs.model.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Utility class for SQS message operations.
@@ -90,7 +91,7 @@ public class SqsMessageOperations {
             return queueAttributes;
 
         } catch (Exception e) {
-            LOGGER.info("error getting queue attributes", e);
+            LOGGER.info("sqs_error: error getting queue attributes", e);
             return null;
         }
     }
@@ -126,8 +127,8 @@ public class SqsMessageOperations {
                 .queueUrl(queueUrl)
                 .maxNumberOfMessages(maxMessages)
                 .visibilityTimeout(visibilityTimeout)
-                .waitTimeSeconds(0) // Non-blocking poll
-                .messageSystemAttributeNames(MessageSystemAttributeName.SENT_TIMESTAMP) // Request SQS system timestamp
+                .waitTimeSeconds(0) // non-blocking poll
+                .messageSystemAttributeNames(MessageSystemAttributeName.SENT_TIMESTAMP) // request sqs system timestamp
                 .build();
 
             ReceiveMessageResponse response = sqsClient.receiveMessage(receiveRequest);
@@ -143,6 +144,7 @@ public class SqsMessageOperations {
 
     /**
      * Deletes messages from SQS in batches (max 10 per batch).
+     * Retries failed deletes as long as progress is being made.
      * 
      * @param sqsClient The SQS client
      * @param queueUrl The queue URL
@@ -154,40 +156,58 @@ public class SqsMessageOperations {
         }
 
         try {
-            List<DeleteMessageBatchRequestEntry> entries = new ArrayList<>();
-            int batchId = 0;
             int totalDeleted = 0;
+            List<DeleteMessageBatchRequestEntry> batch = new ArrayList<>();
 
-            for (Message msg : messages) {
-                entries.add(DeleteMessageBatchRequestEntry.builder()
-                    .id(String.valueOf(batchId++))
-                    .receiptHandle(msg.receiptHandle())
+            for (int i = 0; i < messages.size(); i++) {
+                batch.add(DeleteMessageBatchRequestEntry.builder()
+                    .id(String.valueOf(i))
+                    .receiptHandle(messages.get(i).receiptHandle())
                     .build());
 
-                // Send batch when we reach 10 messages or at the end
-                if (entries.size() == SQS_MAX_DELETE_BATCH_SIZE || batchId == messages.size()) {
-                    DeleteMessageBatchRequest deleteRequest = DeleteMessageBatchRequest.builder()
-                        .queueUrl(queueUrl)
-                        .entries(entries)
-                        .build();
-
-                    DeleteMessageBatchResponse deleteResponse = sqsClient.deleteMessageBatch(deleteRequest);
-
-                    if (!deleteResponse.failed().isEmpty()) {
-                        LOGGER.error("sqs_error: failed to delete {} messages", deleteResponse.failed().size());
-                    } else {
-                        totalDeleted += entries.size();
-                    }
-
-                    entries.clear();
+                // send batch when we reach 10 messages or end of list
+                if (batch.size() == SQS_MAX_DELETE_BATCH_SIZE || i == messages.size() - 1) {
+                    totalDeleted += deleteBatchWithRetry(sqsClient, queueUrl, batch);
+                    batch.clear();
                 }
             }
 
             LOGGER.info("deleted {} messages", totalDeleted);
-
         } catch (Exception e) {
-            LOGGER.error("sqs_error: exception during message deletion", e);
+            LOGGER.error("sqs_error: error deleting messages", e);
         }
+    }
+
+    /** Deletes batch, retrying failed entries. Retries once unconditionally, then only while making progress. */
+    private static int deleteBatchWithRetry(SqsClient sqsClient, String queueUrl, List<DeleteMessageBatchRequestEntry> entries) {
+        int deleted = 0;
+        List<DeleteMessageBatchRequestEntry> toDelete = entries;
+        boolean retriedOnce = false;
+
+        while (!toDelete.isEmpty()) {
+            DeleteMessageBatchResponse response = sqsClient.deleteMessageBatch(
+                DeleteMessageBatchRequest.builder().queueUrl(queueUrl).entries(toDelete).build());
+
+            int succeeded = response.successful().size();
+            deleted += succeeded;
+
+            if (response.failed().isEmpty()) {
+                break; // all done
+            }
+
+            // retry once unconditionally, then only if making progress
+            if (retriedOnce && succeeded == 0) {
+                LOGGER.error("sqs_error: {} deletes failed with no progress", response.failed().size());
+                break;
+            }
+            retriedOnce = true;
+
+            // retry deletion on the failed messages only
+            var failedIds = response.failed().stream().map(BatchResultErrorEntry::id).collect(Collectors.toSet());
+            toDelete = toDelete.stream().filter(e -> failedIds.contains(e.id())).toList();
+        }
+
+        return deleted;
     }
 }
 

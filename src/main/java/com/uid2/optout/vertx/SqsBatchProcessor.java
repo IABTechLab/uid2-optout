@@ -97,7 +97,7 @@ public class SqsBatchProcessor {
         // Check if the oldest message in this batch is too recent
         long currentTime = OptOutUtils.nowEpochSeconds();
         SqsParsedMessage oldestMessage = parsedBatch.get(0);
-        long messageAge = currentTime - oldestMessage.getTimestamp();
+        long messageAge = currentTime - oldestMessage.timestamp();
         
         if (messageAge < this.deltaWindowSeconds) {
             // Signal to stop processing - messages are too recent
@@ -129,7 +129,7 @@ public class SqsBatchProcessor {
         List<SqsParsedMessage> eligibleMessages = new ArrayList<>();
         
         for (SqsParsedMessage pm : messages) {
-            if (currentTime - pm.getTimestamp() >= this.deltaWindowSeconds) {
+            if (currentTime - pm.timestamp() >= this.deltaWindowSeconds) {
                 eligibleMessages.add(pm);
             }
         }
@@ -148,7 +148,7 @@ public class SqsBatchProcessor {
         // Create a set of message IDs from successfully parsed messages
         Set<String> validMessageIds = new HashSet<>();
         for (SqsParsedMessage parsed : parsedBatch) {
-            validMessageIds.add(parsed.getOriginalMessage().messageId());
+            validMessageIds.add(parsed.originalMessage().messageId());
         }
         
         // Find messages that were not successfully parsed

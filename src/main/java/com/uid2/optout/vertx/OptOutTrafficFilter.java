@@ -151,8 +151,8 @@ public class OptOutTrafficFilter {
     }
 
     public boolean isDenylisted(SqsParsedMessage message) {
-        long timestamp = message.getTimestamp();
-        String clientIp = message.getClientIp();
+        long timestamp = message.timestamp();
+        String clientIp = message.clientIp();
 
         if (clientIp == null || clientIp.isEmpty()) {
             LOGGER.error("Request does not contain client IP, timestamp={}", timestamp);

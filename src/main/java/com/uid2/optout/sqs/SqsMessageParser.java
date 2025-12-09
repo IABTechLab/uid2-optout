@@ -23,24 +23,28 @@ public class SqsMessageParser {
      * @return List of parsed messages sorted by timestamp (oldest first)
      */
     public static List<SqsParsedMessage> parseAndSortMessages(List<Message> messages) {
-        List<SqsParsedMessage> parsedMessages = new ArrayList<>();
+        List<SqsParsedMessage> parsedMessages = new ArrayList<>(messages.size());
 
         for (Message message : messages) {
-            try {
-                // Extract SQS system timestamp (in milliseconds), or use current time as fallback
-                long timestampSeconds = extractTimestamp(message);
 
-                // Parse message body
+            String traceId = null;
+
+            try {
+                // parse message body
                 JsonObject body = new JsonObject(message.body());
+                traceId = body.getString("trace_id");
+
                 String identityHash = body.getString("identity_hash");
                 String advertisingId = body.getString("advertising_id");
-                String traceId = body.getString("trace_id");
                 String clientIp = body.getString("client_ip");
                 String email = body.getString("email");
                 String phone = body.getString("phone");
 
+                // extract sqs system timestamp (in milliseconds), or use current time as fallback
+                long timestampSeconds = extractTimestamp(message, traceId);
+
                 if (identityHash == null || advertisingId == null) {
-                    LOGGER.error("sqs_error: invalid message format: {}", message.body());
+                    LOGGER.error("sqs_error: invalid message format, messageId={}, traceId={}", message.messageId(), traceId);
                     continue;
                 }
 
@@ -48,18 +52,18 @@ public class SqsMessageParser {
                 byte[] idBytes = OptOutUtils.base64StringTobyteArray(advertisingId);
 
                 if (hashBytes == null || idBytes == null) {
-                    LOGGER.error("sqs_error: invalid base64 encoding");
+                    LOGGER.error("sqs_error: invalid base64 encoding, messageId={}, traceId={}", message.messageId(), traceId);
                     continue;
                 }
 
                 parsedMessages.add(new SqsParsedMessage(message, hashBytes, idBytes, timestampSeconds, email, phone, clientIp, traceId));
             } catch (Exception e) {
-                LOGGER.error("sqs_error: error parsing message", e);
+                LOGGER.error("sqs_error: error parsing message, messageId={}, traceId={}", message.messageId(), traceId, e);
             }
         }
 
-        // Sort by timestamp
-        parsedMessages.sort((a, b) -> Long.compare(a.getTimestamp(), b.getTimestamp()));
+        // sort by timestamp
+        parsedMessages.sort((a, b) -> Long.compare(a.timestamp(), b.timestamp()));
 
         return parsedMessages;
     }
@@ -70,10 +74,10 @@ public class SqsMessageParser {
      * @param message The SQS message
      * @return Timestamp in seconds
      */
-    private static long extractTimestamp(Message message) {
+    private static long extractTimestamp(Message message, String traceId) {
         String sentTimestampStr = message.attributes().get(MessageSystemAttributeName.SENT_TIMESTAMP);
         if (sentTimestampStr == null) {
-            LOGGER.info("message missing SentTimestamp, using current time");
+            LOGGER.info("message missing SentTimestamp, using current time instead, messageId={}, traceId={}", message.messageId(), traceId);
             return OptOutUtils.nowEpochSeconds();
         }
         return Long.parseLong(sentTimestampStr) / 1000; // ms to seconds

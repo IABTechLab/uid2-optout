@@ -16,6 +16,7 @@ import software.amazon.awssdk.services.sqs.model.*;
 
 import java.io.InputStream;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -325,6 +326,9 @@ public class OptOutSqsLogProducerTest {
     public void testDeltaProduceEndpoint_concurrentJobPrevention(TestContext context) throws Exception {
         Async async = context.async();
         
+        // Latch to keep job running until we verify the conflict response
+        CountDownLatch uploadLatch = new CountDownLatch(1);
+        
         // Create messages that will take some time to process
         long oldTime = System.currentTimeMillis() - 400_000;
         List<Message> messages = Arrays.asList(
@@ -339,7 +343,11 @@ public class OptOutSqsLogProducerTest {
         when(sqsClient.deleteMessageBatch(any(DeleteMessageBatchRequest.class)))
                 .thenReturn(DeleteMessageBatchResponse.builder().build());
         
-        doAnswer(inv -> null).when(cloudStorage).upload(any(InputStream.class), anyString());
+        // Block upload until latch is released
+        doAnswer(inv -> {
+            uploadLatch.await();
+            return null;
+        }).when(cloudStorage).upload(any(InputStream.class), anyString());
         
         int port = Const.Port.ServicePortForOptOut + 1;
         
@@ -375,6 +383,8 @@ public class OptOutSqsLogProducerTest {
                     context.assertEquals("conflict", response.getString("status"));
                     context.assertTrue(response.getString("message").contains("already running"));
                     
+                    // Release the latch to let the first job complete
+                    uploadLatch.countDown();
                     async.complete();
                 }));
     }

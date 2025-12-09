@@ -409,8 +409,8 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             // Write all messages
             List<Message> sqsMessages = new ArrayList<>();
             for (SqsParsedMessage msg : messages) {
-                writeOptOutEntry(deltaStream, msg.getHashBytes(), msg.getIdBytes(), msg.getTimestamp());
-                sqsMessages.add(msg.getOriginalMessage());
+                writeOptOutEntry(deltaStream, msg.hashBytes(), msg.idBytes(), msg.timestamp());
+                sqsMessages.add(msg.originalMessage());
             }
             
             // Upload and delete

@@ -104,7 +104,7 @@ public class SqsWindowReader {
             // Add eligible messages to current window
             boolean newWindow = false;
             for (SqsParsedMessage msg : batchResult.getEligibleMessages()) {
-                long msgWindowStart = (msg.getTimestamp() / this.deltaWindowSeconds) * this.deltaWindowSeconds;
+                long msgWindowStart = (msg.timestamp() / this.deltaWindowSeconds) * this.deltaWindowSeconds;
                 
                 // discover start of window
                 if (currentWindowStart == 0) {

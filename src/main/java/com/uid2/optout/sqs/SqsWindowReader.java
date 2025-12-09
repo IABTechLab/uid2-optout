@@ -58,8 +58,8 @@ public class SqsWindowReader {
             return new WindowReadResult(messages, windowStart, StopReason.NONE, rawMessagesRead);
         }
         
-        public static WindowReadResult queueEmpty(List<SqsParsedMessage> messages, long windowStart, int rawMessagesRead) {
-            return new WindowReadResult(messages, windowStart, StopReason.QUEUE_EMPTY, rawMessagesRead);
+        public static WindowReadResult queueEmpty(List<SqsParsedMessage> messages, long windowStart) {
+            return new WindowReadResult(messages, windowStart, StopReason.QUEUE_EMPTY, 0);
         }
         
         public static WindowReadResult messagesTooRecent(List<SqsParsedMessage> messages, long windowStart, int rawMessagesRead) {
@@ -105,7 +105,7 @@ public class SqsWindowReader {
                 this.sqsClient, this.queueUrl, this.maxMessagesPerPoll, this.visibilityTimeout);
             
             if (rawBatch.isEmpty()) {
-                return WindowReadResult.queueEmpty(windowMessages, currentWindowStart, rawMessagesRead);
+                return WindowReadResult.queueEmpty(windowMessages, currentWindowStart);
             }
             
             rawMessagesRead += rawBatch.size();
@@ -124,7 +124,7 @@ public class SqsWindowReader {
             // Add eligible messages to current window
             boolean newWindow = false;
             for (SqsParsedMessage msg : batchResult.getMessages()) {
-                long msgWindowStart = msg.getTimestamp();
+                long msgWindowStart = msg.timestamp();
                 
                 // Discover start of window
                 if (currentWindowStart == 0) {
