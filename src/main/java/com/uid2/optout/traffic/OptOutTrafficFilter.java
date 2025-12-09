@@ -163,11 +163,11 @@ public class OptOutTrafficFilter {
     }
 
     public boolean isDenylisted(SqsParsedMessage message) {
-        long timestamp = message.getTimestamp();
-        String clientIp = message.getClientIp();
+        long timestamp = message.timestamp();
+        String clientIp = message.clientIp();
 
         if (clientIp == null || clientIp.isEmpty()) {
-            LOGGER.error("sqs_error: request does not contain client ip, messageId={}", message.getOriginalMessage().messageId());
+            LOGGER.error("sqs_error: request does not contain client ip, messageId={}", message.originalMessage().messageId());
             return false;
         }
 
