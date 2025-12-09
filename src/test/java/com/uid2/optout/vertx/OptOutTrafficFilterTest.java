@@ -1,5 +1,7 @@
 package com.uid2.optout.vertx;
 
+import com.uid2.optout.sqs.SqsParsedMessage;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
