@@ -1,12 +1,19 @@
 package com.uid2.optout.sqs;
 
+import com.uid2.optout.delta.S3UploadService;
 import com.uid2.optout.delta.StopReason;
 import com.uid2.shared.optout.OptOutUtils;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.Message;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -17,15 +24,19 @@ import java.util.stream.Collectors;
  */
 public class SqsBatchProcessor {
     private static final Logger LOGGER = LoggerFactory.getLogger(SqsBatchProcessor.class);
-    
-    private final SqsClient sqsClient;
-    private final String queueUrl;
+    private static final String MALFORMED_FILE_PREFIX = "optout-malformed-";
     private final int deltaWindowSeconds;
+    private final S3UploadService s3UploadService;
+    private final String malformedRequestsS3Path;
+    private final int replicaId;
 
-    public SqsBatchProcessor(SqsClient sqsClient, String queueUrl, int deltaWindowSeconds) {
-        this.sqsClient = sqsClient;
-        this.queueUrl = queueUrl;
+    public SqsBatchProcessor(SqsClient sqsClient, String queueUrl, int deltaWindowSeconds, 
+                             S3UploadService s3UploadService, String malformedRequestsS3Path,
+                             int replicaId) {
         this.deltaWindowSeconds = deltaWindowSeconds;
+        this.s3UploadService = s3UploadService;
+        this.malformedRequestsS3Path = malformedRequestsS3Path;
+        this.replicaId = replicaId;
     }
 
     /**
@@ -74,7 +85,7 @@ public class SqsBatchProcessor {
      * @param batchNumber The batch number (for logging)
      * @return BatchProcessingResult containing eligible messages and processing metadata
      */
-    public BatchProcessingResult processBatch(List<Message> messageBatch, int batchNumber) {
+    public BatchProcessingResult processBatch(List<Message> messageBatch, int batchNumber) throws IOException {
         // Parse and sort messages by timestamp
         List<SqsParsedMessage> parsedBatch = SqsMessageParser.parseAndSortMessages(messageBatch);
         
@@ -82,8 +93,8 @@ public class SqsBatchProcessor {
         if (parsedBatch.size() < messageBatch.size()) {
             List<Message> invalidMessages = identifyInvalidMessages(messageBatch, parsedBatch);
             if (!invalidMessages.isEmpty()) {
-                LOGGER.error("sqs_error: found {} invalid messages in batch {}, deleting", invalidMessages.size(), batchNumber);
-                SqsMessageOperations.deleteMessagesFromSqs(this.sqsClient, this.queueUrl, invalidMessages);
+                LOGGER.error("sqs_error: found {} invalid messages in batch {}, uploading to S3 and deleting", invalidMessages.size(), batchNumber);
+                uploadMalformedMessages(invalidMessages);
             }
         }
         
@@ -146,5 +157,49 @@ public class SqsBatchProcessor {
         return originalBatch.stream()
                 .filter(msg -> !validIds.contains(msg.messageId()))
                 .collect(Collectors.toList());
+    }
+    
+    /**
+     * Uploads malformed messages to S3 and then deletes them from SQS.
+     * The destination is "malformed" folder in the dropped requests S3 bucket.
+     * 
+     * @param invalidMessages The malformed messages to upload and delete
+     */
+    private void uploadMalformedMessages(List<Message> invalidMessages) throws IOException {
+        if (s3UploadService == null) {
+            LOGGER.error("s3_error: s3UploadService is null, skipping upload of {} malformed messages", invalidMessages.size());
+            return;
+        }
+        
+        // serialize messages to json string
+        JsonArray messagesJson = new JsonArray();
+        for (Message msg : invalidMessages) {
+            messagesJson.add(new JsonObject()
+                .put("messageId", msg.messageId())
+                .put("body", msg.body())
+                .put("attributes", msg.attributesAsStrings()));
+        }
+        
+        // format file name and data
+        byte[] data = messagesJson.encodePrettily().getBytes(StandardCharsets.UTF_8);
+        String filename = generateMalformedMessageFileName();
+        String s3Path = malformedRequestsS3Path + filename;
+        
+        // upload and delete messages
+        try {
+            s3UploadService.uploadAndDeleteMessages(data, s3Path, invalidMessages, null); 
+            LOGGER.info("uploaded {} malformed messages to {}", invalidMessages.size(), s3Path);
+        } catch (IOException e) {
+            LOGGER.error("failed to upload and delete malformed sqs messages, path={}, filename={}, error={}", malformedRequestsS3Path, filename, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    private String generateMalformedMessageFileName() {
+        return String.format("%s%03d_%s_%08x.json",
+                MALFORMED_FILE_PREFIX,
+                replicaId,
+                Instant.now().truncatedTo(ChronoUnit.SECONDS).toString().replace(':', '.'),
+                OptOutUtils.rand.nextInt());
     }
 }

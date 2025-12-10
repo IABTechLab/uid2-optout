@@ -3,6 +3,7 @@ package com.uid2.optout.delta;
 import com.uid2.shared.Utils;
 import com.uid2.shared.cloud.CloudStorageException;
 import com.uid2.shared.cloud.ICloudStorage;
+import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,7 +81,7 @@ public class ManualOverrideService {
         } catch (CloudStorageException e) {
             LOGGER.error("manual_override_error: no manual override file found at {}", overrideS3Path);
             return "";
-        } catch (IOException e) {
+        } catch (IOException | DecodeException e) {
             LOGGER.error("manual_override_error: failed to parse override file at {}", overrideS3Path, e);
             return "";
         }

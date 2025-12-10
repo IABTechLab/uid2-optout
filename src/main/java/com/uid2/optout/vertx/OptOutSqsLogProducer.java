@@ -158,7 +158,9 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         // Initialize window reader with memory protection limit
         this.windowReader = new SqsWindowReader(
             this.sqsClient, this.queueUrl, this.maxMessagesPerPoll, 
-            this.visibilityTimeout, this.deltaWindowSeconds, this.maxMessagesPerFile
+            this.visibilityTimeout, this.deltaWindowSeconds, this.maxMessagesPerFile,
+            null, null, // will be done in Orchestrator after refactoring
+            this.replicaId
         );
         LOGGER.info("OptOutSqsLogProducer initialized with maxMessagesPerFile: {}", this.maxMessagesPerFile);
     }
