@@ -58,8 +58,8 @@ public class SqsMessageParser {
             }
         }
 
-        // Sort by timestamp
-        parsedMessages.sort((a, b) -> Long.compare(a.getTimestamp(), b.getTimestamp()));
+        // sort by timestamp
+        parsedMessages.sort((a, b) -> Long.compare(a.timestamp(), b.timestamp()));
 
         return parsedMessages;
     }

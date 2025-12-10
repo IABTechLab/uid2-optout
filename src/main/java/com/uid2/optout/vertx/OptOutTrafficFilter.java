@@ -1,5 +1,7 @@
 package com.uid2.optout.vertx;
 
+import com.uid2.optout.sqs.SqsParsedMessage;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -151,8 +153,8 @@ public class OptOutTrafficFilter {
     }
 
     public boolean isDenylisted(SqsParsedMessage message) {
-        long timestamp = message.getTimestamp();
-        String clientIp = message.getClientIp();
+        long timestamp = message.timestamp();
+        String clientIp = message.clientIp();
 
         if (clientIp == null || clientIp.isEmpty()) {
             LOGGER.error("Request does not contain client IP, timestamp={}", timestamp);

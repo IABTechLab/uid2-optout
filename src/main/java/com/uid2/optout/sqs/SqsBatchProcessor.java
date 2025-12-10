@@ -115,7 +115,7 @@ public class SqsBatchProcessor {
      * @return true if the message is at least deltaWindowSeconds old
      */
     private boolean isMessageEligible(SqsParsedMessage message, long currentTime) {
-        return currentTime - message.getTimestamp() >= this.deltaWindowSeconds;
+        return currentTime - message.timestamp() >= this.deltaWindowSeconds;
     }
 
     /**
@@ -140,7 +140,7 @@ public class SqsBatchProcessor {
      */
     private List<Message> identifyInvalidMessages(List<Message> originalBatch, List<SqsParsedMessage> parsedBatch) {
         Set<String> validIds = parsedBatch.stream()
-                .map(p -> p.getOriginalMessage().messageId())
+                .map(p -> p.originalMessage().messageId())
                 .collect(Collectors.toSet());
         
         return originalBatch.stream()
