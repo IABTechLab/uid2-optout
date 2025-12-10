@@ -74,13 +74,18 @@ public class SqsMessageParser {
      * @param message The SQS message
      * @return Timestamp in seconds
      */
-    private static long extractTimestamp(Message message, String traceId) {
+    public static long extractTimestamp(Message message, String traceId) {
         String sentTimestampStr = message.attributes().get(MessageSystemAttributeName.SENT_TIMESTAMP);
         if (sentTimestampStr == null) {
-            LOGGER.info("message missing SentTimestamp, using current time instead, messageId={}, traceId={}", message.messageId(), traceId);
+            LOGGER.error("sqs_error: message missing SentTimestamp, using current time instead, messageId={}, traceId={}", message.messageId(), traceId);
             return OptOutUtils.nowEpochSeconds();
         }
-        return Long.parseLong(sentTimestampStr) / 1000; // ms to seconds
+        try {
+            return Long.parseLong(sentTimestampStr) / 1000;
+        } catch (NumberFormatException e) {
+            LOGGER.error("sqs_error: invalid SentTimestamp, using current time instead, messageId={}, traceId={}, sentTimestamp={}", message.messageId(), traceId, sentTimestampStr);
+            return OptOutUtils.nowEpochSeconds();
+        }
     }
 }
 

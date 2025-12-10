@@ -5,13 +5,11 @@ import com.uid2.shared.optout.OptOutCollection;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.shared.optout.OptOutUtils;
 import com.uid2.optout.Const;
-import com.uid2.optout.sqs.SqsMessageOperations;
-
+import com.uid2.optout.sqs.SqsMessageOperations.QueueAttributes;
+import com.uid2.optout.sqs.SqsParsedMessage;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.services.sqs.model.Message;
-import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 
 import java.nio.charset.StandardCharsets;
 
@@ -212,13 +210,13 @@ public class TrafficCalculator {
      * - SQS messages passed in (with allowlist filtering)
      * - Invisible messages from other consumers (from queue attributes, avoiding double count)
      * 
-     * @param sqsMessages List of SQS messages this consumer has read (non-denylisted)
+     * @param sqsMessages List of parsed SQS messages this consumer has read (non-denylisted)
      * @param queueAttributes Queue attributes including invisible message count (can be null)
      * @param denylistedCount Number of denylisted messages read by this consumer
      * @param filteredAsTooRecentCount Number of messages filtered as "too recent" by window reader
      * @return TrafficStatus (DELAYED_PROCESSING or DEFAULT)
      */
-    public TrafficStatus calculateStatus(List<Message> sqsMessages, SqsMessageOperations.QueueAttributes queueAttributes, int denylistedCount, int filteredAsTooRecentCount) {
+    public TrafficStatus calculateStatus(List<SqsParsedMessage> sqsMessages, QueueAttributes queueAttributes, int denylistedCount, int filteredAsTooRecentCount) {
         
         try {
             // get list of delta files from s3 (sorted newest to oldest)
@@ -485,13 +483,13 @@ public class TrafficCalculator {
     /**
      * Find the oldest SQS queue message timestamp
      */
-    private long findOldestQueueTimestamp(List<Message> sqsMessages) throws IOException {
+    private long findOldestQueueTimestamp(List<SqsParsedMessage> sqsMessages) throws IOException {
         long oldest = System.currentTimeMillis() / 1000;
         
         if (sqsMessages != null && !sqsMessages.isEmpty()) {
-            for (Message msg : sqsMessages) {
-                Long ts = extractTimestampFromMessage(msg);
-                if (ts != null && ts < oldest) {
+            for (SqsParsedMessage msg : sqsMessages) {
+                long ts = msg.timestamp();
+                if (ts < oldest) {
                     oldest = ts;
                 }
             }
@@ -501,34 +499,16 @@ public class TrafficCalculator {
     }
     
     /**
-     * Extract timestamp from SQS message (from SentTimestamp attribute)
+     * Count non-allowlisted SQS messages from oldestQueueTs to oldestQueueTs + 5 minutes
      */
-    private Long extractTimestampFromMessage(Message msg) {
-        // get SentTimestamp attribute (milliseconds)
-        String sentTimestamp = msg.attributes().get(MessageSystemAttributeName.SENT_TIMESTAMP);
-        if (sentTimestamp != null) {
-            try {
-                return Long.parseLong(sentTimestamp) / 1000;  // convert ms to seconds
-            } catch (NumberFormatException e) {
-                LOGGER.error("sqs_error: invalid sentTimestamp, messageId={}, sentTimestamp={}", msg.messageId(), sentTimestamp);
-            }
-        }
-        
-        // fallback: use current time
-        return System.currentTimeMillis() / 1000;
-    }
-    
-    /**
-     * Count SQS messages from oldestQueueTs to oldestQueueTs + 5 minutes
-     */
-    private int countSqsMessages(List<Message> sqsMessages, long oldestQueueTs) {
+    private int countSqsMessages(List<SqsParsedMessage> sqsMessages, long oldestQueueTs) {
 
         int count = 0;
         int allowlistedCount = 0;
         long windowEnd = oldestQueueTs + 5 * 60;
 
-        for (Message msg : sqsMessages) {
-            Long ts = extractTimestampFromMessage(msg);
+        for (SqsParsedMessage msg : sqsMessages) {
+            long ts = msg.timestamp();
 
             if (ts < oldestQueueTs || ts > windowEnd) {
                 continue;

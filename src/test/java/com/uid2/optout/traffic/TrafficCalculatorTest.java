@@ -5,6 +5,7 @@ import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.optout.OptOutCollection;
 import com.uid2.shared.optout.OptOutEntry;
 import com.uid2.optout.sqs.SqsMessageOperations;
+import com.uid2.optout.sqs.SqsParsedMessage;
 import com.uid2.optout.Const;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -1064,26 +1065,16 @@ public class TrafficCalculatorTest {
     /**
      * Create a mock SQS message with specified timestamp
      */
-    private Message createSqsMessage(long timestampSeconds) {
-        Map<MessageSystemAttributeName, String> attributes = new HashMap<>();
-        attributes.put(MessageSystemAttributeName.SENT_TIMESTAMP, String.valueOf(timestampSeconds * 1000));
-
-        return Message.builder()
-            .messageId("test-msg-" + timestampSeconds)
-            .body("{\"test\": \"data\"}")
-            .attributes(attributes)
-            .build();
-    }
-
-    /**
-     * Create a mock SQS message without timestamp
-     */
-    private Message createSqsMessageWithoutTimestamp() {
-        return Message.builder()
-            .messageId("test-msg-no-timestamp")
-            .body("{\"test\": \"data\"}")
-            .attributes(new HashMap<>())
-            .build();
+    private SqsParsedMessage createSqsMessage(long timestampSeconds) {
+        return new SqsParsedMessage(
+            Message.builder().build(), 
+            new byte[32], 
+            new byte[32], 
+            timestampSeconds, 
+            "test@test.test", 
+            null, 
+            "127.0.0.1", 
+            "test-trace-id");
     }
 
     /**
@@ -1144,7 +1135,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
         TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - 100+1 < 5 * 50 = 250, so should be DEFAULT
@@ -1175,7 +1166,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
         TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - 100+1 >= 5 * 10 = 50, DELAYED_PROCESSING
@@ -1250,7 +1241,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Add 30 SQS entries in [t, t+5min]
-        List<Message> sqsMessages = new ArrayList<>();
+        List<SqsParsedMessage> sqsMessages = new ArrayList<>();
         for (int i = 0; i < 30; i++) {
             sqsMessages.add(createSqsMessage(t - i * 10));
         }
@@ -1296,7 +1287,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
         TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - should filter out entries in traffic calc config ranges
@@ -1322,7 +1313,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - first call should populate cache
-        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
         calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         Map<String, Object> stats = calculator.getCacheStats();
@@ -1369,30 +1360,6 @@ public class TrafficCalculatorTest {
     }
 
     @Test
-    void testCalculateStatus_invalidSqsMessageTimestamp() throws Exception {
-        // Setup - create delta files with some entries
-        long currentTime = System.currentTimeMillis() / 1000;
-        long t = currentTime;
-        
-        List<Long> timestamps = Arrays.asList(t - 3600);
-        byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
-        
-        when(cloudStorage.list(S3_DELTA_PREFIX)).thenReturn(Arrays.asList("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"));
-        when(cloudStorage.download("optout-v2/delta/optout-delta--01_2025-11-13T00.00.00Z_aaaaaaaa.dat"))
-            .thenReturn(new ByteArrayInputStream(deltaFileBytes));
-
-        TrafficCalculator calculator = new TrafficCalculator(
-            cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
-
-        // Act - SQS message without timestamp (should use current time)
-        List<Message> sqsMessages = Arrays.asList(createSqsMessageWithoutTimestamp());
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
-
-        // Assert - DEFAULT
-        assertEquals(TrafficCalculator.TrafficStatus.DEFAULT, status);
-    }
-
-    @Test
     void testCalculateStatus_multipleDeltaFiles() throws Exception {
         // Setup - create delta files with some entries
         long currentTime = System.currentTimeMillis() / 1000;
@@ -1425,7 +1392,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
         TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - DEFAULT
@@ -1459,7 +1426,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
         TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert - DEFAULT
@@ -1483,7 +1450,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act
-        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
         TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
 
         // Assert
@@ -1520,7 +1487,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - 1 message read by us, but 600 invisible messages from other consumers
-        List<Message> sqsMessages = Arrays.asList(createSqsMessage(t));
+        List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
         
         // QueueAttributes: 0 visible, 600 invisible (other consumers), 0 delayed
         // Since we read 1 message, otherConsumers = 600 - 1 = 599
@@ -1557,7 +1524,7 @@ public class TrafficCalculatorTest {
 
         // Act - 200 messages read by us + 450 invisible (200 are ours + 250 from others)
         // Messages must be within 5-minute window to be counted, so use 1-second spacing
-        List<Message> sqsMessages = new ArrayList<>();
+        List<SqsParsedMessage> sqsMessages = new ArrayList<>();
         for (int i = 0; i < 200; i++) {
             sqsMessages.add(createSqsMessage(t - i)); // 1 second apart, all within 5-minute window
         }
