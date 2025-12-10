@@ -248,7 +248,7 @@ public class TrafficCalculator {
             // process delta files and count records in [deltaWindowStart, newestDeltaTs]
             // files are sorted newest to oldest, records within files are sorted newest to oldest
             // stop when the newest record in a file is older than the window
-            int sum = 0;
+            int totalRecords = 0;
             int deltaRecordsCount = 0;
             int deltaAllowlistedCount = 0;
             int filesProcessed = 0;
@@ -287,7 +287,7 @@ public class TrafficCalculator {
                     // increment sum if record is within the delta window
                     if (ts >= deltaWindowStart) {
                         deltaRecordsCount++;
-                        sum++;
+                        totalRecords++;
                     }
                 }
             }
@@ -299,7 +299,7 @@ public class TrafficCalculator {
             int sqsCount = 0;
             if (sqsMessages != null && !sqsMessages.isEmpty()) {
                 sqsCount = countSqsMessages(sqsMessages, oldestQueueTs);
-                sum += sqsCount;
+                totalRecords += sqsCount;
             }
             
             // add invisible messages being processed by other consumers
@@ -310,16 +310,16 @@ public class TrafficCalculator {
                 int totalInvisible = queueAttributes.getApproximateNumberOfMessagesNotVisible();
                 int ourMessages = (sqsMessages != null ? sqsMessages.size() : 0) + denylistedCount + filteredAsTooRecentCount;
                 otherConsumersMessages = Math.max(0, totalInvisible - ourMessages);
-                sum += otherConsumersMessages;
+                totalRecords += otherConsumersMessages;
                 LOGGER.info("traffic calculation: adding {} invisible messages from other consumers (totalInvisible={}, ourMessages={})",
                            otherConsumersMessages, totalInvisible, ourMessages);
             }
             
             // determine status
-            TrafficStatus status = determineStatus(sum, this.baselineTraffic);
+            TrafficStatus status = determineStatus(totalRecords, this.baselineTraffic);
             
             LOGGER.info("traffic calculation complete: sum={} (deltaRecords={} + sqsMessages={} + otherConsumers={}), baselineTraffic={}, thresholdMultiplier={}, status={}", 
-                       sum, deltaRecordsCount, sqsCount, otherConsumersMessages, this.baselineTraffic, this.thresholdMultiplier, status);
+                       totalRecords, deltaRecordsCount, sqsCount, otherConsumersMessages, this.baselineTraffic, this.thresholdMultiplier, status);
             
             return status;
             
