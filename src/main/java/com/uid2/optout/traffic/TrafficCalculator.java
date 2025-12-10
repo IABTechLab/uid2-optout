@@ -35,11 +35,9 @@ import java.util.stream.Collectors;
 public class TrafficCalculator {
     private static final Logger LOGGER = LoggerFactory.getLogger(TrafficCalculator.class);
     
-    private static final int HOURS_24 = 24 * 3600;  // 24 hours in seconds
-    
     private final Map<String, FileRecordCache> deltaFileCache = new ConcurrentHashMap<>();
     private final ICloudStorage cloudStorage;
-    private final String s3DeltaPrefix;  // (e.g. "optout-v2/delta/")
+    private final String s3DeltaPrefix;
     private final String trafficCalcConfigPath;
     private int baselineTraffic;
     private int thresholdMultiplier;
@@ -58,8 +56,8 @@ public class TrafficCalculator {
      * 1GB of memory can store ~130 million timestamps (1024^3)/8
      */
     private static class FileRecordCache {
-        final List<Long> timestamps;  // All non-sentinel record timestamps
-        final long newestTimestamp;    // evict delta from cache based on oldest record timestamp
+        final List<Long> timestamps;  // all non-sentinel record timestamps
+        final long newestTimestamp;    // evict delta from cache based on newest record timestamp
         
         FileRecordCache(List<Long> timestamps) {
             this.timestamps = timestamps;
@@ -77,17 +75,17 @@ public class TrafficCalculator {
     }
 
     /**
-     * Constructor for OptOutTrafficCalculator
+     * Constructor for TrafficCalculator
      * 
      * @param cloudStorage Cloud storage for reading delta files
      * @param s3DeltaPrefix S3 prefix for delta files
-     * @param trafficCalcConfigS3Path S3 path for traffic calc config
+     * @param trafficCalcConfigPath mount path for traffic calc config
      */
     public TrafficCalculator(ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficCalcConfigPath) throws MalformedTrafficCalcConfigException {
         this.cloudStorage = cloudStorage;
         this.s3DeltaPrefix = s3DeltaPrefix;
         this.trafficCalcConfigPath = trafficCalcConfigPath;
-        reloadTrafficCalcConfig();  // Load ConfigMap
+        reloadTrafficCalcConfig();
         
         LOGGER.info("initialized: s3DeltaPrefix={}, threshold={}x", 
                    s3DeltaPrefix, thresholdMultiplier);
@@ -181,7 +179,7 @@ public class TrafficCalculator {
             
             ranges.sort(Comparator.comparing(range -> range.get(0)));
             
-            // Validate no overlapping ranges
+            // validate that there are no overlapping ranges
             for (int i = 0; i < ranges.size() - 1; i++) {
                 long currentEnd = ranges.get(i).get(1);
                 long nextStart = ranges.get(i + 1).get(0);
@@ -223,7 +221,7 @@ public class TrafficCalculator {
     public TrafficStatus calculateStatus(List<Message> sqsMessages, SqsMessageOperations.QueueAttributes queueAttributes, int denylistedCount, int filteredAsTooRecentCount) {
         
         try {
-            // Get list of delta files from S3 (sorted newest to oldest)
+            // get list of delta files from s3 (sorted newest to oldest)
             List<String> deltaS3Paths = listDeltaFiles();
             
             if (deltaS3Paths.isEmpty()) {
@@ -231,25 +229,25 @@ public class TrafficCalculator {
                 throw new RuntimeException("no delta files found in s3 at prefix=" + s3DeltaPrefix);
             }
             
-            // Find newest delta file timestamp for delta traffic window
+            // find newest delta file timestamp for delta traffic window
             long newestDeltaTs = findNewestDeltaTimestamp(deltaS3Paths);
             LOGGER.info("traffic calculation: newestDeltaTs={}", newestDeltaTs);
             
-            // Find oldest SQS queue message timestamp for queue window
+            // find oldest sqs queue message timestamp for queue window
             long oldestQueueTs = findOldestQueueTimestamp(sqsMessages);
             LOGGER.info("traffic calculation: oldestQueueTs={}", oldestQueueTs);
             
-            // Define start time of the delta evaluation window
-            // We need evaluationWindowSeconds of non-allowlisted time, so we iteratively extend
+            // define start time of the delta evaluation window
+            // we need evaluationWindowSeconds of non-allowlisted time, so we iteratively extend
             // the window to account for any allowlist ranges in the extended portion
             long deltaWindowStart = calculateWindowStartWithAllowlist(newestDeltaTs, this.evaluationWindowSeconds);
             
-            // Evict old cache entries (older than delta window start)
+            // evict old cache entries (older than delta window start)
             evictOldCacheEntries(deltaWindowStart);
             
-            // Process delta files and count records in [deltaWindowStart, newestDeltaTs]
-            // Files are sorted newest to oldest, records within files are sorted newest to oldest
-            // Stop when the newest record in a file is older than the window
+            // process delta files and count records in [deltaWindowStart, newestDeltaTs]
+            // files are sorted newest to oldest, records within files are sorted newest to oldest
+            // stop when the newest record in a file is older than the window
             int sum = 0;
             int deltaRecordsCount = 0;
             int deltaAllowlistedCount = 0;
@@ -268,25 +266,25 @@ public class TrafficCalculator {
                 List<Long> timestamps = getTimestampsFromFile(s3Path);
                 filesProcessed++;
                 
-                // Check newest record in file - if older than window, stop processing remaining files
+                // check newest record in file - if older than window, stop processing remaining files
                 long newestRecordTs = timestamps.get(0);
                 if (newestRecordTs < deltaWindowStart) {
                     break;
                 }
                 
                 for (long ts : timestamps) {
-                    // Stop condition: record is older than our window
+                    // stop condition: record is older than our window
                     if (ts < deltaWindowStart) {
                         break;
                     }
                     
-                    // skip records in allowlisted ranges
+                    // skip records that are in allowlisted ranges
                     if (isInAllowlist(ts)) {
                         deltaAllowlistedCount++;
                         continue;
                     }
                     
-                    // increment sum if record is in delta window
+                    // increment sum if record is within the delta window
                     if (ts >= deltaWindowStart) {
                         deltaRecordsCount++;
                         sum++;
@@ -297,16 +295,16 @@ public class TrafficCalculator {
             LOGGER.info("delta files: processed={}, deltaRecords={}, allowlisted={}, cache hits={}, misses={}, cacheSize={}", 
                        filesProcessed, deltaRecordsCount, deltaAllowlistedCount, cacheHits, cacheMisses, deltaFileCache.size());
             
-            // Count SQS messages in [oldestQueueTs, oldestQueueTs + 5m] with allowlist filtering
+            // count sqs messages in [oldestQueueTs, oldestQueueTs + 5m] with allowlist filtering
             int sqsCount = 0;
             if (sqsMessages != null && !sqsMessages.isEmpty()) {
                 sqsCount = countSqsMessages(sqsMessages, oldestQueueTs);
                 sum += sqsCount;
             }
             
-            // Add invisible messages being processed by OTHER consumers
+            // add invisible messages being processed by other consumers
             // (notVisible count includes our messages, so subtract what we've read to avoid double counting)
-            // ourMessages = delta messages + denylisted messages + filtered "too recent" messages
+            // ourMessages = delta messages + denylisted messages + filtered as "too recent" messages
             int otherConsumersMessages = 0;
             if (queueAttributes != null) {
                 int totalInvisible = queueAttributes.getApproximateNumberOfMessagesNotVisible();
@@ -317,7 +315,7 @@ public class TrafficCalculator {
                            otherConsumersMessages, totalInvisible, ourMessages);
             }
             
-            // Determine status
+            // determine status
             TrafficStatus status = determineStatus(sum, this.baselineTraffic);
             
             LOGGER.info("traffic calculation complete: sum={} (deltaRecords={} + sqsMessages={} + otherConsumers={}), baselineTraffic={}, thresholdMultiplier={}, status={}", 
@@ -332,15 +330,15 @@ public class TrafficCalculator {
     }
     
     /**
-     * Find the newest timestamp from delta files.
-     * Reads the newest delta file and returns its maximum timestamp.
+     * find the newest timestamp from delta files.
+     * reads the newest delta file and returns its maximum timestamp.
      */
     private long findNewestDeltaTimestamp(List<String> deltaS3Paths) throws IOException {
         if (deltaS3Paths == null || deltaS3Paths.isEmpty()) {
             return System.currentTimeMillis() / 1000;
         }
         
-        // Delta files are sorted (ISO 8601 format, lexicographically sortable) so first file is newest
+        // delta files are sorted (ISO 8601 format, lexicographically sortable) so first file is newest
         String newestDeltaPath = deltaS3Paths.get(0);
         List<Long> timestamps = getTimestampsFromFile(newestDeltaPath);
         
@@ -359,10 +357,10 @@ public class TrafficCalculator {
      */
     private List<String> listDeltaFiles() {
         try {
-            // List all objects with the delta prefix
+            // list all objects with the delta prefix
             List<String> allFiles = cloudStorage.list(s3DeltaPrefix);
             
-            // Filter to only .dat delta files and sort newest to oldest
+            // filter to only .dat delta files and sort newest to oldest
             List<String> deltaFiles = allFiles.stream()
                 .filter(OptOutUtils::isDeltaFile)
                 .sorted(OptOutUtils.DeltaFilenameComparatorDescending)
@@ -389,19 +387,19 @@ public class TrafficCalculator {
      * Get timestamps from a delta file (S3 path), using cache if available
      */
     private List<Long> getTimestampsFromFile(String s3Path) throws IOException {
-        // Extract filename from S3 path for cache key
+        // extract filename from s3 path for cache key
         String filename = s3Path.substring(s3Path.lastIndexOf('/') + 1);
         
-        // Check cache first
+        // check cache first
         FileRecordCache cached = deltaFileCache.get(filename);
         if (cached != null) {
             return cached.timestamps;
         }
         
-        // Cache miss - download from S3
+        // cache miss - download from s3
         List<Long> timestamps = readTimestampsFromS3(s3Path);
         
-        // Store in cache
+        // store in cache
         deltaFileCache.put(filename, new FileRecordCache(timestamps));
         
         return timestamps;
@@ -419,7 +417,7 @@ public class TrafficCalculator {
             for (int i = 0; i < collection.size(); i++) {
                 OptOutEntry entry = collection.get(i);
                 
-                // Skip sentinel entries
+                // skip sentinel entries
                 if (entry.isSpecialHash()) {
                     continue;
                 }
@@ -443,7 +441,7 @@ public class TrafficCalculator {
             long start = range.get(0);
             long end = range.get(1);
             
-            // Clip range to window boundaries
+            // clip range to window boundaries
             if (start < windowStart) {
                 start = windowStart;
             }
@@ -451,7 +449,7 @@ public class TrafficCalculator {
                 end = t;
             }
             
-            // Only add duration if there's actual overlap (start < end)
+            // only add duration if there's actual overlap (start < end)
             if (start < end) {
                 totalDuration += end - start;
             }
@@ -466,7 +464,7 @@ public class TrafficCalculator {
     long calculateWindowStartWithAllowlist(long newestDeltaTs, int evaluationWindowSeconds) {
         long allowlistDuration = getAllowlistDuration(newestDeltaTs, newestDeltaTs - evaluationWindowSeconds);
         
-        // Each iteration discovers at least one new allowlist range, so max iterations = number of ranges
+        // each iteration discovers at least one new allowlist range, so max iterations = number of ranges
         int maxIterations = this.allowlistRanges.size() + 1;
         
         for (int i = 0; i < maxIterations && allowlistDuration > 0; i++) {
@@ -474,7 +472,7 @@ public class TrafficCalculator {
             long newAllowlistDuration = getAllowlistDuration(newestDeltaTs, newWindowStart);
             
             if (newAllowlistDuration == allowlistDuration) {
-                // No new allowlist time in extended portion, we've converged
+                // no new allowlist time in extended portion, we've converged
                 break;
             }
             
@@ -506,17 +504,17 @@ public class TrafficCalculator {
      * Extract timestamp from SQS message (from SentTimestamp attribute)
      */
     private Long extractTimestampFromMessage(Message msg) {
-        // Get SentTimestamp attribute (milliseconds)
+        // get SentTimestamp attribute (milliseconds)
         String sentTimestamp = msg.attributes().get(MessageSystemAttributeName.SENT_TIMESTAMP);
         if (sentTimestamp != null) {
             try {
-                return Long.parseLong(sentTimestamp) / 1000;  // Convert ms to seconds
+                return Long.parseLong(sentTimestamp) / 1000;  // convert ms to seconds
             } catch (NumberFormatException e) {
                 LOGGER.error("sqs_error: invalid sentTimestamp, messageId={}, sentTimestamp={}", msg.messageId(), sentTimestamp);
             }
         }
         
-        // Fallback: use current time
+        // fallback: use current time
         return System.currentTimeMillis() / 1000;
     }
     
@@ -602,7 +600,7 @@ public class TrafficCalculator {
         int threshold = thresholdMultiplier * baselineTraffic;
         double thresholdPercent = (double) sumCurrent / threshold * 100;
         
-        // Log warnings at increasing thresholds before circuit breaker triggers
+        // log warnings at increasing thresholds before circuit breaker triggers
         if (thresholdPercent >= 90.0) {
             LOGGER.warn("high_message_volume: 90% of threshold reached, sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
                        sumCurrent, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
