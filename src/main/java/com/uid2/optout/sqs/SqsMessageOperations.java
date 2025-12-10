@@ -91,7 +91,7 @@ public class SqsMessageOperations {
             return queueAttributes;
 
         } catch (Exception e) {
-            LOGGER.info("error getting queue attributes", e);
+            LOGGER.info("sqs_error: error getting queue attributes", e);
             return null;
         }
     }
@@ -127,8 +127,8 @@ public class SqsMessageOperations {
                 .queueUrl(queueUrl)
                 .maxNumberOfMessages(maxMessages)
                 .visibilityTimeout(visibilityTimeout)
-                .waitTimeSeconds(0) // Non-blocking poll
-                .messageSystemAttributeNames(MessageSystemAttributeName.SENT_TIMESTAMP) // Request SQS system timestamp
+                .waitTimeSeconds(0) // non-blocking poll
+                .messageSystemAttributeNames(MessageSystemAttributeName.SENT_TIMESTAMP) // request sqs system timestamp
                 .build();
 
             ReceiveMessageResponse response = sqsClient.receiveMessage(receiveRequest);
@@ -173,7 +173,6 @@ public class SqsMessageOperations {
             }
 
             LOGGER.info("deleted {} messages", totalDeleted);
-
         } catch (Exception e) {
             LOGGER.error("sqs_error: error deleting messages", e);
         }
