@@ -83,7 +83,7 @@ public class SqsBatchProcessor {
             List<Message> invalidMessages = identifyInvalidMessages(messageBatch, parsedBatch);
             if (!invalidMessages.isEmpty()) {
                 LOGGER.error("sqs_error: found {} invalid messages in batch {}, deleting", invalidMessages.size(), batchNumber);
-                SqsMessageOperations.deleteMessagesFromSqs(this.sqsClient, this.queueUrl, invalidMessages);
+                SqsMessageOperations.deleteMessagesFromSqs(this.sqsClient, this.queueUrl, invalidMessages); // TODO: send to a folder in the dropped requests bucket before deleting.
             }
         }
         

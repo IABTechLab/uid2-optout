@@ -27,7 +27,7 @@ public enum StopReason {
     MESSAGE_LIMIT_EXCEEDED,
     
     /**
-     * Pre-existing manual override was set (checked at job start).
+     * Pre-existing manual override was set to DELAYED_PROCESSING (checked at job start).
      */
     MANUAL_OVERRIDE_ACTIVE,
     

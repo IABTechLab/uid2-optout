@@ -29,10 +29,10 @@ public class SqsWindowReader {
                           int visibilityTimeout, int deltaWindowSeconds, int maxMessagesPerWindow) {
         this.sqsClient = sqsClient;
         this.queueUrl = queueUrl;
-        this.maxMessagesPerPoll = maxMessagesPerPoll;
-        this.visibilityTimeout = visibilityTimeout;
+        this.maxMessagesPerPoll = maxMessagesPerPoll; // 10 max 
+        this.visibilityTimeout = visibilityTimeout; // TODO: ensure we can process all messages before visibility timeout
         this.deltaWindowSeconds = deltaWindowSeconds;
-        this.maxMessagesPerWindow = maxMessagesPerWindow;
+        this.maxMessagesPerWindow = maxMessagesPerWindow; // TODO: ensure we can process all messages before visibility timeout
         this.batchProcessor = new SqsBatchProcessor(sqsClient, queueUrl, deltaWindowSeconds);
         LOGGER.info("initialized: maxMessagesPerWindow={}, maxMessagesPerPoll={}, visibilityTimeout={}, deltaWindowSeconds={}",
                 maxMessagesPerWindow, maxMessagesPerPoll, visibilityTimeout, deltaWindowSeconds);
@@ -94,7 +94,7 @@ public class SqsWindowReader {
         int batchNumber = 0;
         int rawMessagesRead = 0;  // track total messages pulled from SQS
         
-        while (true) {
+        while (true) { // TODO: add a timeout to the loop
             if (windowMessages.size() >= maxMessagesPerWindow) {
                 LOGGER.warn("high_message_volume: message limit exceeded while reading window, {} messages >= limit {}", windowMessages.size(), maxMessagesPerWindow);
                 return WindowReadResult.messageLimitExceeded(windowMessages, currentWindowStart, rawMessagesRead);

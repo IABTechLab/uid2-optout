@@ -71,7 +71,7 @@ public class S3UploadService {
             if (onSuccess != null) {
                 onSuccess.onSuccess(messages.size());
             }
-        } catch (Exception e) {
+        } catch (Exception e) { // TODO: catch specific exceptions
             LOGGER.error("s3_error: failed to upload delta or dropped requests to path={}", s3Path, e);
             throw new IOException("s3 upload failed: " + s3Path, e);
         }
