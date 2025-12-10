@@ -396,7 +396,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             
             // If no messages, we're done (queue empty or messages too recent)
             if (windowResult.isEmpty()) {
-                stoppedDueToMessagesTooRecent = windowResult.stoppedDueToMessagesTooRecent();
+                stoppedDueToMessagesTooRecent = windowResult.getStopReason() == StopReason.MESSAGES_TOO_RECENT;
                 LOGGER.info("Delta production complete - no more eligible messages");
                 break;
             }
