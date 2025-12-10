@@ -1,7 +1,8 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.sqs;
 
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
+
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 import java.util.*;
@@ -57,9 +58,9 @@ public class SqsMessageParserTest {
 
         assertEquals(3, result.size());
         // Verify sorting (oldest first)
-        assertEquals(TEST_TIMESTAMP_SEC, result.get(0).getTimestamp());
-        assertEquals(TEST_TIMESTAMP_SEC + 1, result.get(1).getTimestamp());
-        assertEquals(TEST_TIMESTAMP_SEC + 2, result.get(2).getTimestamp());
+        assertEquals(TEST_TIMESTAMP_SEC, result.get(0).timestamp());
+        assertEquals(TEST_TIMESTAMP_SEC + 1, result.get(1).timestamp());
+        assertEquals(TEST_TIMESTAMP_SEC + 2, result.get(2).timestamp());
     }
 
     @Test
@@ -158,7 +159,7 @@ public class SqsMessageParserTest {
         assertEquals(1, result.size());
         // Timestamp should be close to current time (within 10 seconds)
         long currentTime = System.currentTimeMillis() / 1000;
-        assertTrue(Math.abs(result.get(0).getTimestamp() - currentTime) < 10);
+        assertTrue(Math.abs(result.get(0).timestamp() - currentTime) < 10);
     }
 
     @Test
@@ -172,8 +173,8 @@ public class SqsMessageParserTest {
         List<SqsParsedMessage> result = SqsMessageParser.parseAndSortMessages(messages);
 
         assertEquals(2, result.size()); // Only valid messages
-        assertEquals(TEST_TIMESTAMP_SEC, result.get(0).getTimestamp());
-        assertEquals(TEST_TIMESTAMP_SEC + 1, result.get(1).getTimestamp());
+        assertEquals(TEST_TIMESTAMP_SEC, result.get(0).timestamp());
+        assertEquals(TEST_TIMESTAMP_SEC + 1, result.get(1).timestamp());
     }
 
     @Test
@@ -184,7 +185,7 @@ public class SqsMessageParserTest {
         List<SqsParsedMessage> result = SqsMessageParser.parseAndSortMessages(Arrays.asList(message));
 
         assertEquals(1, result.size());
-        assertEquals(1699308912L, result.get(0).getTimestamp()); // Should be in seconds
+        assertEquals(1699308912L, result.get(0).timestamp()); // Should be in seconds
     }
 
     @Test
@@ -194,7 +195,7 @@ public class SqsMessageParserTest {
         List<SqsParsedMessage> result = SqsMessageParser.parseAndSortMessages(Arrays.asList(originalMessage));
 
         assertEquals(1, result.size());
-        assertSame(originalMessage, result.get(0).getOriginalMessage());
+        assertSame(originalMessage, result.get(0).originalMessage());
     }
 
     @Test
@@ -213,7 +214,7 @@ public class SqsMessageParserTest {
         assertEquals(5, result.size());
         // Verify ascending order
         for (int i = 1; i < result.size(); i++) {
-            assertTrue(result.get(i - 1).getTimestamp() <= result.get(i).getTimestamp(),
+            assertTrue(result.get(i - 1).timestamp() <= result.get(i).timestamp(),
                     "Messages should be sorted in ascending order by timestamp");
         }
     }
@@ -225,10 +226,10 @@ public class SqsMessageParserTest {
         List<SqsParsedMessage> result = SqsMessageParser.parseAndSortMessages(Arrays.asList(message));
 
         assertEquals(1, result.size());
-        assertNotNull(result.get(0).getHashBytes());
-        assertNotNull(result.get(0).getIdBytes());
-        assertEquals(32, result.get(0).getHashBytes().length);
-        assertEquals(32, result.get(0).getIdBytes().length);
+        assertNotNull(result.get(0).hashBytes());
+        assertNotNull(result.get(0).idBytes());
+        assertEquals(32, result.get(0).hashBytes().length);
+        assertEquals(32, result.get(0).idBytes().length);
     }
 
     @Test
@@ -264,8 +265,9 @@ public class SqsMessageParserTest {
         assertEquals(100, result.size());
         // Verify all are sorted
         for (int i = 1; i < result.size(); i++) {
-            assertTrue(result.get(i - 1).getTimestamp() <= result.get(i).getTimestamp());
+            assertTrue(result.get(i - 1).timestamp() <= result.get(i).timestamp());
         }
     }
 
 }
+

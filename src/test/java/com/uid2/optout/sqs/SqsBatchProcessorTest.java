@@ -1,8 +1,9 @@
-package com.uid2.optout.vertx;
+package com.uid2.optout.sqs;
 
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 
@@ -126,8 +127,8 @@ public class SqsBatchProcessorTest {
 
         // Should only include the last two (>= threshold)
         assertEquals(2, result.size());
-        assertEquals(currentTime - windowSeconds, result.get(0).getTimestamp());
-        assertEquals(currentTime - windowSeconds - 1, result.get(1).getTimestamp());
+        assertEquals(currentTime - windowSeconds, result.get(0).timestamp());
+        assertEquals(currentTime - windowSeconds - 1, result.get(1).timestamp());
     }
 
     @Test
@@ -147,9 +148,9 @@ public class SqsBatchProcessorTest {
 
         assertEquals(3, result.size());
         // Verify order is preserved
-        assertEquals(100, result.get(0).getTimestamp());
-        assertEquals(200, result.get(1).getTimestamp());
-        assertEquals(300, result.get(2).getTimestamp());
+        assertEquals(100, result.get(0).timestamp());
+        assertEquals(200, result.get(1).timestamp());
+        assertEquals(300, result.get(2).timestamp());
     }
 
     @Test

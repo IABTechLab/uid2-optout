@@ -2,6 +2,10 @@ package com.uid2.optout.vertx;
 
 import com.uid2.optout.Const;
 import com.uid2.optout.auth.InternalAuthMiddleware;
+import com.uid2.optout.sqs.SqsWindowReader;
+import com.uid2.optout.sqs.SqsParsedMessage;
+import com.uid2.optout.sqs.SqsMessageOperations;
+import com.uid2.optout.delta.StopReason;
 import com.uid2.shared.Utils;
 import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.health.HealthComponent;
@@ -392,7 +396,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             
             // If no messages, we're done (queue empty or messages too recent)
             if (windowResult.isEmpty()) {
-                stoppedDueToMessagesTooRecent = windowResult.stoppedDueToMessagesTooRecent();
+                stoppedDueToMessagesTooRecent = windowResult.getStopReason() == StopReason.MESSAGES_TOO_RECENT;
                 LOGGER.info("Delta production complete - no more eligible messages");
                 break;
             }
@@ -409,8 +413,8 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             // Write all messages
             List<Message> sqsMessages = new ArrayList<>();
             for (SqsParsedMessage msg : messages) {
-                writeOptOutEntry(deltaStream, msg.getHashBytes(), msg.getIdBytes(), msg.getTimestamp());
-                sqsMessages.add(msg.getOriginalMessage());
+                writeOptOutEntry(deltaStream, msg.hashBytes(), msg.idBytes(), msg.timestamp());
+                sqsMessages.add(msg.originalMessage());
             }
             
             // Upload and delete
