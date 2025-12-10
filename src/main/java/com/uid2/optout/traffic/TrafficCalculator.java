@@ -32,8 +32,8 @@ import java.util.stream.Collectors;
  * 
  * Returns DELAYED_PROCESSING if sumCurrent >= thresholdMultiplier * baselineTraffic, indicating abnormal traffic spike.
  */
-public class OptOutTrafficCalculator {
-    private static final Logger LOGGER = LoggerFactory.getLogger(OptOutTrafficCalculator.class);
+public class TrafficCalculator {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TrafficCalculator.class);
     
     private static final int HOURS_24 = 24 * 3600;  // 24 hours in seconds
     
@@ -83,7 +83,7 @@ public class OptOutTrafficCalculator {
      * @param s3DeltaPrefix S3 prefix for delta files
      * @param trafficCalcConfigS3Path S3 path for traffic calc config
      */
-    public OptOutTrafficCalculator(ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficCalcConfigPath) throws MalformedTrafficCalcConfigException {
+    public TrafficCalculator(ICloudStorage cloudStorage, String s3DeltaPrefix, String trafficCalcConfigPath) throws MalformedTrafficCalcConfigException {
         this.cloudStorage = cloudStorage;
         this.s3DeltaPrefix = s3DeltaPrefix;
         this.trafficCalcConfigPath = trafficCalcConfigPath;

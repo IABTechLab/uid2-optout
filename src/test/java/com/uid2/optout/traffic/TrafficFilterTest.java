@@ -5,7 +5,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import com.uid2.optout.sqs.SqsParsedMessage;
-import com.uid2.optout.traffic.OptOutTrafficFilter;
+import com.uid2.optout.traffic.TrafficFilter;
 
 import software.amazon.awssdk.services.sqs.model.Message;
 
@@ -14,7 +14,7 @@ import java.nio.file.Path;
 
 import static org.junit.Assert.*;
 
-public class OptOutTrafficFilterTest {
+public class TrafficFilterTest {
     
     private static final String TEST_CONFIG_PATH = "./traffic-config.json";
     
@@ -47,7 +47,7 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - no rules
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
         assertEquals(0, filter.filterRules.size());
     }
     
@@ -67,7 +67,7 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - one rule
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
         assertEquals(1, filter.filterRules.size());
     }
     
@@ -91,11 +91,11 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - two rules
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
         assertEquals(2, filter.filterRules.size());
     }
     
-    @Test(expected = OptOutTrafficFilter.MalformedTrafficFilterConfigException.class)
+    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
     public void testParseFilterRules_missingDenylistRequests() throws Exception {
         // Setup - config without denylist_requests field
         String config = """
@@ -106,10 +106,10 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        new TrafficFilter(TEST_CONFIG_PATH);
     }
     
-    @Test(expected = OptOutTrafficFilter.MalformedTrafficFilterConfigException.class)
+    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
     public void testParseFilterRules_invalidRange_startAfterEnd() throws Exception {
         // Setup - range where start > end
         String config = """
@@ -125,10 +125,10 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        new TrafficFilter(TEST_CONFIG_PATH);
     }
     
-    @Test(expected = OptOutTrafficFilter.MalformedTrafficFilterConfigException.class)
+    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
     public void testParseFilterRules_invalidRange_startEqualsEnd() throws Exception {
         // Setup - range where start == end
         String config = """
@@ -144,10 +144,10 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        new TrafficFilter(TEST_CONFIG_PATH);
     }
     
-    @Test(expected = OptOutTrafficFilter.MalformedTrafficFilterConfigException.class)
+    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
     public void testParseFilterRules_rangeExceeds24Hours() throws Exception {
         // Setup - range longer than 24 hours (86400 seconds)
         String config = """
@@ -163,10 +163,10 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        new TrafficFilter(TEST_CONFIG_PATH);
     }
     
-    @Test(expected = OptOutTrafficFilter.MalformedTrafficFilterConfigException.class)
+    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
     public void testParseFilterRules_emptyIPs() throws Exception {
         // Setup - rule with empty IP list
         String config = """
@@ -182,10 +182,10 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        new TrafficFilter(TEST_CONFIG_PATH);
     }
     
-    @Test(expected = OptOutTrafficFilter.MalformedTrafficFilterConfigException.class)
+    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
     public void testParseFilterRules_missingIPs() throws Exception {
         // Setup - rule without IPs field
         String config = """
@@ -200,7 +200,7 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        new TrafficFilter(TEST_CONFIG_PATH);
     }
     
     @Test
@@ -220,7 +220,7 @@ public class OptOutTrafficFilterTest {
         SqsParsedMessage message = createTestMessage(1700001800, "192.168.1.1");
         
         // Act & Assert - denylisted
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
         assertTrue(filter.isDenylisted(message));
     }
     
@@ -238,7 +238,7 @@ public class OptOutTrafficFilterTest {
                 }
                 """;
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
         
         // Act & Assert - message before range not denylisted
         SqsParsedMessage messageBefore = createTestMessage(1699999999, "192.168.1.1");
@@ -262,7 +262,7 @@ public class OptOutTrafficFilterTest {
                 }
                 """;
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
 
         // Act & Assert - non-matching IP not denylisted
         SqsParsedMessage message = createTestMessage(1700001800, "10.0.0.1");
@@ -283,7 +283,7 @@ public class OptOutTrafficFilterTest {
                 }
                 """;
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
         
         // Act & Assert - message at start boundary (inclusive) denylisted
         SqsParsedMessage messageAtStart = createTestMessage(1700000000, "192.168.1.1");
@@ -313,7 +313,7 @@ public class OptOutTrafficFilterTest {
                 """;
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
         
         // Act & Assert - message matches first rule
         SqsParsedMessage msg1 = createTestMessage(1700001800, "192.168.1.1");
@@ -342,7 +342,7 @@ public class OptOutTrafficFilterTest {
                 }
                 """;
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
         
         // Act & Assert - message with null IP not denylisted
         SqsParsedMessage message = createTestMessage(1700001800, null);
@@ -365,7 +365,7 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), initialConfig);
         
         // Act & Assert - one rule
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
         assertEquals(1, filter.filterRules.size());
         
         // Setup - update config
@@ -390,10 +390,10 @@ public class OptOutTrafficFilterTest {
         assertEquals(2, filter.filterRules.size());
     }
     
-    @Test(expected = OptOutTrafficFilter.MalformedTrafficFilterConfigException.class)
+    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
     public void testReloadTrafficFilterConfig_fileNotFound() throws Exception {
         // Setup, Act & Assert - try to create filter with non-existent config
-        new OptOutTrafficFilter("./non-existent-file.json");
+        new TrafficFilter("./non-existent-file.json");
     }
     
     @Test
@@ -412,7 +412,7 @@ public class OptOutTrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - one rule
-        OptOutTrafficFilter filter = new OptOutTrafficFilter(TEST_CONFIG_PATH);
+        TrafficFilter filter = new TrafficFilter(TEST_CONFIG_PATH);
         assertEquals(1, filter.filterRules.size());
     }
     

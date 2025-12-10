@@ -15,8 +15,8 @@ import java.nio.charset.StandardCharsets;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.json.JsonArray;
 
-public class OptOutTrafficFilter {
-    private static final Logger LOGGER = LoggerFactory.getLogger(OptOutTrafficFilter.class);
+public class TrafficFilter {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TrafficFilter.class);
 
     private final String trafficFilterConfigPath;
     List<TrafficFilterRule> filterRules;
@@ -56,7 +56,7 @@ public class OptOutTrafficFilter {
      * @param trafficFilterConfigPath S3 path for traffic filter config
      * @throws MalformedTrafficFilterConfigException if the traffic filter config is invalid
      */
-    public OptOutTrafficFilter(String trafficFilterConfigPath) throws MalformedTrafficFilterConfigException {
+    public TrafficFilter(String trafficFilterConfigPath) throws MalformedTrafficFilterConfigException {
         this.trafficFilterConfigPath = trafficFilterConfigPath;
         // Initial filter rules load
         this.filterRules = Collections.emptyList(); // start empty
