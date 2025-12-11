@@ -1,25 +1,24 @@
 package com.uid2.optout.traffic;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import com.uid2.optout.sqs.SqsParsedMessage;
-import com.uid2.optout.traffic.TrafficFilter;
 
 import software.amazon.awssdk.services.sqs.model.Message;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class TrafficFilterTest {
     
     private static final String TEST_CONFIG_PATH = "./traffic-config.json";
     
-    @Before
-    public void setUp() {
+    @BeforeEach
+    void setUp() {
         try {
             Files.deleteIfExists(Path.of(TEST_CONFIG_PATH));
         } catch (Exception e) {
@@ -27,8 +26,8 @@ public class TrafficFilterTest {
         }
     }
     
-    @After
-    public void tearDown() {
+    @AfterEach
+    void tearDown() {
         try {
             Files.deleteIfExists(Path.of(TEST_CONFIG_PATH));
         } catch (Exception e) {
@@ -37,7 +36,7 @@ public class TrafficFilterTest {
     }
     
     @Test
-    public void testParseFilterRules_emptyRules() throws Exception {
+    void testParseFilterRules_emptyRules() throws Exception {
         // Setup - empty denylist
         String config = """
                 {
@@ -52,7 +51,7 @@ public class TrafficFilterTest {
     }
     
     @Test
-    public void testParseFilterRules_singleRule() throws Exception {
+    void testParseFilterRules_singleRule() throws Exception {
         // Setup - config with one rule
         String config = """
                 {
@@ -72,7 +71,7 @@ public class TrafficFilterTest {
     }
     
     @Test
-    public void testParseFilterRules_multipleRules() throws Exception {
+    void testParseFilterRules_multipleRules() throws Exception {
         // Setup - config with multiple rules
         String config = """
                 {
@@ -95,8 +94,8 @@ public class TrafficFilterTest {
         assertEquals(2, filter.filterRules.size());
     }
     
-    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
-    public void testParseFilterRules_missingDenylistRequests() throws Exception {
+    @Test
+    void testParseFilterRules_missingDenylistRequests() throws Exception {
         // Setup - config without denylist_requests field
         String config = """
                 {
@@ -106,11 +105,12 @@ public class TrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new TrafficFilter(TEST_CONFIG_PATH);
+        assertThrows(TrafficFilter.MalformedTrafficFilterConfigException.class, 
+            () -> new TrafficFilter(TEST_CONFIG_PATH));
     }
     
-    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
-    public void testParseFilterRules_invalidRange_startAfterEnd() throws Exception {
+    @Test
+    void testParseFilterRules_invalidRange_startAfterEnd() throws Exception {
         // Setup - range where start > end
         String config = """
                 {
@@ -125,11 +125,12 @@ public class TrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new TrafficFilter(TEST_CONFIG_PATH);
+        assertThrows(TrafficFilter.MalformedTrafficFilterConfigException.class, 
+            () -> new TrafficFilter(TEST_CONFIG_PATH));
     }
     
-    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
-    public void testParseFilterRules_invalidRange_startEqualsEnd() throws Exception {
+    @Test
+    void testParseFilterRules_invalidRange_startEqualsEnd() throws Exception {
         // Setup - range where start == end
         String config = """
                 {
@@ -144,11 +145,12 @@ public class TrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new TrafficFilter(TEST_CONFIG_PATH);
+        assertThrows(TrafficFilter.MalformedTrafficFilterConfigException.class, 
+            () -> new TrafficFilter(TEST_CONFIG_PATH));
     }
     
-    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
-    public void testParseFilterRules_rangeExceeds24Hours() throws Exception {
+    @Test
+    void testParseFilterRules_rangeExceeds24Hours() throws Exception {
         // Setup - range longer than 24 hours (86400 seconds)
         String config = """
                 {
@@ -163,11 +165,12 @@ public class TrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new TrafficFilter(TEST_CONFIG_PATH);
+        assertThrows(TrafficFilter.MalformedTrafficFilterConfigException.class, 
+            () -> new TrafficFilter(TEST_CONFIG_PATH));
     }
     
-    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
-    public void testParseFilterRules_emptyIPs() throws Exception {
+    @Test
+    void testParseFilterRules_emptyIPs() throws Exception {
         // Setup - rule with empty IP list
         String config = """
                 {
@@ -182,11 +185,12 @@ public class TrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new TrafficFilter(TEST_CONFIG_PATH);
+        assertThrows(TrafficFilter.MalformedTrafficFilterConfigException.class, 
+            () -> new TrafficFilter(TEST_CONFIG_PATH));
     }
     
-    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
-    public void testParseFilterRules_missingIPs() throws Exception {
+    @Test
+    void testParseFilterRules_missingIPs() throws Exception {
         // Setup - rule without IPs field
         String config = """
                 {
@@ -200,11 +204,12 @@ public class TrafficFilterTest {
         Files.writeString(Path.of(TEST_CONFIG_PATH), config);
         
         // Act & Assert - throws exception
-        new TrafficFilter(TEST_CONFIG_PATH);
+        assertThrows(TrafficFilter.MalformedTrafficFilterConfigException.class, 
+            () -> new TrafficFilter(TEST_CONFIG_PATH));
     }
     
     @Test
-    public void testIsDenylisted_matchingIPAndTimestamp() throws Exception {
+    void testIsDenylisted_matchingIPAndTimestamp() throws Exception {
         // Setup - filter with denylist rule
         String config = """
                 {
@@ -225,7 +230,7 @@ public class TrafficFilterTest {
     }
     
     @Test
-    public void testIsDenylisted_matchingIPOutsideTimeRange() throws Exception {
+    void testIsDenylisted_matchingIPOutsideTimeRange() throws Exception {
         // Setup - filter with denylist rule
         String config = """
                 {
@@ -249,7 +254,7 @@ public class TrafficFilterTest {
     }
     
     @Test
-    public void testIsDenylisted_nonMatchingIP() throws Exception {
+    void testIsDenylisted_nonMatchingIP() throws Exception {
         // Setup - filter with denylist rule
         String config = """
                 {
@@ -270,7 +275,7 @@ public class TrafficFilterTest {
     }
     
     @Test
-    public void testIsDenylisted_atRangeBoundaries() throws Exception {
+    void testIsDenylisted_atRangeBoundaries() throws Exception {
         // Setup - filter with denylist rule
         String config = """
                 {
@@ -295,7 +300,7 @@ public class TrafficFilterTest {
     }
     
     @Test
-    public void testIsDenylisted_multipleRules() throws Exception {
+    void testIsDenylisted_multipleRules() throws Exception {
         // Setup - multiple denylist rules
         String config = """
                 {
@@ -329,7 +334,7 @@ public class TrafficFilterTest {
     }
     
     @Test
-    public void testIsDenylisted_nullClientIp() throws Exception {
+    void testIsDenylisted_nullClientIp() throws Exception {
         // Setup - filter with denylist rule
         String config = """
                 {
@@ -350,7 +355,7 @@ public class TrafficFilterTest {
     }
     
     @Test
-    public void testReloadTrafficFilterConfig_success() throws Exception {
+    void testReloadTrafficFilterConfig_success() throws Exception {
         // Setup - config with one rule
         String initialConfig = """
                 {
@@ -390,14 +395,15 @@ public class TrafficFilterTest {
         assertEquals(2, filter.filterRules.size());
     }
     
-    @Test(expected = TrafficFilter.MalformedTrafficFilterConfigException.class)
-    public void testReloadTrafficFilterConfig_fileNotFound() throws Exception {
+    @Test
+    void testReloadTrafficFilterConfig_fileNotFound() {
         // Setup, Act & Assert - try to create filter with non-existent config
-        new TrafficFilter("./non-existent-file.json");
+        assertThrows(TrafficFilter.MalformedTrafficFilterConfigException.class, 
+            () -> new TrafficFilter("./non-existent-file.json"));
     }
     
     @Test
-    public void testParseFilterRules_maxValidRange() throws Exception {
+    void testParseFilterRules_maxValidRange() throws Exception {
         // Setup - range exactly 24 hours (86400 seconds) - should be valid
         String config = """
                 {
