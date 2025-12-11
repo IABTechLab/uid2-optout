@@ -265,8 +265,7 @@ public class TrafficCalculator {
                 filesProcessed++;
                 
                 // check newest record in file - if older than window, stop processing remaining files
-                long newestRecordTs = timestamps.get(0);
-                if (newestRecordTs < deltaWindowStart) {
+                if (timestamps.isEmpty() || timestamps.get(0) < deltaWindowStart) {
                     break;
                 }
                 
@@ -282,11 +281,8 @@ public class TrafficCalculator {
                         continue;
                     }
                     
-                    // increment sum if record is within the delta window
-                    if (ts >= deltaWindowStart) {
-                        deltaRecordsCount++;
-                        totalRecords++;
-                    }
+                    deltaRecordsCount++;
+                    totalRecords++;
                 }
             }
             
@@ -490,7 +486,7 @@ public class TrafficCalculator {
         return sqsMessages.stream()
                 .mapToLong(SqsParsedMessage::timestamp)
                 .min()
-                .orElse(System.currentTimeMillis() / 1000);
+                .getAsLong();
     }
     
     /**
@@ -529,11 +525,7 @@ public class TrafficCalculator {
             return false;
         }
         
-        for (List<Long> range : allowlistRanges) {
-            if (range.size() < 2) {
-                continue;
-            }
-            
+        for (List<Long> range : allowlistRanges) {            
             long start = range.get(0);
             long end = range.get(1);
             
