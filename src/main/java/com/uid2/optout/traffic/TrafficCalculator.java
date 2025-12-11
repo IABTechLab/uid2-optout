@@ -483,19 +483,11 @@ public class TrafficCalculator {
     /**
      * Find the oldest SQS queue message timestamp
      */
-    private long findOldestQueueTimestamp(List<SqsParsedMessage> sqsMessages) throws IOException {
-        long oldest = System.currentTimeMillis() / 1000;
-        
-        if (sqsMessages != null && !sqsMessages.isEmpty()) {
-            for (SqsParsedMessage msg : sqsMessages) {
-                long ts = msg.timestamp();
-                if (ts < oldest) {
-                    oldest = ts;
-                }
-            }
-        }
-        
-        return oldest;
+    private long findOldestQueueTimestamp(List<SqsParsedMessage> sqsMessages) {
+        return sqsMessages.stream()
+                .mapToLong(SqsParsedMessage::timestamp)
+                .min()
+                .orElse(System.currentTimeMillis() / 1000);
     }
     
     /**
