@@ -196,6 +196,10 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
     private Router createRouter() {
         Router router = Router.router(vertx);
+        router.route().handler(ctx -> {
+            LOGGER.info("Request received, from={}, api={} ", ctx.request().remoteAddress().host(), ctx.request().path());
+            ctx.next();
+        });
         router.route().handler(BodyHandler.create());
         router.route().handler(new RequestCapturingHandler());
         router.route().handler(CorsHandler.create()
