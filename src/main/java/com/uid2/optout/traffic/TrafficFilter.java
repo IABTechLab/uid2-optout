@@ -6,10 +6,10 @@ import org.slf4j.LoggerFactory;
 import com.uid2.optout.sqs.SqsParsedMessage;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
-import java.util.HashSet;
+import java.util.stream.Collectors;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -27,19 +27,21 @@ public class TrafficFilter {
      * Traffic filter rule defining a time range and a list of IP addresses to exclude
      */
     private static class TrafficFilterRule {
-        private final List<Long> range;
+        private final long rangeStart;
+        private final long rangeEnd;
         private final Set<String> ipAddresses;
 
-        TrafficFilterRule(List<Long> range, Set<String> ipAddresses) {
-            this.range = range;
+        TrafficFilterRule(long rangeStart, long rangeEnd, Set<String> ipAddresses) {
+            this.rangeStart = rangeStart;
+            this.rangeEnd = rangeEnd;
             this.ipAddresses = ipAddresses;
         }
 
         public long getRangeStart() {
-            return range.get(0);
+            return rangeStart;
         }
         public long getRangeEnd() {
-            return range.get(1);
+            return rangeEnd;
         }
         public Set<String> getIpAddresses() {
             return ipAddresses;
@@ -110,49 +112,38 @@ public class TrafficFilter {
             for (int i = 0; i < denylistRequests.size(); i++) {
                 JsonObject ruleJson = denylistRequests.getJsonObject(i);
 
-                // parse range
+                // parse and validate range
                 var rangeJson = ruleJson.getJsonArray("range");
-                List<Long> range = new ArrayList<>();
-                if (rangeJson != null && rangeJson.size() == 2) {
-                    long start = rangeJson.getLong(0);
-                    long end = rangeJson.getLong(1);
-
-                    if (start >= end) {
-                        LOGGER.error("circuit_breaker_config_error: rule range start must be less than end, rule={}", ruleJson.encode());
-                        throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: range start must be less than end");
-                    }
-                    range.add(start);
-                    range.add(end);
-                }
-
-                // log error and throw exception if range is not 2 elements
-                if (range.size() != 2) {
+                if (rangeJson == null || rangeJson.size() != 2) {
                     LOGGER.error("circuit_breaker_config_error: rule range is not 2 elements, rule={}", ruleJson.encode());
                     throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: range is not 2 elements");
                 }
 
-                // parse IPs
-                var ipAddressesJson = ruleJson.getJsonArray("IPs");
-                Set<String> ipAddresses = new HashSet<>();
-                if (ipAddressesJson != null) {
-                    for (int j = 0; j < ipAddressesJson.size(); j++) {
-                        ipAddresses.add(ipAddressesJson.getString(j));
-                    }
+                long start = rangeJson.getLong(0);
+                long end = rangeJson.getLong(1);
+
+                if (start >= end) {
+                    LOGGER.error("circuit_breaker_config_error: rule range start must be less than end, rule={}", ruleJson.encode());
+                    throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: range start must be less than end");
                 }
 
-                // log error and throw exception if IPs is empty
-                if (ipAddresses.size() == 0) {
-                    LOGGER.error("circuit_breaker_config_error: rule IPs is empty, rule={}", ruleJson.encode());
-                    throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: IPs is empty");
-                }
-
-                // log error and throw exception if rule is invalid
-                if (range.get(1) - range.get(0) > 86400) { // range must be 24 hours or less
+                if (end - start > 86400) {
                     LOGGER.error("circuit_breaker_config_error: rule range must be 24 hours or less, rule={}", ruleJson.encode());
                     throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: range must be 24 hours or less");
                 }
 
-                TrafficFilterRule rule = new TrafficFilterRule(range, ipAddresses);
+                // parse IPs using stream
+                var ipAddressesJson = ruleJson.getJsonArray("IPs");
+                if (ipAddressesJson == null || ipAddressesJson.isEmpty()) {
+                    LOGGER.error("circuit_breaker_config_error: rule IPs is empty, rule={}", ruleJson.encode());
+                    throw new MalformedTrafficFilterConfigException("invalid traffic filter rule: IPs is empty");
+                }
+
+                Set<String> ipAddresses = ipAddressesJson.stream()
+                        .map(Object::toString)
+                        .collect(Collectors.toSet());
+
+                TrafficFilterRule rule = new TrafficFilterRule(start, end, ipAddresses);
 
                 LOGGER.info("loaded traffic filter rule: range=[{}, {}], IPs={}", rule.getRangeStart(), rule.getRangeEnd(), rule.getIpAddresses());
                 rules.add(rule);
@@ -178,7 +169,7 @@ public class TrafficFilter {
                 if(rule.getIpAddresses().contains(clientIp)) {
                     return true;
                 }
-            };
+            }
         }
         return false;
     }
