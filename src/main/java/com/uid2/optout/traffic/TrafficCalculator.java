@@ -484,6 +484,9 @@ public class TrafficCalculator {
      * Find the oldest SQS queue message timestamp
      */
     private long findOldestQueueTimestamp(List<SqsParsedMessage> sqsMessages) {
+        if (sqsMessages == null || sqsMessages.isEmpty()) {
+            return System.currentTimeMillis() / 1000;
+        }
         return sqsMessages.stream()
                 .mapToLong(SqsParsedMessage::timestamp)
                 .min()
@@ -572,16 +575,10 @@ public class TrafficCalculator {
         int threshold = thresholdMultiplier * baselineTraffic;
         double thresholdPercent = (double) recentTrafficTotal / threshold * 100;
         
-        // log warnings at increasing thresholds before circuit breaker triggers
-        if (thresholdPercent >= 90.0) {
-            LOGGER.warn("high_message_volume: 90% of threshold reached, sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
-                       recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
-        } else if (thresholdPercent >= 75.0) {
-            LOGGER.warn("high_message_volume: 75% of threshold reached, sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
-                       recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
-        } else if (thresholdPercent >= 50.0) {
-            LOGGER.warn("high_message_volume: 50% of threshold reached, sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
-                       recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
+        // log warning if we reach 50 percent of the threshold
+        if (thresholdPercent >= 50.0) {
+            LOGGER.warn("high_message_volume: {}% of threshold reached, recentTrafficTotal={}, threshold={} ({}x{})", 
+            String.format("%.1f", thresholdPercent), recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic);
         }
         
         if (recentTrafficTotal >= threshold) {
