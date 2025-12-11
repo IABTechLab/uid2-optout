@@ -502,7 +502,7 @@ public class TrafficCalculator {
         for (SqsParsedMessage msg : sqsMessages) {
             long ts = msg.timestamp();
 
-            if (ts < oldestQueueTs || ts > windowEnd) {
+            if (ts > windowEnd) {
                 continue;
             }
 
@@ -563,35 +563,35 @@ public class TrafficCalculator {
      * Determine traffic status based on current vs baseline traffic.
      * Logs warnings at 50%, 75%, and 90% of the circuit breaker threshold.
      */
-    TrafficStatus determineStatus(int sumCurrent, int baselineTraffic) {
+    TrafficStatus determineStatus(int recentTrafficTotal, int baselineTraffic) {
         if (baselineTraffic == 0 || thresholdMultiplier == 0) {
             LOGGER.error("circuit_breaker_config_error: baselineTraffic is 0 or thresholdMultiplier is 0");
             throw new RuntimeException("invalid circuit breaker config: baselineTraffic=" + baselineTraffic + ", thresholdMultiplier=" + thresholdMultiplier);
         }
         
         int threshold = thresholdMultiplier * baselineTraffic;
-        double thresholdPercent = (double) sumCurrent / threshold * 100;
+        double thresholdPercent = (double) recentTrafficTotal / threshold * 100;
         
         // log warnings at increasing thresholds before circuit breaker triggers
         if (thresholdPercent >= 90.0) {
             LOGGER.warn("high_message_volume: 90% of threshold reached, sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
-                       sumCurrent, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
+                       recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
         } else if (thresholdPercent >= 75.0) {
             LOGGER.warn("high_message_volume: 75% of threshold reached, sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
-                       sumCurrent, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
+                       recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
         } else if (thresholdPercent >= 50.0) {
             LOGGER.warn("high_message_volume: 50% of threshold reached, sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
-                       sumCurrent, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
+                       recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
         }
         
-        if (sumCurrent >= threshold) {
+        if (recentTrafficTotal >= threshold) {
             LOGGER.error("circuit_breaker_triggered: traffic threshold breached, sumCurrent={}, threshold={} ({}x{})", 
-                       sumCurrent, threshold, thresholdMultiplier, baselineTraffic);
+                       recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic);
             return TrafficStatus.DELAYED_PROCESSING;
         }
         
         LOGGER.info("traffic within normal range: sumCurrent={}, threshold={} ({}x{}), thresholdPercent={}%", 
-                   sumCurrent, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
+                   recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic, String.format("%.1f", thresholdPercent));
         return TrafficStatus.DEFAULT;
     }
     
