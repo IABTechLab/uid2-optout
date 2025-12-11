@@ -8,6 +8,8 @@ import com.uid2.optout.sqs.SqsParsedMessage;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Collections;
+import java.util.Set;
+import java.util.HashSet;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -26,9 +28,9 @@ public class TrafficFilter {
      */
     private static class TrafficFilterRule {
         private final List<Long> range;
-        private final List<String> ipAddresses;
+        private final Set<String> ipAddresses;
 
-        TrafficFilterRule(List<Long> range, List<String> ipAddresses) {
+        TrafficFilterRule(List<Long> range, Set<String> ipAddresses) {
             this.range = range;
             this.ipAddresses = ipAddresses;
         }
@@ -39,7 +41,7 @@ public class TrafficFilter {
         public long getRangeEnd() {
             return range.get(1);
         }
-        public List<String> getIpAddresses() {
+        public Set<String> getIpAddresses() {
             return ipAddresses;
         }
     }
@@ -131,7 +133,7 @@ public class TrafficFilter {
 
                 // parse IPs
                 var ipAddressesJson = ruleJson.getJsonArray("IPs");
-                List<String> ipAddresses = new ArrayList<>();
+                Set<String> ipAddresses = new HashSet<>();
                 if (ipAddressesJson != null) {
                     for (int j = 0; j < ipAddressesJson.size(); j++) {
                         ipAddresses.add(ipAddressesJson.getString(j));

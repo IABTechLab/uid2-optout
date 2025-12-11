@@ -582,7 +582,7 @@ public class TrafficCalculator {
         }
         
         if (recentTrafficTotal >= threshold) {
-            LOGGER.error("circuit_breaker_triggered: traffic threshold breached, sumCurrent={}, threshold={} ({}x{})", 
+            LOGGER.warn("circuit_breaker_triggered: traffic threshold breached, sumCurrent={}, threshold={} ({}x{})", 
                        recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic);
             return TrafficStatus.DELAYED_PROCESSING;
         }
