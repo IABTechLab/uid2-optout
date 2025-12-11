@@ -23,9 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import software.amazon.awssdk.services.sqs.model.Message;
-import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 
-import com.uid2.optout.traffic.TrafficCalculator;
 import com.uid2.optout.traffic.TrafficCalculator.MalformedTrafficCalcConfigException;
 import java.io.ByteArrayInputStream;
 import java.util.*;
