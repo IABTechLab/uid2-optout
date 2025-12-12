@@ -111,6 +111,11 @@ public class DeltaProductionResult {
             return this;
         }
 
+        public Builder stopReason(StopReason reason) {
+            this.stopReason = reason;
+            return this;
+        }
+
         /**
          * Builds the DeltaProductionResult with the accumulated statistics.
          */
