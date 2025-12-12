@@ -308,7 +308,7 @@ public class Main {
                 LOGGER.info("SQS log producer deployed - bucket: {}, folder: {}", 
                     this.config.getString(Const.Config.OptOutS3BucketProp), sqsFolder);
             } catch (IOException e) {
-                LOGGER.error("circuit_breaker_config_error: failed to initialize SQS log producer, delta production will be disabled: {}", e.getMessage(), e);
+                LOGGER.error("circuit_breaker_config_error: failed to initialize sqs log producer, delta production will be disabled: {}", e.getMessage(), e);
             } catch (MalformedTrafficFilterConfigException e) {
                 LOGGER.error("circuit_breaker_config_error: traffic filter config is malformed, delta production will be disabled: {}", e.getMessage(), e);
             } catch (MalformedTrafficCalcConfigException e) {
