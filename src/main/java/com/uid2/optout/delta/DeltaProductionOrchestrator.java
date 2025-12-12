@@ -181,10 +181,9 @@ public class DeltaProductionOrchestrator {
             }
         }
 
-        // check traffic calculator - pass counts for accurate invisible message deduplication
-        int filteredAsTooRecentCount = windowResult.getRawMessagesRead() - messages.size();
+        // check traffic calculator
         SqsMessageOperations.QueueAttributes queueAttributes = SqsMessageOperations.getQueueAttributes(this.sqsClient, this.queueUrl);
-        TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(deltaMessages, queueAttributes, droppedMessages.size(), filteredAsTooRecentCount);
+        TrafficStatus trafficStatus = this.trafficCalculator.calculateStatus(deltaMessages, queueAttributes, windowResult.getRawMessagesRead());
         
         if (trafficStatus == TrafficStatus.DELAYED_PROCESSING) {
             LOGGER.error("circuit_breaker_triggered: traffic spike detected, stopping production and setting manual override");

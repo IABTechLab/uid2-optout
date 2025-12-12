@@ -60,7 +60,7 @@ class DeltaProductionOrchestratorTest {
 
         // default behavior
         when(mockManualOverrideService.isDelayedProcessing()).thenReturn(false);
-        when(mockTrafficCalculator.calculateStatus(anyList(), any(), anyInt(), anyInt()))
+        when(mockTrafficCalculator.calculateStatus(anyList(), any(), anyInt()))
                 .thenReturn(TrafficCalculator.TrafficStatus.DEFAULT);
         when(mockCloudSync.toCloudPath(anyString())).thenAnswer(inv -> "delta/" + inv.getArgument(0));
         
@@ -357,7 +357,7 @@ class DeltaProductionOrchestratorTest {
         when(mockTrafficFilter.isDenylisted(any())).thenReturn(false);
 
         // Setup - circuit breaker triggered
-        when(mockTrafficCalculator.calculateStatus(anyList(), any(), anyInt(), anyInt()))
+        when(mockTrafficCalculator.calculateStatus(anyList(), any(), anyInt()))
                 .thenReturn(TrafficCalculator.TrafficStatus.DELAYED_PROCESSING);
 
         DeltaProductionResult result = orchestrator.produceBatchedDeltas(name -> {});
