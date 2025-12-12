@@ -211,6 +211,10 @@ public class DeltaProductionOrchestrator {
         return false;
     }
 
+    /**
+     * Adds end-of-delta entry to delta stream and converts to byte array,
+     * then uploads delta file to S3 and deletes associated messages from SQS.
+     */
     private void uploadDelta(ByteArrayOutputStream deltaStream, String deltaName, 
                              long windowStart, List<SqsParsedMessage> messages, 
                              Consumer<String> onDeltaProduced) throws IOException {
@@ -232,6 +236,9 @@ public class DeltaProductionOrchestrator {
         });
     }
 
+    /**
+     * Uploads dropped requests to S3 and deletes associated messages from SQS.
+     */
     private void uploadDroppedRequests(JsonArray droppedRequestStream, String droppedRequestName,
                                        long windowStart, List<SqsParsedMessage> messages) throws IOException {
         
