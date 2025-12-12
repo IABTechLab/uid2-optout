@@ -1,6 +1,8 @@
 package com.uid2.optout;
 
 import com.uid2.optout.vertx.*;
+import com.uid2.optout.traffic.TrafficFilter.MalformedTrafficFilterConfigException;
+import com.uid2.optout.traffic.TrafficCalculator.MalformedTrafficCalcConfigException;
 import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationResponseHandler;
@@ -27,7 +29,6 @@ import io.micrometer.prometheus.PrometheusRenameFilter;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpServerOptions;
-import io.vertx.core.http.impl.HttpUtils;
 import io.vertx.core.json.JsonObject;
 import io.vertx.micrometer.MetricsDomain;
 import org.slf4j.Logger;
@@ -271,39 +272,47 @@ public class Main {
             futs.add((this.uploadLastDelta(cs, logProducer, cloudSyncVerticle.eventUpload(), cloudSyncVerticle.eventRefresh())));
         }
 
-        // Deploy SQS producer if enabled
+        // deploy sqs producer if enabled
         if (this.enqueueSqsEnabled) {
             LOGGER.info("SQS enabled, deploying OptOutSqsLogProducer");
             try {
-                // Create SQS-specific cloud sync with custom folder (default: "sqs-delta")
+                // create sqs-specific cloud sync with custom folder (default: "sqs-delta")
                 String sqsFolder = this.config.getString(Const.Config.OptOutSqsS3FolderProp, "sqs-delta");
-                LOGGER.info("SQS Config - optout_sqs_s3_folder: {}, will override optout_s3_folder to: {}", 
+                LOGGER.info("sqs config - optout_sqs_s3_folder: {}, will override optout_s3_folder to: {}", 
                     sqsFolder, sqsFolder);
                 JsonObject sqsConfig = new JsonObject().mergeIn(this.config)
                     .put(Const.Config.OptOutS3FolderProp, sqsFolder);
-                LOGGER.info("SQS Config after merge - optout_s3_folder: {}", sqsConfig.getString(Const.Config.OptOutS3FolderProp));
+                LOGGER.info("sqs config after merge - optout_s3_folder: {}", sqsConfig.getString(Const.Config.OptOutS3FolderProp));
                 OptOutCloudSync sqsCs = new OptOutCloudSync(sqsConfig, true);
 
-                // Create SQS-specific cloud storage instance (same bucket, different folder handling)
+                // create sqs-specific cloud storage instance (same bucket, different folder handling)
                 ICloudStorage fsSqs;
                 boolean useStorageMock = this.config.getBoolean(Const.Config.StorageMockProp, false);
                 if (useStorageMock) {
-                    // Reuse the same LocalStorageMock for testing
+                    // reuse the same LocalStorageMock for testing
                     fsSqs = this.fsOptOut;
                 } else {
-                    // Create fresh CloudStorage for SQS (no path conversion wrapper)
+                    // create fresh CloudStorage for SQS (no path conversion wrapper)
                     String optoutBucket = this.config.getString(Const.Config.OptOutS3BucketProp);
                     fsSqs = CloudUtils.createStorage(optoutBucket, sqsConfig);
                 }
 
-                // Deploy SQS log producer with its own storage instance
-                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, sqsCs);
+                // create sqs-specific cloud storage instance for dropped requests (different bucket)
+                String optoutBucketDroppedRequests = this.config.getString(Const.Config.OptOutS3BucketDroppedRequestsProp);
+                ICloudStorage fsSqsDroppedRequests = CloudUtils.createStorage(optoutBucketDroppedRequests, config);
+
+                // deploy sqs log producer with its own storage instances 
+                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, fsSqsDroppedRequests, sqsCs, Const.Event.DeltaProduce, null);
                 futs.add(this.deploySingleInstance(sqsLogProducer));
 
                 LOGGER.info("SQS log producer deployed - bucket: {}, folder: {}", 
                     this.config.getString(Const.Config.OptOutS3BucketProp), sqsFolder);
             } catch (IOException e) {
-                LOGGER.error("Failed to initialize SQS log producer: " + e.getMessage(), e);
+                LOGGER.error("circuit_breaker_config_error: failed to initialize SQS log producer, delta production will be disabled: {}", e.getMessage(), e);
+            } catch (MalformedTrafficFilterConfigException e) {
+                LOGGER.error("circuit_breaker_config_error: traffic filter config is malformed, delta production will be disabled: {}", e.getMessage(), e);
+            } catch (MalformedTrafficCalcConfigException e) {
+                LOGGER.error("circuit_breaker_config_error: traffic calc config is malformed, delta production will be disabled: {}", e.getMessage(), e);
             }
         }
 
