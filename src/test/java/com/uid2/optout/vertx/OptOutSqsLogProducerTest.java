@@ -804,8 +804,8 @@ public class OptOutSqsLogProducerTest {
     @Test
     public void testTrafficCalculator_detectsSpikeInCurrentWindow(VertxTestContext testContext) throws Exception {
         // threshold = baseline * multiplier = 100 * 5 = 500
-        // create 600 messages to exceed threshold
         long currentTime = System.currentTimeMillis() / 1000;
+        // create 2 timestamps in delta file
         List<Long> timestamps = Arrays.asList(currentTime - 3600, currentTime - 3600 + 1000);
         byte[] deltaFileBytes = createDeltaFileBytes(timestamps);
 
@@ -829,7 +829,7 @@ public class OptOutSqsLogProducerTest {
                     assertEquals(0, result.getInteger("entries_processed"));
                     assertEquals(0, result.getInteger("deltas_produced"));
 
-                    // verify manual override was set to DELAYED_PROCESSING on S3
+                    // verify manual override was set to delayed_processing in s3
                     try {
                         ArgumentCaptor<String> pathCaptor = ArgumentCaptor.forClass(String.class);
                         verify(cloudStorage, atLeastOnce()).upload(any(InputStream.class), pathCaptor.capture());
