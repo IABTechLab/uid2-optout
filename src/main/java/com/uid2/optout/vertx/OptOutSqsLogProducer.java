@@ -92,7 +92,10 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     private final TrafficCalculator trafficCalculator;
     private final DeltaProductionOrchestrator orchestrator;
     
-    // tracks the current delta production job status for this pod
+    /*
+     * Tracks the current delta production job status for this pod.
+     * Used to prevent concurrent jobs from running.
+     */
     private final AtomicReference<DeltaProductionJobStatus> currentJob = new AtomicReference<>(null);
     
     private volatile boolean shutdownInProgress = false;
@@ -270,7 +273,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
 
         DeltaProductionJobStatus existingJob = currentJob.get();
         
-        // If there's an existing job, check if it's still running
+        // if there's an existing job, check if it's still running
         if (existingJob != null) {
             if (existingJob.getState() == DeltaProductionJobStatus.JobState.RUNNING) {
                 LOGGER.info("job already running, returning conflict");
@@ -283,7 +286,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
 
         DeltaProductionJobStatus newJob = new DeltaProductionJobStatus();
 
-        // Try to set the new job
+        // try to set the new job
         if (!currentJob.compareAndSet(existingJob, newJob)) {
             sendConflict(resp, "job state changed, please retry");
             return;
@@ -292,7 +295,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         LOGGER.info("starting new job");
         this.startDeltaProductionJob(newJob);
 
-        // Return immediately with 202 Accepted
+        // return immediately with 202 Accepted
         sendAccepted(resp, "job started");
     }
 
