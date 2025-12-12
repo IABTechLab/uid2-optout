@@ -1,5 +1,6 @@
 package com.uid2.optout.sqs;
 
+import com.uid2.optout.delta.S3UploadService;
 import com.uid2.optout.delta.StopReason;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,6 +9,7 @@ import software.amazon.awssdk.services.sqs.model.Message;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.io.IOException;
 
 /**
  * Reads messages from SQS for complete 5-minute time windows.
@@ -26,14 +28,17 @@ public class SqsWindowReader {
     private int maxMessagesPerWindow;
 
     public SqsWindowReader(SqsClient sqsClient, String queueUrl, int maxMessagesPerPoll, 
-                          int visibilityTimeout, int deltaWindowSeconds, int maxMessagesPerWindow) {
+                          int visibilityTimeout, int deltaWindowSeconds, int maxMessagesPerWindow,
+                          S3UploadService malformedRequestUploadService, String malformedRequestsS3Path,
+                          int replicaId) {
         this.sqsClient = sqsClient;
         this.queueUrl = queueUrl;
         this.maxMessagesPerPoll = maxMessagesPerPoll;
         this.visibilityTimeout = visibilityTimeout;
         this.deltaWindowSeconds = deltaWindowSeconds;
         this.maxMessagesPerWindow = maxMessagesPerWindow;
-        this.batchProcessor = new SqsBatchProcessor(sqsClient, queueUrl, deltaWindowSeconds);
+        this.batchProcessor = new SqsBatchProcessor(sqsClient, queueUrl, deltaWindowSeconds, 
+            malformedRequestUploadService, malformedRequestsS3Path, replicaId);
         LOGGER.info("initialized: maxMessagesPerWindow={}, maxMessagesPerPoll={}, visibilityTimeout={}, deltaWindowSeconds={}",
                 maxMessagesPerWindow, maxMessagesPerPoll, visibilityTimeout, deltaWindowSeconds);
     }
@@ -88,7 +93,7 @@ public class SqsWindowReader {
      * 
      * @return WindowReadResult with messages for the window, or empty if done
      */
-    public WindowReadResult readWindow() {
+    public WindowReadResult readWindow() throws IOException {
         List<SqsParsedMessage> windowMessages = new ArrayList<>();
         long currentWindowStart = 0;
         int batchNumber = 0;

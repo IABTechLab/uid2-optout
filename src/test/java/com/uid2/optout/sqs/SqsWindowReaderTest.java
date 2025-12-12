@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.*;
 
+import java.io.IOException;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -31,12 +32,13 @@ public class SqsWindowReaderTest {
         mockSqsClient = mock(SqsClient.class);
         windowReader = new SqsWindowReader(
             mockSqsClient, TEST_QUEUE_URL, MAX_MESSAGES_PER_POLL,
-            VISIBILITY_TIMEOUT, DELTA_WINDOW_SECONDS, MAX_MESSAGES_PER_WINDOW
+            VISIBILITY_TIMEOUT, DELTA_WINDOW_SECONDS, MAX_MESSAGES_PER_WINDOW,
+            null, "", 0
         );
     }
 
     @Test
-    void testReadWindow_emptyQueue() {
+    void testReadWindow_emptyQueue() throws IOException {
         when(mockSqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
             .thenReturn(ReceiveMessageResponse.builder().messages(List.of()).build());
 
@@ -48,7 +50,7 @@ public class SqsWindowReaderTest {
     }
 
     @Test
-    void testReadWindow_singleBatchSingleWindow() {
+    void testReadWindow_singleBatchSingleWindow() throws IOException {
         long windowStartSeconds = System.currentTimeMillis() / 1000 - 600; // 10 minutes ago
         List<Message> messages = Arrays.asList(
             createMessage(windowStartSeconds + 10),
@@ -68,7 +70,7 @@ public class SqsWindowReaderTest {
     }
 
     @Test
-    void testReadWindow_multipleBatchesSameWindow() {
+    void testReadWindow_multipleBatchesSameWindow() throws IOException {
         long windowStartSeconds = System.currentTimeMillis() / 1000 - 600; // 10 minutes ago
         
         List<Message> batch1 = Arrays.asList(
@@ -93,7 +95,7 @@ public class SqsWindowReaderTest {
     }
 
     @Test
-    void testReadWindow_messagesTooRecent() {
+    void testReadWindow_messagesTooRecent() throws IOException {
         long currentTimeMs = System.currentTimeMillis();
         List<Message> messages = Arrays.asList(
             createMessageWithTimestampMs(currentTimeMs - 1000), // 1 second ago
@@ -111,10 +113,11 @@ public class SqsWindowReaderTest {
     }
 
     @Test
-    void testReadWindow_messageLimitExceeded() {
+    void testReadWindow_messageLimitExceeded() throws IOException {
         SqsWindowReader smallLimitReader = new SqsWindowReader(
             mockSqsClient, TEST_QUEUE_URL, MAX_MESSAGES_PER_POLL,
-            VISIBILITY_TIMEOUT, DELTA_WINDOW_SECONDS, 5 // Only 5 messages max
+            VISIBILITY_TIMEOUT, DELTA_WINDOW_SECONDS, 5, // Only 5 messages max
+            null, "", 0
         );
 
         long windowStartSeconds = System.currentTimeMillis() / 1000 - 600;
@@ -138,7 +141,7 @@ public class SqsWindowReaderTest {
     }
 
     @Test
-    void testReadWindow_discoversNewWindow() {
+    void testReadWindow_discoversNewWindow() throws IOException {
         long window1StartSeconds = System.currentTimeMillis() / 1000 - 900; // 15 minutes ago
         long window2StartSeconds = window1StartSeconds + DELTA_WINDOW_SECONDS + 100; // Next window
         
@@ -159,7 +162,7 @@ public class SqsWindowReaderTest {
     }
 
     @Test
-    void testReadWindow_multipleWindowsMultipleBatchesPerWindow() {
+    void testReadWindow_multipleWindowsMultipleBatchesPerWindow() throws IOException {
         // Window 1: 2 batches, then discovers window 2
         // Window 2: 2 batches (must be > 5 min old for eligibility)
         long window1StartSeconds = System.currentTimeMillis() / 1000 - 1200; // 20 minutes ago
@@ -220,7 +223,7 @@ public class SqsWindowReaderTest {
     }
 
     @Test
-    void testReadWindow_corruptMessagesSkipped() {
+    void testReadWindow_corruptMessagesSkipped() throws IOException {
         long windowStartSeconds = System.currentTimeMillis() / 1000 - 600;
         
         // Corrupt message (missing required fields)
