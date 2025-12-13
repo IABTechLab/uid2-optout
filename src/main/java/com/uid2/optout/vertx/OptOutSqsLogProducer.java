@@ -74,6 +74,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p><strong>Note:</strong> SQS visibility timeout provides natural coordination across pods,
  * limiting duplicate message processing even if multiple pods run jobs concurrently.</p>
  * 
+ * <p><strong>Note:</strong> The delta construction and circuit breaking is delegated to DeltaProductionOrchestrator.</p>
+ * 
  * <h2>API Endpoints</h2>
  * <ul>
  *   <li><code>POST /optout/deltaproduce</code> - Start async job, auto-clears completed/failed jobs (returns 202 Accepted or 409 Conflict if running)</li>
