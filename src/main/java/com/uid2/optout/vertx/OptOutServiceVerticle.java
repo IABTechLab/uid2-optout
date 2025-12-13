@@ -73,6 +73,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final String sqsQueueUrl;
     private final boolean sqsEnabled;
     private final int sqsMaxQueueSize;
+    private final String podName;
 
     public OptOutServiceVerticle(Vertx vertx,
                                  IAuthorizableProvider clientKeyProvider,
@@ -122,6 +123,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.sqsEnabled = jsonConfig.getBoolean(Const.Config.OptOutSqsEnabledProp, false);
         this.sqsQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
         this.sqsMaxQueueSize = jsonConfig.getInteger(Const.Config.OptOutSqsMaxQueueSizeProp, 0); // 0 = no limit
+        this.podName = jsonConfig.getString("POD_NAME");
 
         SqsClient tempSqsClient = null;
         if (this.sqsEnabled) {
@@ -296,6 +298,9 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         }
 
         HttpServerRequest req = routingContext.request();
+
+        LOGGER.info("recieved replicate request, replica={}, traceId={}", this.podName, req.getHeader(UID_TRACE_ID));
+
         MultiMap params = req.params();
         String identityHash = req.getParam(IDENTITY_HASH);
         String advertisingId = req.getParam(ADVERTISING_ID);
@@ -318,6 +323,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         }
         else {
             try {
+                LOGGER.info("pod {} sending optout/write to remote endpoints", this.podName);
                 this.replicaWriteClient.get(r -> {
                     r.setQueryParam(IDENTITY_HASH, identityHash);
                     r.setQueryParam(ADVERTISING_ID, advertisingId);
