@@ -2,6 +2,7 @@ package com.uid2.optout.vertx;
 
 import com.uid2.optout.Const;
 import com.uid2.optout.auth.InternalAuthMiddleware;
+import com.uid2.optout.sqs.SqsMessageOperations;
 import com.uid2.optout.web.QuorumWebClient;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationTokenService;
@@ -71,6 +72,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final SqsClient sqsClient;
     private final String sqsQueueUrl;
     private final boolean sqsEnabled;
+    private final int sqsMaxQueueSize;
 
     public OptOutServiceVerticle(Vertx vertx,
                                  IAuthorizableProvider clientKeyProvider,
@@ -119,6 +121,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
         this.sqsEnabled = jsonConfig.getBoolean(Const.Config.OptOutSqsEnabledProp, false);
         this.sqsQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
+        this.sqsMaxQueueSize = jsonConfig.getInteger(Const.Config.OptOutSqsMaxQueueSizeProp, 0); // 0 = no limit
 
         SqsClient tempSqsClient = null;
         if (this.sqsEnabled) {
@@ -396,6 +399,21 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             // Send message to SQS queue
             vertx.executeBlocking(promise -> {
                 try {
+                    // Check queue size limit before sending
+                    if (this.sqsMaxQueueSize > 0) {
+                        SqsMessageOperations.QueueAttributes queueAttrs = 
+                            SqsMessageOperations.getQueueAttributes(this.sqsClient, this.sqsQueueUrl);
+                        if (queueAttrs != null) {
+                            int currentSize = queueAttrs.getTotalMessages();
+                            if (currentSize >= this.sqsMaxQueueSize) {
+                                LOGGER.warn("sqs_queue_full: rejecting message, currentSize={}, maxSize={}", 
+                                    currentSize, this.sqsMaxQueueSize);
+                                promise.fail(new IllegalStateException("queue size limit exceeded"));
+                                return;
+                            }
+                        }
+                    }
+
                     SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
                             .queueUrl(this.sqsQueueUrl)
                             .messageBody(messageBody.encode())
