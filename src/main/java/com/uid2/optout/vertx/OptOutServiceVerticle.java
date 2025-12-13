@@ -397,51 +397,30 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                     .put("phone", phone);
 
             // Send message to SQS queue
-            vertx.executeBlocking(promise -> {
-                try {
-                    // Check queue size limit before sending
-                    if (this.sqsMaxQueueSize > 0) {
-                        SqsMessageOperations.QueueAttributes queueAttrs = 
-                            SqsMessageOperations.getQueueAttributes(this.sqsClient, this.sqsQueueUrl);
-                        if (queueAttrs != null) {
-                            int currentSize = queueAttrs.getTotalMessages();
-                            if (currentSize >= this.sqsMaxQueueSize) {
-                                LOGGER.warn("sqs_queue_full: rejecting message, currentSize={}, maxSize={}", 
-                                    currentSize, this.sqsMaxQueueSize);
-                                promise.fail(new IllegalStateException("queue size limit exceeded"));
-                                return;
-                            }
+            vertx.<String>executeBlocking(() -> {
+                // Check queue size limit before sending
+                if (this.sqsMaxQueueSize > 0) {
+                    SqsMessageOperations.QueueAttributes queueAttrs = 
+                        SqsMessageOperations.getQueueAttributes(this.sqsClient, this.sqsQueueUrl);
+                    if (queueAttrs != null) {
+                        int currentSize = queueAttrs.getTotalMessages();
+                        if (currentSize >= this.sqsMaxQueueSize) {
+                            LOGGER.warn("sqs_queue_full: rejecting message, currentSize={}, maxSize={}", 
+                                currentSize, this.sqsMaxQueueSize);
+                            throw new IllegalStateException("queue size limit exceeded");
                         }
                     }
-
-                    SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
-                            .queueUrl(this.sqsQueueUrl)
-                            .messageBody(messageBody.encode())
-                            .build();
-
-                    SendMessageResponse response = this.sqsClient.sendMessage(sendMsgRequest);
-                    promise.complete(response.messageId());
-                } catch (Exception e) {
-                    promise.fail(e);
                 }
-            }, res -> {
-                if (res.failed()) {
-                    // this.sendInternalServerError(resp, "Failed to queue message: " + res.cause().getMessage());
-                    LOGGER.error("Failed to queue message: " + res.cause().getMessage());
-                } else {
-                    String messageId = (String) res.result();
 
-                    JsonObject responseJson = new JsonObject()
-                            .put("status", "queued");
+                SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
+                        .queueUrl(this.sqsQueueUrl)
+                        .messageBody(messageBody.encode())
+                        .build();
 
-                    LOGGER.info("Message queued successfully: " + messageId);
-
-                    // resp.setStatusCode(200)
-                    //         .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                    //         .setChunked(true)
-                    //         .write(responseJson.encode());
-                    // resp.end();
-                }
+                SendMessageResponse response = this.sqsClient.sendMessage(sendMsgRequest);
+                return response.messageId();
+            }).onFailure(cause -> {
+                LOGGER.error("failed to queue message, cause={}", cause.getMessage());
             });
         } catch (Exception ex) {
             // this.sendInternalServerError(resp, ex.getMessage());
