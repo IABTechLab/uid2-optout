@@ -216,7 +216,7 @@ public class TrafficCalculator {
      * @param filteredAsTooRecentCount Number of messages filtered as "too recent" by window reader
      * @return TrafficStatus (DELAYED_PROCESSING or DEFAULT)
      */
-    public TrafficStatus calculateStatus(List<SqsParsedMessage> sqsMessages, QueueAttributes queueAttributes, int denylistedCount, int filteredAsTooRecentCount) {
+    public TrafficStatus calculateStatus(List<SqsParsedMessage> sqsMessages, QueueAttributes queueAttributes, int rawMessagesRead) {
         
         try {
             // get list of delta files from s3 (sorted newest to oldest)
@@ -298,15 +298,13 @@ public class TrafficCalculator {
             
             // add invisible messages being processed by other consumers
             // (notVisible count includes our messages, so subtract what we've read to avoid double counting)
-            // ourMessages = delta messages + denylisted messages + filtered as "too recent" messages
             int otherConsumersMessages = 0;
             if (queueAttributes != null) {
                 int totalInvisible = queueAttributes.getApproximateNumberOfMessagesNotVisible();
-                int ourMessages = (sqsMessages != null ? sqsMessages.size() : 0) + denylistedCount + filteredAsTooRecentCount;
-                otherConsumersMessages = Math.max(0, totalInvisible - ourMessages);
+                otherConsumersMessages = Math.max(0, totalInvisible - rawMessagesRead);
                 totalRecords += otherConsumersMessages;
                 LOGGER.info("traffic calculation: adding {} invisible messages from other consumers (totalInvisible={}, ourMessages={})",
-                           otherConsumersMessages, totalInvisible, ourMessages);
+                           otherConsumersMessages, totalInvisible, rawMessagesRead);
             }
             
             // determine status

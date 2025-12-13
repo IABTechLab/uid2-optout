@@ -1106,7 +1106,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act & Assert - should throw exception when no delta files
-        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0, 0));
+        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0));
     }
 
     @Test
@@ -1134,7 +1134,7 @@ public class TrafficCalculatorTest {
 
         // Act
         List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
 
         // Assert - 100+1 < 5 * 50 = 250, so should be DEFAULT
         assertEquals(TrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1165,7 +1165,7 @@ public class TrafficCalculatorTest {
 
         // Act
         List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
 
         // Assert - 100+1 >= 5 * 10 = 50, DELAYED_PROCESSING
         assertEquals(TrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
@@ -1188,7 +1188,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - null SQS messages
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(null, null, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(null, null, 0);
 
         // Assert - should still calculate based on delta files, DEFAULT
         assertEquals(TrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1211,7 +1211,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act - empty SQS messages
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(Collections.emptyList(), null, 0);
 
         // Assert - should still calculate based on delta files, DEFAULT
         assertEquals(TrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1243,7 +1243,7 @@ public class TrafficCalculatorTest {
         for (int i = 0; i < 30; i++) {
             sqsMessages.add(createSqsMessage(t - i * 10));
         }
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
 
         // Assert - DELAYED_PROCESSING
         assertEquals(TrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
@@ -1286,7 +1286,7 @@ public class TrafficCalculatorTest {
 
         // Act
         List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
 
         // Assert - should filter out entries in traffic calc config ranges
         // Only 300 from window count (not in traffic calc config ranges) + 1 SQS = 301
@@ -1312,13 +1312,13 @@ public class TrafficCalculatorTest {
 
         // Act - first call should populate cache
         List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
-        calculator.calculateStatus(sqsMessages, null, 0, 0);
+        calculator.calculateStatus(sqsMessages, null, 0);
 
         Map<String, Object> stats = calculator.getCacheStats();
         int cachedFiles = (Integer) stats.get("cached_files");
 
         // Second call should use cache (no additional S3 download)
-        calculator.calculateStatus(sqsMessages, null, 0, 0);
+        calculator.calculateStatus(sqsMessages, null, 0);
 
         Map<String, Object> stats2 = calculator.getCacheStats();
         int cachedFiles2 = (Integer) stats2.get("cached_files");
@@ -1340,7 +1340,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act & Assert - should throw exception on S3 error
-        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0, 0));
+        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0));
     }
 
     @Test
@@ -1354,7 +1354,7 @@ public class TrafficCalculatorTest {
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
         // Act & Assert - should throw exception on S3 download error
-        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0, 0));
+        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0));
     }
 
     @Test
@@ -1391,7 +1391,7 @@ public class TrafficCalculatorTest {
 
         // Act
         List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
 
         // Assert - DEFAULT
         assertEquals(TrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1425,7 +1425,7 @@ public class TrafficCalculatorTest {
 
         // Act
         List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
 
         // Assert - DEFAULT
         assertEquals(TrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
@@ -1449,7 +1449,7 @@ public class TrafficCalculatorTest {
 
         // Act
         List<SqsParsedMessage> sqsMessages = Arrays.asList(createSqsMessage(t));
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, null, 0);
 
         // Assert
         assertEquals(TrafficCalculator.TrafficStatus.DEFAULT, status);
@@ -1493,7 +1493,7 @@ public class TrafficCalculatorTest {
         SqsMessageOperations.QueueAttributes queueAttributes = 
             new SqsMessageOperations.QueueAttributes(0, 600, 0);
         
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes, 0);
 
         // Assert - DELAYED_PROCESSING due to high invisible message count from other consumers
         assertEquals(TrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
@@ -1533,7 +1533,7 @@ public class TrafficCalculatorTest {
         SqsMessageOperations.QueueAttributes queueAttributes = 
             new SqsMessageOperations.QueueAttributes(0, 450, 0);
         
-        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes, 0, 0);
+        TrafficCalculator.TrafficStatus status = calculator.calculateStatus(sqsMessages, queueAttributes, 0);
 
         // Assert - DELAYED_PROCESSING due to combined count exceeding threshold
         assertEquals(TrafficCalculator.TrafficStatus.DELAYED_PROCESSING, status);
