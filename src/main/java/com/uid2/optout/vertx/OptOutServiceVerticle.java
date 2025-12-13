@@ -388,7 +388,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             JsonObject messageBody = new JsonObject()
                     .put(IDENTITY_HASH, identityHash)
                     .put(ADVERTISING_ID, advertisingId)
-                    .put("trace_id", traceId)
+                    .put("uid_trace_id", traceId)
                     .put("client_ip", clientIp)
                     .put("email", email)
                     .put("phone", phone);

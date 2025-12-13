@@ -32,7 +32,7 @@ public class SqsMessageParser {
             try {
                 // parse message body
                 JsonObject body = new JsonObject(message.body());
-                traceId = body.getString("trace_id");
+                traceId = body.getString("uid_trace_id");
 
                 String identityHash = body.getString("identity_hash");
                 String advertisingId = body.getString("advertising_id");

@@ -172,7 +172,7 @@ public class OptOutSqsLogProducerTest {
         if (email != null) body.put("email", email);
         if (phone != null) body.put("phone", phone);
         if (clientIp != null) body.put("client_ip", clientIp);
-        if (traceId != null) body.put("trace_id", traceId);
+        if (traceId != null) body.put("uid_trace_id", traceId);
         
         Map<MessageSystemAttributeName, String> attrs = new HashMap<>();
         attrs.put(MessageSystemAttributeName.SENT_TIMESTAMP, String.valueOf(timestampMs));
