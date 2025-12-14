@@ -378,7 +378,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
         // while old delta production is enabled, response is handled by replicate logic
 
-        // Validate parameters - same as replicate
+        // validate parameters - same as replicate
         if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
             // this.sendBadRequestError(resp);
             return;
@@ -402,9 +402,9 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                     .put("email", email)
                     .put("phone", phone);
 
-            // Send message to SQS queue
-            vertx.<String>executeBlocking(() -> {
-                // Check queue size limit before sending
+            // send message to SQS queue
+            vertx.executeBlocking(() -> {
+                // check queue size limit before sending
                 if (this.sqsMaxQueueSize > 0) {
                     SqsMessageOperations.QueueAttributes queueAttrs = 
                         SqsMessageOperations.getQueueAttributes(this.sqsClient, this.sqsQueueUrl);
@@ -423,8 +423,8 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                         .messageBody(messageBody.encode())
                         .build();
 
-                SendMessageResponse response = this.sqsClient.sendMessage(sendMsgRequest);
-                return response.messageId();
+                this.sqsClient.sendMessage(sendMsgRequest);
+                return null;
             }).onFailure(cause -> {
                 LOGGER.error("failed to queue message, cause={}", cause.getMessage());
             });
