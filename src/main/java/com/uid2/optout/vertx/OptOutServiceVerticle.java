@@ -2,6 +2,7 @@ package com.uid2.optout.vertx;
 
 import com.uid2.optout.Const;
 import com.uid2.optout.auth.InternalAuthMiddleware;
+import com.uid2.optout.sqs.SqsMessageOperations;
 import com.uid2.optout.web.QuorumWebClient;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationTokenService;
@@ -71,6 +72,8 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final SqsClient sqsClient;
     private final String sqsQueueUrl;
     private final boolean sqsEnabled;
+    private final int sqsMaxQueueSize;
+    private final String podName;
 
     public OptOutServiceVerticle(Vertx vertx,
                                  IAuthorizableProvider clientKeyProvider,
@@ -119,6 +122,8 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
         this.sqsEnabled = jsonConfig.getBoolean(Const.Config.OptOutSqsEnabledProp, false);
         this.sqsQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
+        this.sqsMaxQueueSize = jsonConfig.getInteger(Const.Config.OptOutSqsMaxQueueSizeProp, 0); // 0 = no limit
+        this.podName = jsonConfig.getString("POD_NAME");
 
         SqsClient tempSqsClient = null;
         if (this.sqsEnabled) {
@@ -293,6 +298,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         }
 
         HttpServerRequest req = routingContext.request();
+
         MultiMap params = req.params();
         String identityHash = req.getParam(IDENTITY_HASH);
         String advertisingId = req.getParam(ADVERTISING_ID);
@@ -369,7 +375,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
         // while old delta production is enabled, response is handled by replicate logic
 
-        // Validate parameters - same as replicate
+        // validate parameters - same as replicate
         if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
             // this.sendBadRequestError(resp);
             return;
@@ -388,42 +394,36 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             JsonObject messageBody = new JsonObject()
                     .put(IDENTITY_HASH, identityHash)
                     .put(ADVERTISING_ID, advertisingId)
-                    .put("trace_id", traceId)
+                    .put("uid_trace_id", traceId)
                     .put("client_ip", clientIp)
                     .put("email", email)
                     .put("phone", phone);
 
-            // Send message to SQS queue
-            vertx.executeBlocking(promise -> {
-                try {
-                    SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
-                            .queueUrl(this.sqsQueueUrl)
-                            .messageBody(messageBody.encode())
-                            .build();
-
-                    SendMessageResponse response = this.sqsClient.sendMessage(sendMsgRequest);
-                    promise.complete(response.messageId());
-                } catch (Exception e) {
-                    promise.fail(e);
+            // send message to sqs queue
+            vertx.executeBlocking(() -> {
+                // check queue size limit before sending
+                if (this.sqsMaxQueueSize > 0) {
+                    SqsMessageOperations.QueueAttributes queueAttrs = 
+                        SqsMessageOperations.getQueueAttributes(this.sqsClient, this.sqsQueueUrl);
+                    if (queueAttrs != null) {
+                        int currentSize = queueAttrs.getTotalMessages();
+                        if (currentSize >= this.sqsMaxQueueSize) {
+                            LOGGER.warn("sqs_queue_full: rejecting message, currentSize={}, maxSize={}", 
+                                currentSize, this.sqsMaxQueueSize);
+                            throw new IllegalStateException("queue size limit exceeded");
+                        }
+                    }
                 }
-            }, res -> {
-                if (res.failed()) {
-                    // this.sendInternalServerError(resp, "Failed to queue message: " + res.cause().getMessage());
-                    LOGGER.error("Failed to queue message: " + res.cause().getMessage());
-                } else {
-                    String messageId = (String) res.result();
 
-                    JsonObject responseJson = new JsonObject()
-                            .put("status", "queued");
+                SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
+                        .queueUrl(this.sqsQueueUrl)
+                        .messageBody(messageBody.encode())
+                        .build();
 
-                    LOGGER.info("Message queued successfully: " + messageId);
-
-                    // resp.setStatusCode(200)
-                    //         .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                    //         .setChunked(true)
-                    //         .write(responseJson.encode());
-                    // resp.end();
-                }
+                this.sqsClient.sendMessage(sendMsgRequest);
+                return null;
+            }).onFailure(cause -> {
+                LOGGER.error("failed to queue message, cause={}", cause.getMessage());
             });
         } catch (Exception ex) {
             // this.sendInternalServerError(resp, ex.getMessage());

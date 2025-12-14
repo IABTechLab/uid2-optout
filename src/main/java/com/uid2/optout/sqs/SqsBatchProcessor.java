@@ -86,10 +86,10 @@ public class SqsBatchProcessor {
      * @return BatchProcessingResult containing eligible messages and processing metadata
      */
     public BatchProcessingResult processBatch(List<Message> messageBatch, int batchNumber) throws IOException {
-        // Parse and sort messages by timestamp
+        // parse and sort messages by timestamp
         List<SqsParsedMessage> parsedBatch = SqsMessageParser.parseAndSortMessages(messageBatch);
         
-        // Identify and delete corrupt messages
+        // identify and delete corrupt messages
         if (parsedBatch.size() < messageBatch.size()) {
             List<Message> invalidMessages = identifyInvalidMessages(messageBatch, parsedBatch);
             if (!invalidMessages.isEmpty()) {
@@ -98,13 +98,13 @@ public class SqsBatchProcessor {
             }
         }
         
-        // No valid messages after deleting corrupt ones, continue reading
+        // no valid messages after deleting corrupt ones, continue reading
         if (parsedBatch.isEmpty()) {
             LOGGER.info("no valid messages in batch {} after removing invalid messages", batchNumber);
             return BatchProcessingResult.corruptMessagesDeleted();
         }
 
-        // Check if the oldest message in this batch is too recent
+        // check if the oldest message in this batch is too recent
         long currentTime = OptOutUtils.nowEpochSeconds();
         SqsParsedMessage oldestMessage = parsedBatch.get(0);
         
@@ -112,7 +112,7 @@ public class SqsBatchProcessor {
             return BatchProcessingResult.messagesTooRecent();
         }
 
-        // Filter for eligible messages (>= deltaWindowSeconds old)
+        // filter for eligible messages (>= deltaWindowSeconds old)
         List<SqsParsedMessage> eligibleMessages = filterEligibleMessages(parsedBatch, currentTime);
 
         return BatchProcessingResult.withMessages(eligibleMessages);

@@ -322,8 +322,8 @@ public class TrafficCalculator {
     }
     
     /**
-     * find the newest timestamp from delta files.
-     * reads the newest delta file and returns its maximum timestamp.
+     * Find the newest timestamp from delta files.
+     * Reads the newest delta file and returns its maximum timestamp.
      */
     private long findNewestDeltaTimestamp(List<String> deltaS3Paths) throws IOException {
         if (deltaS3Paths == null || deltaS3Paths.isEmpty()) {
