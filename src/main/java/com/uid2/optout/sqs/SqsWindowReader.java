@@ -50,7 +50,7 @@ public class SqsWindowReader {
         private final List<SqsParsedMessage> messages;
         private final long windowStart;
         private final StopReason stopReason;
-        private final int rawMessagesRead;  // total messages pulled from SQS
+        private final int rawMessagesRead;  // total messages pulled from sqs
         
         private WindowReadResult(List<SqsParsedMessage> messages, long windowStart, StopReason stopReason, int rawMessagesRead) {
             this.messages = messages;
@@ -97,7 +97,7 @@ public class SqsWindowReader {
         List<SqsParsedMessage> windowMessages = new ArrayList<>();
         long currentWindowStart = 0;
         int batchNumber = 0;
-        int rawMessagesRead = 0;  // track total messages pulled from SQS
+        int rawMessagesRead = 0;  // track total messages pulled from sqs
         
         while (true) {
             if (windowMessages.size() >= maxMessagesPerWindow) {
@@ -105,7 +105,7 @@ public class SqsWindowReader {
                 return WindowReadResult.messageLimitExceeded(windowMessages, currentWindowStart, rawMessagesRead);
             }
             
-            // Read one batch from SQS (up to 10 messages)
+            // read one batch from sqs (up to 10 messages)
             List<Message> rawBatch = SqsMessageOperations.receiveMessagesFromSqs(
                 this.sqsClient, this.queueUrl, this.maxMessagesPerPoll, this.visibilityTimeout);
             
@@ -122,21 +122,21 @@ public class SqsWindowReader {
                 if (batchResult.getStopReason() == StopReason.MESSAGES_TOO_RECENT) {
                     return WindowReadResult.messagesTooRecent(windowMessages, currentWindowStart, rawMessagesRead);
                 }
-                // Corrupt messages were deleted, continue reading
+                // corrupt messages were deleted, continue reading
                 continue;
             }
             
-            // Add eligible messages to current window
+            // add eligible messages to current window
             boolean newWindow = false;
             for (SqsParsedMessage msg : batchResult.getMessages()) {
                 long msgWindowStart = msg.timestamp();
                 
-                // Discover start of window
+                // discover start of window
                 if (currentWindowStart == 0) {
                     currentWindowStart = msgWindowStart;
                 }
 
-                // Discover next window
+                // discover next window
                 if (msgWindowStart > currentWindowStart + this.deltaWindowSeconds) {
                     newWindow = true;
                 }

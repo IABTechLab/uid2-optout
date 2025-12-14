@@ -87,7 +87,7 @@ public class SqsMessageOperations {
             int delayed = parseIntOrDefault(attrs.get(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_DELAYED), 0);
 
             QueueAttributes queueAttributes = new QueueAttributes(visible, invisible, delayed);
-            LOGGER.info("queue attributes: {}", queueAttributes);
+            LOGGER.info("sqs_queue_attributes={}", queueAttributes);
             return queueAttributes;
 
         } catch (Exception e) {

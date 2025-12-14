@@ -402,7 +402,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                     .put("email", email)
                     .put("phone", phone);
 
-            // send message to SQS queue
+            // send message to sqs queue
             vertx.executeBlocking(() -> {
                 // check queue size limit before sending
                 if (this.sqsMaxQueueSize > 0) {

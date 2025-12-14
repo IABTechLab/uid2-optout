@@ -105,7 +105,7 @@ public class DeltaFileWriter {
     private void ensureCapacity(int dataSize) {
         if (buffer.capacity() < dataSize) {
             int newCapacity = Integer.highestOneBit(dataSize) << 1;
-            LOGGER.info("expanding buffer size: current {}, need {}, new {}", buffer.capacity(), dataSize, newCapacity);
+            LOGGER.info("expanding buffer: currentSize={}, neededSize={}, newSize={}", buffer.capacity(), dataSize, newCapacity);
             this.buffer = ByteBuffer.allocate(newCapacity).order(ByteOrder.LITTLE_ENDIAN);
         }
     }

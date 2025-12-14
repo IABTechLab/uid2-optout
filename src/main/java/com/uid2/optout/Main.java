@@ -274,38 +274,33 @@ public class Main {
 
         // deploy sqs producer if enabled
         if (this.enqueueSqsEnabled) {
-            LOGGER.info("SQS enabled, deploying OptOutSqsLogProducer");
+            LOGGER.info("sqs enabled, deploying OptOutSqsLogProducer");
             try {
-                // create sqs-specific cloud sync with custom folder (default: "sqs-delta")
+                // sqs delta production uses a separate s3 folder (default: "sqs-delta")
+                // OptOutCloudSync reads from optout_s3_folder, so we override it with optout_sqs_s3_folder
                 String sqsFolder = this.config.getString(Const.Config.OptOutSqsS3FolderProp, "sqs-delta");
-                LOGGER.info("sqs config - optout_sqs_s3_folder: {}, will override optout_s3_folder to: {}", 
-                    sqsFolder, sqsFolder);
-                JsonObject sqsConfig = new JsonObject().mergeIn(this.config)
+                JsonObject sqsCloudSyncConfig = new JsonObject().mergeIn(this.config)
                     .put(Const.Config.OptOutS3FolderProp, sqsFolder);
-                LOGGER.info("sqs config after merge - optout_s3_folder: {}", sqsConfig.getString(Const.Config.OptOutS3FolderProp));
-                OptOutCloudSync sqsCs = new OptOutCloudSync(sqsConfig, true);
+                OptOutCloudSync sqsCs = new OptOutCloudSync(sqsCloudSyncConfig, true);
 
-                // create sqs-specific cloud storage instance (same bucket, different folder handling)
+                // create cloud storage instances
                 ICloudStorage fsSqs;
                 boolean useStorageMock = this.config.getBoolean(Const.Config.StorageMockProp, false);
                 if (useStorageMock) {
-                    // reuse the same LocalStorageMock for testing
                     fsSqs = this.fsOptOut;
                 } else {
-                    // create fresh CloudStorage for SQS (no path conversion wrapper)
                     String optoutBucket = this.config.getString(Const.Config.OptOutS3BucketProp);
-                    fsSqs = CloudUtils.createStorage(optoutBucket, sqsConfig);
+                    fsSqs = CloudUtils.createStorage(optoutBucket, this.config);
                 }
 
-                // create sqs-specific cloud storage instance for dropped requests (different bucket)
                 String optoutBucketDroppedRequests = this.config.getString(Const.Config.OptOutS3BucketDroppedRequestsProp);
-                ICloudStorage fsSqsDroppedRequests = CloudUtils.createStorage(optoutBucketDroppedRequests, config);
+                ICloudStorage fsSqsDroppedRequests = CloudUtils.createStorage(optoutBucketDroppedRequests, this.config);
 
-                // deploy sqs log producer with its own storage instances 
+                // deploy sqs log producer
                 OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, fsSqsDroppedRequests, sqsCs, Const.Event.DeltaProduce, null);
                 futs.add(this.deploySingleInstance(sqsLogProducer));
 
-                LOGGER.info("SQS log producer deployed - bucket: {}, folder: {}", 
+                LOGGER.info("sqs log producer deployed, bucket={}, folder={}", 
                     this.config.getString(Const.Config.OptOutS3BucketProp), sqsFolder);
             } catch (IOException e) {
                 LOGGER.error("circuit_breaker_config_error: failed to initialize sqs log producer, delta production will be disabled: {}", e.getMessage(), e);
