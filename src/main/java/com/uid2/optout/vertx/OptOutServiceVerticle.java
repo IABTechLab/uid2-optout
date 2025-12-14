@@ -364,7 +364,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         HttpServerRequest req = routingContext.request();
 
         // skip sqs queueing for validator operators (reference-operator, candidate-operator)
-        // this avoids tripple processing of the same request
+        // this avoids triple processing of the same request
         String instanceId = req.getHeader(Audit.UID_INSTANCE_ID_HEADER);
         if (isValidatorOperatorRequest(instanceId)) {
             return;
