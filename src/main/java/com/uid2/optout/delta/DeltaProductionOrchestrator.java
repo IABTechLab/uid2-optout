@@ -265,7 +265,7 @@ public class DeltaProductionOrchestrator {
      * Generates a unique filename for dropped requests.
      */
     private String generateDroppedRequestFileName() {
-        return String.format("%s%03d_%s_%08x.json", 
+        return String.format("dropped/%s%03d_%s_%08x.json", 
                 "optout-dropped-", 
                 replicaId, 
                 Instant.now().truncatedTo(ChronoUnit.SECONDS).toString().replace(':', '.'), 

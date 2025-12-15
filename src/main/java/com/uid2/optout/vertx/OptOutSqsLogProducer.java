@@ -142,7 +142,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         SqsWindowReader windowReader = new SqsWindowReader(
             this.sqsClient, queueUrl, maxMessagesPerPoll, 
             visibilityTimeout, deltaWindowSeconds, maxMessagesPerFile,
-            malformedRequestUploadService, "malformed", replicaId
+            malformedRequestUploadService, "malformed/", replicaId
         );
 
         this.orchestrator = new DeltaProductionOrchestrator(
