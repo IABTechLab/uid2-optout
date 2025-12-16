@@ -15,7 +15,7 @@
         <vertx.version>4.5.21</vertx.version>
         <!-- check micrometer.version vertx-micrometer-metrics consumes before bumping up -->
         <micrometer.version>1.1.0</micrometer.version>
-        <uid2-shared.version>11.1.91</uid2-shared.version>
+        <uid2-shared.version>11.1.125-alpha-328-SNAPSHOT</uid2-shared.version>
         <image.version>${project.version}</image.version>
         <junit-jupiter.version>5.10.1</junit-jupiter.version>
         <junit-vintage.version>5.10.1</junit-vintage.version>
