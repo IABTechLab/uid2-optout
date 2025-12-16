@@ -289,9 +289,7 @@ public class Main {
             // create & deploy log producer verticle
             // deltas go to uploadVerticle (legacy folder in legacy mode, main folder otherwise)
             // partitions always go to main folder (cloudSyncVerticle) since they read from main folder
-            String eventDeltaProduced = uploadVerticle.eventUpload();
-            String eventPartitionProduced = cloudSyncVerticle.eventUpload();
-            OptOutLogProducer logProducer = new OptOutLogProducer(this.config, eventDeltaProduced, eventPartitionProduced);
+            OptOutLogProducer logProducer = new OptOutLogProducer(this.config, uploadVerticle.eventUpload(), cloudSyncVerticle.eventUpload());
             futs.add(this.deploySingleInstance(logProducer));
 
             // upload last delta produced and potentially not uploaded yet
