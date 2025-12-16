@@ -1,24 +1,48 @@
 #!/bin/bash
 # Compare deltas across all environments
 # Requires aws-sso to be installed and configured
+#
+# Usage:
+#   ./compare_deltas_all_environments.sh [--env ENV] [DATE...]
+#
+# Examples:
+#   ./compare_deltas_all_environments.sh                           # All envs, yesterday+today
+#   ./compare_deltas_all_environments.sh 2025-12-15                # All envs, specific date
+#   ./compare_deltas_all_environments.sh --env uid2-test           # Single env, yesterday+today
+#   ./compare_deltas_all_environments.sh --env uid2-prod 2025-12-15 # Single env, specific date
+#
+# Available environments: uid2-test, euid-integ, uid2-integ, euid-prod, uid2-prod
 
 set -e
+
+# Parse arguments
+ENV_FILTER=""
+DATES=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --env|-e)
+            ENV_FILTER=$(echo "$2" | tr '[:upper:]' '[:lower:]')
+            shift 2
+            ;;
+        *)
+            DATES="$DATES --date $1"
+            shift
+            ;;
+    esac
+done
+
+# Default to yesterday and today if no dates provided
+if [ -z "$DATES" ]; then
+    DATES="--date $(date -v-1d +%Y-%m-%d) --date $(date +%Y-%m-%d)"
+fi
 
 # Initialize aggregate counters
 TOTAL_REGULAR_FILES=0
 TOTAL_REGULAR_ENTRIES=0
 TOTAL_SQS_FILES=0
 TOTAL_SQS_ENTRIES=0
-
-# Get date arguments (default to yesterday and today if not provided)
-if [ $# -eq 0 ]; then
-    DATES="--date $(date -v-1d +%Y-%m-%d) --date $(date +%Y-%m-%d)"
-else
-    DATES=""
-    for date in "$@"; do
-        DATES="$DATES --date $date"
-    done
-fi
+ENVS_RUN=0
 
 # Function to extract and sum statistics
 extract_stats() {
@@ -47,74 +71,51 @@ extract_stats() {
     fi
 }
 
-echo "================================"
-echo "Comparing Deltas - UID2 TEST"
-echo "================================"
-OUTPUT=$(aws-sso exec --account 072245134533 --role scrum-uid2-full-access -- \
-    bash -c "cd /Users/ian.nara/service/uid2-optout && source .venv/bin/activate && export OPTOUT_S3_BUCKET=uid2-optout-test-store && ./compare_deltas.sh $DATES --regular-prefix optout/delta/ --sqs-prefix sqs-delta/delta/ --quiet" 2>&1)
-echo "$OUTPUT"
-extract_stats "$OUTPUT" "UID2-TEST"
-
-echo "================================"
-echo "Comparing Deltas - EUID INTEG"
-echo "================================"
-OUTPUT=$(aws-sso exec --account 101244608629 --role scrum-uid2-elevated -- \
-    bash -c "cd /Users/ian.nara/service/uid2-optout && source .venv/bin/activate && export OPTOUT_S3_BUCKET=euid-optout-integ-store && ./compare_deltas.sh $DATES --regular-prefix optout/delta/ --sqs-prefix sqs-delta/delta/ --quiet" 2>&1)
-echo "$OUTPUT"
-extract_stats "$OUTPUT" "EUID-INTEG"
-
-echo "================================"
-echo "Comparing Deltas - UID2 INTEG"
-echo "================================"
-OUTPUT=$(aws-sso exec --account 150073873184 --role scrum-uid2-elevated -- \
-    bash -c "cd /Users/ian.nara/service/uid2-optout && source .venv/bin/activate && export OPTOUT_S3_BUCKET=uid2-optout-integ-store && ./compare_deltas.sh $DATES --regular-prefix uid2-optout-integ/delta/ --sqs-prefix sqs-delta/delta/ --quiet" 2>&1)
-echo "$OUTPUT"
-extract_stats "$OUTPUT" "UID2-INTEG"
-
-echo "================================"
-echo "Comparing Deltas - EUID PROD"
-echo "================================"
-OUTPUT=$(aws-sso exec --account 248068286741 --role scrum-uid2-elevated -- \
-    bash -c "cd /Users/ian.nara/service/uid2-optout && source .venv/bin/activate && export OPTOUT_S3_BUCKET=euid-optout && ./compare_deltas.sh $DATES --regular-prefix optout/delta/ --sqs-prefix sqs-delta/delta/ --quiet" 2>&1)
-echo "$OUTPUT"
-extract_stats "$OUTPUT" "EUID-PROD"
-
-echo "================================"
-echo "Comparing Deltas - UID2 PROD"
-echo "================================"
-OUTPUT=$(aws-sso exec --account 475720075663 --role scrum-uid2-elevated -- \
-    bash -c "cd /Users/ian.nara/service/uid2-optout && source .venv/bin/activate && export OPTOUT_S3_BUCKET=uid2-optout && ./compare_deltas.sh $DATES --regular-prefix optout-v2/delta/ --sqs-prefix sqs-delta/delta/ --quiet" 2>&1)
-echo "$OUTPUT"
-extract_stats "$OUTPUT" "UID2-PROD"
-
-echo ""
-echo "================================================================================"
-echo "📊 AGGREGATE EFFICIENCY SUMMARY"
-echo "================================================================================"
-echo ""
-echo "Environment Breakdown:"
-
-echo ""
-echo "Total Across All Environments:"
-echo "  Regular Delta:  $TOTAL_REGULAR_FILES files, $TOTAL_REGULAR_ENTRIES entries"
-echo "  SQS Delta:      $TOTAL_SQS_FILES files, $TOTAL_SQS_ENTRIES entries"
-echo ""
-
-# Calculate efficiency multipliers
-if [ $TOTAL_SQS_FILES -gt 0 ] && [ $TOTAL_SQS_ENTRIES -gt 0 ]; then
-    FILE_EFFICIENCY=$(awk "BEGIN {printf \"%.2f\", $TOTAL_REGULAR_FILES / $TOTAL_SQS_FILES}")
-    ENTRY_EFFICIENCY=$(awk "BEGIN {printf \"%.2f\", $TOTAL_REGULAR_ENTRIES / $TOTAL_SQS_ENTRIES}")
-    FILE_REDUCTION=$(awk "BEGIN {printf \"%.1f\", (($TOTAL_REGULAR_FILES - $TOTAL_SQS_FILES) * 100.0) / $TOTAL_REGULAR_FILES}")
-    ENTRY_REDUCTION=$(awk "BEGIN {printf \"%.1f\", (($TOTAL_REGULAR_ENTRIES - $TOTAL_SQS_ENTRIES) * 100.0) / $TOTAL_REGULAR_ENTRIES}")
+run_comparison() {
+    local env_name="$1"
+    local account="$2"
+    local role="$3"
+    local bucket="$4"
+    local regular_prefix="$5"
+    local sqs_prefix="$6"
     
-    echo "SQS Efficiency Gains:"
-    echo "  📁 Files:   ${FILE_EFFICIENCY}x fewer files (${FILE_REDUCTION}% reduction)"
-    echo "  📝 Entries: ${ENTRY_EFFICIENCY}x fewer entries (${ENTRY_REDUCTION}% reduction)"
-else
-    echo "⚠️  Unable to calculate efficiency (no SQS data)"
+    # Check if we should skip this environment
+    local env_lower=$(echo "$env_name" | tr '[:upper:]' '[:lower:]')
+    if [ -n "$ENV_FILTER" ] && [ "$env_lower" != "$ENV_FILTER" ]; then
+        return
+    fi
+    
+    ENVS_RUN=$((ENVS_RUN + 1))
+    echo "======================================== $env_name ========================================"
+    OUTPUT=$(aws-sso exec --account "$account" --role "$role" -- \
+        bash -c "cd /Users/ian.nara/service/uid2-optout && source .venv/bin/activate && export OPTOUT_S3_BUCKET=$bucket && ./compare_deltas.sh $DATES --regular-prefix $regular_prefix --sqs-prefix $sqs_prefix --quiet" 2>&1)
+    # Filter out the separator lines from compare_deltas.sh output
+    echo "$OUTPUT" | grep -v "^====" | grep -v "^$"
+    extract_stats "$OUTPUT" "$env_name"
+    echo ""
+}
+
+run_comparison "UID2-TEST" "072245134533" "scrum-uid2-full-access" "uid2-optout-test-store" "optout/delta/" "sqs-delta/delta/"
+run_comparison "EUID-INTEG" "101244608629" "scrum-uid2-elevated" "euid-optout-integ-store" "optout/delta/" "sqs-delta/delta/"
+run_comparison "UID2-INTEG" "150073873184" "scrum-uid2-elevated" "uid2-optout-integ-store" "uid2-optout-integ/delta/" "sqs-delta/delta/"
+run_comparison "EUID-PROD" "409985233527" "scrum-uid2-elevated" "euid-optout-prod-store" "optout/delta/" "sqs-delta/delta/"
+run_comparison "UID2-PROD" "553165044900" "scrum-uid2-elevated" "uid2-optout-prod-store" "optout-v2/delta/" "sqs-delta/delta/"
+
+# Only show summary if we ran environments
+if [ $ENVS_RUN -eq 0 ]; then
+    echo "❌ No matching environment found for: $ENV_FILTER"
+    echo "Available: uid2-test, euid-integ, uid2-integ, euid-prod, uid2-prod"
+    exit 1
 fi
 
-echo ""
-echo "================================"
-echo "All environments compared!"
-echo "================================"
+# Only show summary for multiple environments
+if [ $ENVS_RUN -gt 1 ]; then
+    echo "======================================== SUMMARY ========================================"
+    echo "Total: Regular $TOTAL_REGULAR_FILES files/$TOTAL_REGULAR_ENTRIES entries, SQS $TOTAL_SQS_FILES files/$TOTAL_SQS_ENTRIES entries"
+
+    if [ $TOTAL_SQS_FILES -gt 0 ] && [ $TOTAL_SQS_ENTRIES -gt 0 ]; then
+        FILE_EFFICIENCY=$(awk "BEGIN {printf \"%.1f\", $TOTAL_REGULAR_FILES / $TOTAL_SQS_FILES}")
+        ENTRY_EFFICIENCY=$(awk "BEGIN {printf \"%.1f\", $TOTAL_REGULAR_ENTRIES / $TOTAL_SQS_ENTRIES}")
+        echo "Efficiency: ${FILE_EFFICIENCY}x fewer files, ${ENTRY_EFFICIENCY}x fewer entries"
+    fi
+fi
