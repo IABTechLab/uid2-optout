@@ -246,7 +246,7 @@ public class Main {
 
         List<Future> futs = new ArrayList<>();
 
-        // create optout cloud sync verticle
+        // create optout cloud sync verticle (reads from optout_s3_folder)
         OptOutCloudSync cs = new OptOutCloudSync(this.config, true);
         CloudSyncVerticle cloudSyncVerticle = new CloudSyncVerticle("optout", this.fsOptOut, this.fsLocal, cs, this.config);
 
@@ -268,8 +268,21 @@ public class Main {
             OptOutLogProducer logProducer = new OptOutLogProducer(this.config, eventUpload, eventUpload);
             futs.add(this.deploySingleInstance(logProducer));
 
+            // create cloud sync for legacy producer uploads
+            // if optout_legacy_producer_s3_folder is set, old producer writes to that folder instead of optout_s3_folder
+            String legacyFolder = this.config.getString(Const.Config.OptOutLegacyProducerS3FolderProp);
+            OptOutCloudSync legacyProducerCs;
+            if (legacyFolder != null) {
+                JsonObject legacyConfig = new JsonObject().mergeIn(this.config)
+                    .put(Const.Config.OptOutS3FolderProp, legacyFolder);
+                legacyProducerCs = new OptOutCloudSync(legacyConfig, true);
+                LOGGER.info("legacy producer will write to separate folder: {}", legacyFolder);
+            } else {
+                legacyProducerCs = cs;
+            }
+
             // upload last delta produced and potentially not uploaded yet
-            futs.add((this.uploadLastDelta(cs, logProducer, cloudSyncVerticle.eventUpload(), cloudSyncVerticle.eventRefresh())));
+            futs.add((this.uploadLastDelta(legacyProducerCs, logProducer, cloudSyncVerticle.eventUpload(), cloudSyncVerticle.eventRefresh())));
         }
 
         // deploy sqs producer if enabled
