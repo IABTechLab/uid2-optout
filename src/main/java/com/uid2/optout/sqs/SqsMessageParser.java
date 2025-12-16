@@ -1,0 +1,91 @@
+package com.uid2.optout.sqs;
+
+import com.uid2.shared.optout.OptOutUtils;
+import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.sqs.model.Message;
+import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Utility class for parsing SQS messages containing opt-out data.
+ */
+public class SqsMessageParser {
+    private static final Logger LOGGER = LoggerFactory.getLogger(SqsMessageParser.class);
+
+    /**
+     * Parses and sorts a list of SQS messages by timestamp.
+     * 
+     * @param messages List of raw SQS messages
+     * @return List of parsed messages sorted by timestamp (oldest first)
+     */
+    public static List<SqsParsedMessage> parseAndSortMessages(List<Message> messages) {
+        List<SqsParsedMessage> parsedMessages = new ArrayList<>(messages.size());
+
+        for (Message message : messages) {
+
+            String traceId = null;
+
+            try {
+                // parse message body
+                JsonObject body = new JsonObject(message.body());
+                traceId = body.getString("uid_trace_id");
+
+                String identityHash = body.getString("identity_hash");
+                String advertisingId = body.getString("advertising_id");
+                String clientIp = body.getString("client_ip");
+                String email = body.getString("email");
+                String phone = body.getString("phone");
+
+                // extract sqs system timestamp (in milliseconds), or use current time as fallback
+                long timestampSeconds = extractTimestamp(message, traceId);
+
+                if (identityHash == null || advertisingId == null) {
+                    LOGGER.error("sqs_error: invalid message format, messageId={}, traceId={}", message.messageId(), traceId);
+                    continue;
+                }
+
+                byte[] hashBytes = OptOutUtils.base64StringTobyteArray(identityHash);
+                byte[] idBytes = OptOutUtils.base64StringTobyteArray(advertisingId);
+
+                if (hashBytes == null || idBytes == null) {
+                    LOGGER.error("sqs_error: invalid base64 encoding, messageId={}, traceId={}", message.messageId(), traceId);
+                    continue;
+                }
+
+                parsedMessages.add(new SqsParsedMessage(message, hashBytes, idBytes, timestampSeconds, email, phone, clientIp, traceId));
+            } catch (Exception e) {
+                LOGGER.error("sqs_error: error parsing message, messageId={}, traceId={}", message.messageId(), traceId, e);
+            }
+        }
+
+        // sort by timestamp
+        parsedMessages.sort((a, b) -> Long.compare(a.timestamp(), b.timestamp()));
+
+        return parsedMessages;
+    }
+
+    /**
+     * Extracts timestamp from SQS message attributes, falling back to current time if unavailable.
+     * 
+     * @param message The SQS message
+     * @return Timestamp in seconds
+     */
+    public static long extractTimestamp(Message message, String traceId) {
+        String sentTimestampStr = message.attributes().get(MessageSystemAttributeName.SENT_TIMESTAMP);
+        if (sentTimestampStr == null) {
+            LOGGER.error("sqs_error: message missing SentTimestamp, using current time instead, messageId={}, traceId={}", message.messageId(), traceId);
+            return OptOutUtils.nowEpochSeconds();
+        }
+        try {
+            return Long.parseLong(sentTimestampStr) / 1000;
+        } catch (NumberFormatException e) {
+            LOGGER.error("sqs_error: invalid SentTimestamp, using current time instead, messageId={}, traceId={}, sentTimestamp={}", message.messageId(), traceId, sentTimestampStr);
+            return OptOutUtils.nowEpochSeconds();
+        }
+    }
+}
+

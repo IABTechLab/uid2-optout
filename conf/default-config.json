@@ -32,5 +32,17 @@
   "partners_metadata_path": null,
   "partners_config_path": "partners/config.json",
   "operator_type": "public",
-  "uid_instance_id_prefix": "local-optout"
+  "uid_instance_id_prefix": "local-optout",
+  "optout_enqueue_sqs_enabled": false,
+  "optout_sqs_queue_url": null,
+  "optout_sqs_s3_folder": "sqs-delta",
+  "optout_sqs_max_queue_size": 0,
+  "optout_sqs_max_messages_per_poll": 10,
+  "optout_sqs_visibility_timeout": 300,
+  "optout_delta_job_timeout_seconds": 10800,
+  "optout_s3_bucket_dropped_requests": null,
+  "optout_max_messages_per_file": 10000,
+  "traffic_filter_config_path": null,
+  "traffic_calc_config_path": null,
+  "manual_override_s3_path": null
 }

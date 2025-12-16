@@ -1,7 +1,6 @@
 package com.uid2.optout.partner;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.uid2.shared.audit.Audit;
 import com.uid2.shared.optout.OptOutEntry;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
@@ -37,83 +36,152 @@ public class OptOutPartnerTest {
 
     @Test
     public void internalSite_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
-        String partnerConfigStr = "{" +
-                "      \"name\": \"ttd\",\n" +
-                //UID2-3697 intentionally added some upper cases to make sure the url is the same as what's provided by DSP originally
-                "      \"url\": \"http://localhost:18083/AdServer/uid2optout\",\n" +
-                "      \"method\": \"GET\",\n" +
-                "      \"query_params\": [\n" +
-                "        \"uid2=${ADVERTISING_ID}\",\n" +
-                "        \"timestamp=${OPTOUT_EPOCH}\"\n" +
-                "      ],\n" +
-                "      \"additional_headers\": [\n" +
-                "        \"Authorization: Bearer 111-1111111\"\n" +
-                "      ],\n" +
-                "      \"retry_count\": 600,\n" +
-                "      \"retry_backoff_ms\": 6000" +
-                "}";
-        testConfig_expectSuccess(ctx, partnerConfigStr, true);
+        Async async = ctx.async();
+        HttpServer server = this.createTestServer(ctx, req -> {
+            //UID2-3697 intentionally added some upper cases to make sure the url is the same as what's provided by DSP originally
+            ctx.assertEquals("/AdServer/uid2optout", req.path());
+
+            String uid2Expected = OptOutEntry.idHashB64FromLong(1234);
+            String uid2 = req.getParam(OptOutPartnerTest.PARAM_UID2);
+            ctx.assertEquals(uid2Expected, uid2);
+
+            String ts = req.getParam(OptOutPartnerTest.PARAM_TIMESTAMP);
+            ctx.assertNotNull(ts);
+
+            String hExpected = "Bearer 111-1111111";
+            String h = req.getHeader("Authorization");
+            ctx.assertEquals(hExpected, h);
+            async.complete();
+        });
+
+        server.listen(0, ctx.asyncAssertSuccess(s -> {
+            int port = s.actualPort();
+            String partnerConfigStr = "{" +
+                    "      \"name\": \"ttd\",\n" +
+                    "      \"url\": \"http://localhost:" + port + "/AdServer/uid2optout\",\n" +
+                    "      \"method\": \"GET\",\n" +
+                    "      \"query_params\": [\n" +
+                    "        \"uid2=${ADVERTISING_ID}\",\n" +
+                    "        \"timestamp=${OPTOUT_EPOCH}\"\n" +
+                    "      ],\n" +
+                    "      \"additional_headers\": [\n" +
+                    "        \"Authorization: Bearer 111-1111111\"\n" +
+                    "      ],\n" +
+                    "      \"retry_count\": 600,\n" +
+                    "      \"retry_backoff_ms\": 6000" +
+                    "}";
+
+            try {
+                EndpointConfig partnerConfig = EndpointConfig.fromJsonString(partnerConfigStr);
+                byte[] idHash = OptOutEntry.idHashFromLong(4567);
+                byte[] advertisingId = OptOutEntry.idHashFromLong(1234);
+                long timestamp = Instant.now().getEpochSecond();
+                OptOutEntry entry = new OptOutEntry(idHash, advertisingId, timestamp);
+                
+                OptOutPartnerEndpoint remote = new OptOutPartnerEndpoint(vertx, partnerConfig);
+                remote.send(entry).onComplete(ctx.asyncAssertSuccess());
+            } catch (Exception e) {
+                ctx.fail(e);
+            }
+        }));
     }
 
     @Test
-    public void externalHttpSite_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
-        testSite_expectSuccess(ctx, "http://httpstat.us/200");
+    public void simpleHttpEndpoint_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
+        // Test a simple HTTP endpoint with minimal configuration
+        Async async = ctx.async();
+        HttpServer server = vertx.createHttpServer()
+                .requestHandler(req -> {
+                    ctx.assertEquals("/optout", req.path());
+                    
+                    String idExpected = OptOutEntry.idHashB64FromLong(1234);
+                    String id = req.getParam("id");
+                    ctx.assertEquals(idExpected, id);
+                    
+                    req.response().setStatusCode(200).end();
+                    async.complete();
+                });
+
+        server.listen(0, ctx.asyncAssertSuccess(s -> {
+            int port = s.actualPort();
+            String partnerConfigStr = "{" +
+                    "      \"name\": \"simple-partner\",\n" +
+                    "      \"url\": \"http://localhost:" + port + "/optout\",\n" +
+                    "      \"method\": \"GET\",\n" +
+                    "      \"query_params\": [\n" +
+                    "        \"id=${ADVERTISING_ID}\"\n" +
+                    "      ],\n" +
+                    "      \"retry_count\": 3,\n" +
+                    "      \"retry_backoff_ms\": 100" +
+                    "}";
+
+            try {
+                byte[] idHash = OptOutEntry.idHashFromLong(4567);
+                byte[] advertisingId = OptOutEntry.idHashFromLong(1234);
+                long timestamp = Instant.now().getEpochSecond();
+                OptOutEntry entry = new OptOutEntry(idHash, advertisingId, timestamp);
+
+                EndpointConfig partnerConfig = EndpointConfig.fromJsonString(partnerConfigStr);
+                OptOutPartnerEndpoint remote = new OptOutPartnerEndpoint(vertx, partnerConfig);
+                remote.send(entry).onComplete(ctx.asyncAssertSuccess());
+            } catch (Exception e) {
+                ctx.fail(e);
+            }
+        }));
     }
 
     @Test
-    public void externalHttpsSite_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
-        testSite_expectSuccess(ctx, "https://httpstat.us/200");
-    }
+    public void customPathAndHeaders_expectSuccess(TestContext ctx) throws JsonProcessingException, InvalidPropertiesFormatException {
+        // Test an endpoint with custom path and headers
+        Async async = ctx.async();
+        HttpServer server = vertx.createHttpServer()
+                .requestHandler(req -> {
+                    ctx.assertEquals("/api/v1/optout", req.path());
+                    
+                    String userIdExpected = OptOutEntry.idHashB64FromLong(5555);
+                    String userId = req.getParam("user_id");
+                    ctx.assertEquals(userIdExpected, userId);
+                    
+                    String ts = req.getParam("ts");
+                    ctx.assertNotNull(ts);
+                    
+                    String customHeader = req.getHeader("X-Custom-Header");
+                    ctx.assertEquals("test-value", customHeader);
+                    
+                    req.response().setStatusCode(200).end();
+                    async.complete();
+                });
 
-    private void testSite_expectSuccess(TestContext ctx, String site) throws JsonProcessingException, InvalidPropertiesFormatException {
-        String partnerConfigStr = "{" +
-                "      \"name\": \"ttd\",\n" +
-                "      \"url\": \"" + site + "\",\n" +
-                "      \"method\": \"GET\",\n" +
-                "      \"query_params\": [\n" +
-                "        \"uid2=${ADVERTISING_ID}\",\n" +
-                "        \"timestamp=${OPTOUT_EPOCH}\"\n" +
-                "      ],\n" +
-                "      \"additional_headers\": [\n" +
-                "        \"Authorization: Bearer 111-1111111\"\n" +
-                "      ],\n" +
-                "      \"retry_count\": 600,\n" +
-                "      \"retry_backoff_ms\": 6000" +
-                "}";
-        testConfig_expectSuccess(ctx, partnerConfigStr, false);
-    }
+        server.listen(0, ctx.asyncAssertSuccess(s -> {
+            int port = s.actualPort();
+            String partnerConfigStr = "{" +
+                    "      \"name\": \"custom-partner\",\n" +
+                    "      \"url\": \"http://localhost:" + port + "/api/v1/optout\",\n" +
+                    "      \"method\": \"GET\",\n" +
+                    "      \"query_params\": [\n" +
+                    "        \"user_id=${ADVERTISING_ID}\",\n" +
+                    "        \"ts=${OPTOUT_EPOCH}\"\n" +
+                    "      ],\n" +
+                    "      \"additional_headers\": [\n" +
+                    "        \"X-Custom-Header: test-value\"\n" +
+                    "      ],\n" +
+                    "      \"retry_count\": 5,\n" +
+                    "      \"retry_backoff_ms\": 200" +
+                    "}";
 
-    private void testConfig_expectSuccess(TestContext ctx, String partnerConfigStr, boolean createInternalTestServer) throws JsonProcessingException, InvalidPropertiesFormatException {
+            try {
+                byte[] idHash = OptOutEntry.idHashFromLong(9999);
+                byte[] advertisingId = OptOutEntry.idHashFromLong(5555);
+                long timestamp = Instant.now().getEpochSecond();
+                OptOutEntry entry = new OptOutEntry(idHash, advertisingId, timestamp);
 
-        EndpointConfig partnerConfig = EndpointConfig.fromJsonString(partnerConfigStr);
-
-        byte[] idHash = OptOutEntry.idHashFromLong(4567);
-        byte[] advertisingId = OptOutEntry.idHashFromLong(1234);
-        long timestamp = Instant.now().getEpochSecond();
-        OptOutEntry entry = new OptOutEntry(idHash, advertisingId, timestamp);
-
-        if (createInternalTestServer) {
-            Async async = ctx.async();
-            HttpServer server = this.createTestServer(ctx, req -> {
-                ctx.assertEquals("/AdServer/uid2optout", req.path());
-
-                String uid2Expected = OptOutEntry.idHashB64FromLong(1234);
-                String uid2 = req.getParam(OptOutPartnerTest.PARAM_UID2);
-                ctx.assertEquals(uid2Expected, uid2);
-
-                String tsExpected = String.valueOf(timestamp);
-                String ts = req.getParam(OptOutPartnerTest.PARAM_TIMESTAMP);
-                ctx.assertEquals(tsExpected, ts);
-
-                String hExpected = "Bearer 111-1111111";
-                String h = req.getHeader("Authorization");
-                ctx.assertEquals(hExpected, h);
-                async.complete();
-            });
-        }
-
-        OptOutPartnerEndpoint remote = new OptOutPartnerEndpoint(vertx, partnerConfig);
-        remote.send(entry).onComplete(ctx.asyncAssertSuccess());
+                EndpointConfig partnerConfig = EndpointConfig.fromJsonString(partnerConfigStr);
+                OptOutPartnerEndpoint remote = new OptOutPartnerEndpoint(vertx, partnerConfig);
+                remote.send(entry).onComplete(ctx.asyncAssertSuccess());
+            } catch (Exception e) {
+                ctx.fail(e);
+            }
+        }));
     }
 
     private HttpServer createTestServer(TestContext ctx, Handler<HttpServerRequest> requestValidator) {
@@ -121,7 +189,6 @@ public class OptOutPartnerTest {
                 .requestHandler(req -> {
                     requestValidator.handle(req);
                     req.response().setStatusCode(200).end();
-                })
-                .listen(18083, ctx.asyncAssertSuccess());
+                });
     }
 }

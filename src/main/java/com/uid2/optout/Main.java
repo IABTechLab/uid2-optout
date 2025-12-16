@@ -1,6 +1,8 @@
 package com.uid2.optout;
 
 import com.uid2.optout.vertx.*;
+import com.uid2.optout.traffic.TrafficFilter.MalformedTrafficFilterConfigException;
+import com.uid2.optout.traffic.TrafficCalculator.MalformedTrafficCalcConfigException;
 import com.uid2.shared.ApplicationVersion;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationResponseHandler;
@@ -27,7 +29,6 @@ import io.micrometer.prometheus.PrometheusRenameFilter;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpServerOptions;
-import io.vertx.core.http.impl.HttpUtils;
 import io.vertx.core.json.JsonObject;
 import io.vertx.micrometer.MetricsDomain;
 import org.slf4j.Logger;
@@ -269,6 +270,45 @@ public class Main {
 
             // upload last delta produced and potentially not uploaded yet
             futs.add((this.uploadLastDelta(cs, logProducer, cloudSyncVerticle.eventUpload(), cloudSyncVerticle.eventRefresh())));
+        }
+
+        // deploy sqs producer if enabled
+        if (this.enqueueSqsEnabled) {
+            LOGGER.info("sqs enabled, deploying OptOutSqsLogProducer");
+            try {
+                // sqs delta production uses a separate s3 folder (default: "sqs-delta")
+                // OptOutCloudSync reads from optout_s3_folder, so we override it with optout_sqs_s3_folder
+                String sqsFolder = this.config.getString(Const.Config.OptOutSqsS3FolderProp, "sqs-delta");
+                JsonObject sqsCloudSyncConfig = new JsonObject().mergeIn(this.config)
+                    .put(Const.Config.OptOutS3FolderProp, sqsFolder);
+                OptOutCloudSync sqsCs = new OptOutCloudSync(sqsCloudSyncConfig, true);
+
+                // create cloud storage instances
+                ICloudStorage fsSqs;
+                boolean useStorageMock = this.config.getBoolean(Const.Config.StorageMockProp, false);
+                if (useStorageMock) {
+                    fsSqs = this.fsOptOut;
+                } else {
+                    String optoutBucket = this.config.getString(Const.Config.OptOutS3BucketProp);
+                    fsSqs = CloudUtils.createStorage(optoutBucket, this.config);
+                }
+
+                String optoutBucketDroppedRequests = this.config.getString(Const.Config.OptOutS3BucketDroppedRequestsProp);
+                ICloudStorage fsSqsDroppedRequests = CloudUtils.createStorage(optoutBucketDroppedRequests, this.config);
+
+                // deploy sqs log producer
+                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, fsSqsDroppedRequests, sqsCs, Const.Event.DeltaProduce, null);
+                futs.add(this.deploySingleInstance(sqsLogProducer));
+
+                LOGGER.info("sqs log producer deployed, bucket={}, folder={}", 
+                    this.config.getString(Const.Config.OptOutS3BucketProp), sqsFolder);
+            } catch (IOException e) {
+                LOGGER.error("circuit_breaker_config_error: failed to initialize sqs log producer, delta production will be disabled: {}", e.getMessage(), e);
+            } catch (MalformedTrafficFilterConfigException e) {
+                LOGGER.error("circuit_breaker_config_error: traffic filter config is malformed, delta production will be disabled: {}", e.getMessage(), e);
+            } catch (MalformedTrafficCalcConfigException e) {
+                LOGGER.error("circuit_breaker_config_error: traffic calc config is malformed, delta production will be disabled: {}", e.getMessage(), e);
+            }
         }
 
         Supplier<Verticle> svcSupplier = () -> {
