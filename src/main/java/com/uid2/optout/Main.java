@@ -323,7 +323,8 @@ public class Main {
                 ICloudStorage fsSqsDroppedRequests = CloudUtils.createStorage(optoutBucketDroppedRequests, this.config);
 
                 // deploy sqs log producer
-                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, fsSqsDroppedRequests, sqsCs, Const.Event.DeltaProduce, null);
+                // fires DeltaProduced (notification) not DeltaProduce (trigger) to avoid triggering old producer
+                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, fsSqsDroppedRequests, sqsCs, Const.Event.DeltaProduced, null);
                 futs.add(this.deploySingleInstance(sqsLogProducer));
 
                 LOGGER.info("sqs log producer deployed, bucket={}, folder={}", 
@@ -366,7 +367,7 @@ public class Main {
             });
     }
 
-    
+
     private Future uploadLastDelta(OptOutCloudSync cs, OptOutCloudSync uploadCs, OptOutLogProducer logProducer, String eventRefresh) {
         final String deltaLocalPath;
         try {
