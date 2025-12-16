@@ -293,7 +293,9 @@ public class Main {
             futs.add(this.deploySingleInstance(logProducer));
 
             // upload last delta produced and potentially not uploaded yet
-            futs.add((this.uploadLastDelta(uploadCs, logProducer, uploadVerticle.eventUpload(), uploadVerticle.eventRefresh())));
+            // always use main cs/cloudSyncVerticle for refresh mechanism (legacy verticle is upload-only)
+            // uploadCs is used only for determining the cloud path (legacy folder vs main folder)
+            futs.add((this.uploadLastDelta(cs, uploadCs, logProducer, cloudSyncVerticle.eventRefresh())));
         }
 
         // deploy sqs producer if enabled
@@ -364,7 +366,8 @@ public class Main {
             });
     }
 
-    private Future uploadLastDelta(OptOutCloudSync cs, OptOutLogProducer logProducer, String eventUpload, String eventRefresh) {
+    
+    private Future uploadLastDelta(OptOutCloudSync cs, OptOutCloudSync uploadCs, OptOutLogProducer logProducer, String eventRefresh) {
         final String deltaLocalPath;
         try {
             deltaLocalPath = logProducer.getLastDelta();
@@ -383,7 +386,8 @@ public class Main {
         handler.set(cs.registerNewCloudPathsHandler(cloudPaths -> {
             try {
                 cs.unregisterNewCloudPathsHandler(handler.get());
-                final String deltaCloudPath = cs.toCloudPath(deltaLocalPath);
+                // use uploadCs for cloud path (may be different folder than cs)
+                final String deltaCloudPath = uploadCs.toCloudPath(deltaLocalPath);
                 if (cloudPaths.contains(deltaCloudPath)) {
                     // if delta is already uploaded, the work is already done
                     LOGGER.info("found no last delta that needs to be uploaded");
