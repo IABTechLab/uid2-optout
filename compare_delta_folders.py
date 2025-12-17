@@ -6,7 +6,7 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 try:
     import boto3
@@ -15,12 +15,20 @@ except ImportError:
     print("Error: boto3 not installed. Run: pip install boto3")
     sys.exit(1)
 
-CACHE_DIR =  "./.cache/delta-cache/"
+CACHE_DIR = "./.cache/delta-cache/"
+
+IDENTITY_HASH_SIZE = 32
+ADVERTISING_ID_SIZE = 32
+TIMESTAMP_AND_METADATA_SIZE = 8
+
+MIN_VALID_TIMESTAMP = 1577836800  # 2020-01-01
+MAX_VALID_TIMESTAMP = 4102444800  # 2100-01-01
+
+TIMESTAMP_MASK = 0x00FFFFFFFFFFFFFF  # Masks out the metadata byte
 
 
 class OptOutRecord:
-    # 32 (identity_hash) + 32 (advertising_id) + 7 (timestamp) + 1 (metadata)
-    ENTRY_SIZE = 72
+    ENTRY_SIZE = IDENTITY_HASH_SIZE + ADVERTISING_ID_SIZE + TIMESTAMP_AND_METADATA_SIZE
 
     def __init__(self, identity_hash: bytes, advertising_id: bytes, timestamp: int):
         self.identity_hash = identity_hash
@@ -28,8 +36,8 @@ class OptOutRecord:
         self.timestamp = timestamp
 
     def is_sentinel(self) -> bool:
-        return (self.identity_hash == b'\x00' * 32 or
-                self.identity_hash == b'\xff' * 32)
+        return (self.identity_hash == b'\x00' * IDENTITY_HASH_SIZE or
+                self.identity_hash == b'\xff' * IDENTITY_HASH_SIZE)
 
     def __hash__(self):
         return hash((self.identity_hash, self.advertising_id))
@@ -55,16 +63,13 @@ def parse_records_from_file(data: bytes) -> List[OptOutRecord]:
     records = []
     offset = 0
     entry_size = OptOutRecord.ENTRY_SIZE
-
-    MIN_VALID_TIMESTAMP = 1577836800  # 2020-01-01
-    MAX_VALID_TIMESTAMP = 4102444800  # 2100-01-01
+    timestamp_offset = IDENTITY_HASH_SIZE + ADVERTISING_ID_SIZE
 
     while offset + entry_size <= len(data):
-        identity_hash = data[offset:offset + 32]
-        advertising_id = data[offset + 32:offset + 64]
-        # Last byte is metadata, mask to 56 bits for timestamp
-        timestamp_raw = struct.unpack('<Q', data[offset + 64:offset + 72])[0]
-        timestamp = timestamp_raw & 0xFFFFFFFFFFFFFF
+        identity_hash = data[offset:offset + IDENTITY_HASH_SIZE]
+        advertising_id = data[offset + IDENTITY_HASH_SIZE:offset + timestamp_offset]
+        timestamp_raw = struct.unpack('<Q', data[offset + timestamp_offset:offset + entry_size])[0]
+        timestamp = timestamp_raw & TIMESTAMP_MASK
 
         record = OptOutRecord(identity_hash, advertising_id, timestamp)
 
@@ -82,7 +87,7 @@ def parse_records_from_file(data: bytes) -> List[OptOutRecord]:
     return records
 
 
-def get_cached_file(bucket: str, key: str) -> bytes | None:
+def get_cached_file(bucket: str, key: str) -> Optional[bytes]:
     filename = key.split('/')[-1]
     cache_path = Path(CACHE_DIR) / bucket / filename
     if cache_path.exists():
@@ -97,7 +102,8 @@ def save_to_cache(bucket: str, key: str, data: bytes) -> None:
     cache_path.write_bytes(data)
 
 
-def download_from_s3(bucket: str, key: str) -> tuple[bytes, bool]:
+def download_from_s3(bucket: str, key: str) -> Tuple[bytes, bool]:
+    """Returns (data, was_cached) tuple."""
     cached = get_cached_file(bucket, key)
     if cached is not None:
         return cached, True
@@ -134,7 +140,7 @@ def list_dat_files(bucket: str, prefix: str) -> List[str]:
 
 def load_records_from_folder(
         bucket: str, prefix: str, date_folder: str, quiet: bool = False
-) -> Tuple[Set[OptOutRecord], dict]:
+) -> Tuple[Set[OptOutRecord], Dict[str, dict]]:
     full_prefix = f"{prefix}{date_folder}/"
     files = list_dat_files(bucket, full_prefix)
 
@@ -181,7 +187,7 @@ def load_records_from_folder(
 
 def load_records_from_multiple_folders(
         bucket: str, prefix: str, date_folders: List[str], quiet: bool = False
-) -> Tuple[Set[OptOutRecord], dict]:
+) -> Tuple[Set[OptOutRecord], Dict[str, dict]]:
     all_records = set()
     all_stats = {}
 
@@ -230,7 +236,7 @@ def analyze_differences(regular_records: Set[OptOutRecord],
     return all_records_matched
 
 
-def print_file_stats(regular_stats: dict, sqs_stats: dict) -> None:
+def print_file_stats(regular_stats: Dict[str, dict], sqs_stats: Dict[str, dict]) -> None:
     print("\n\n📈 File Statistics")
 
     print(f"\n   Regular Delta Files: {len(regular_stats)}")
