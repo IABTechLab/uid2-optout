@@ -246,7 +246,12 @@ public class Main {
 
         List<Future> futs = new ArrayList<>();
 
-        // create optout cloud sync verticle
+        // determine folder configuration for old producer vs readers
+        String legacyFolder = this.config.getString(Const.Config.OptOutLegacyProducerS3FolderProp);
+        String mainFolder = this.config.getString(Const.Config.OptOutS3FolderProp);
+        boolean useLegacyFolder = legacyFolder != null && !legacyFolder.equals(mainFolder);
+
+        // main CloudSyncVerticle - downloads from optout_s3_folder (for readers: partition generator, log sender)
         OptOutCloudSync cs = new OptOutCloudSync(this.config, true);
         CloudSyncVerticle cloudSyncVerticle = new CloudSyncVerticle("optout", this.fsOptOut, this.fsLocal, cs, this.config);
 
@@ -257,19 +262,40 @@ public class Main {
         futs.add(this.createOperatorKeyRotator());
 
         if (!this.observeOnly) {
-            // enable partition producing
+            // enable partition producing (reads from main folder via cs)
             cs.enableDeltaMerging(vertx, Const.Event.PartitionProduce);
 
             // create partners config monitor
             futs.add(this.createPartnerConfigMonitor(cloudSyncVerticle.eventDownloaded()));
 
+            // create CloudSyncVerticle for old producer uploads
+            // if legacy folder is configured, create upload-only verticle; otherwise reuse main verticle
+            OptOutCloudSync uploadCs;
+            CloudSyncVerticle uploadVerticle;
+            if (useLegacyFolder) {
+                LOGGER.info("old producer uploads configured to use folder: {} (readers use: {})", legacyFolder, mainFolder);
+                JsonObject legacyConfig = new JsonObject().mergeIn(this.config)
+                    .put(Const.Config.OptOutS3FolderProp, legacyFolder);
+                uploadCs = new OptOutCloudSync(legacyConfig, true, true);
+                // upload-only verticle: won't download legacy files
+                uploadVerticle = new CloudSyncVerticle("optout-legacy", this.fsOptOut, this.fsLocal, uploadCs, this.config);
+                futs.add(this.deploySingleInstance(uploadVerticle));
+            } else {
+                // no legacy folder configured, old producer uploads to main folder
+                uploadCs = cs;
+                uploadVerticle = cloudSyncVerticle;
+            }
+
             // create & deploy log producer verticle
-            String eventUpload = cloudSyncVerticle.eventUpload();
-            OptOutLogProducer logProducer = new OptOutLogProducer(this.config, eventUpload, eventUpload);
+            // deltas go to uploadVerticle (legacy folder in legacy mode, main folder otherwise)
+            // partitions always go to main folder (cloudSyncVerticle) since they read from main folder
+            OptOutLogProducer logProducer = new OptOutLogProducer(this.config, uploadVerticle.eventUpload(), cloudSyncVerticle.eventUpload());
             futs.add(this.deploySingleInstance(logProducer));
 
             // upload last delta produced and potentially not uploaded yet
-            futs.add((this.uploadLastDelta(cs, logProducer, cloudSyncVerticle.eventUpload(), cloudSyncVerticle.eventRefresh())));
+            // always use main cs/cloudSyncVerticle for refresh mechanism (legacy verticle is upload-only)
+            // uploadCs is used only for determining the cloud path (legacy folder vs main folder)
+            futs.add((this.uploadLastDelta(cs, uploadCs, logProducer, cloudSyncVerticle.eventRefresh())));
         }
 
         // deploy sqs producer if enabled
@@ -297,7 +323,8 @@ public class Main {
                 ICloudStorage fsSqsDroppedRequests = CloudUtils.createStorage(optoutBucketDroppedRequests, this.config);
 
                 // deploy sqs log producer
-                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, fsSqsDroppedRequests, sqsCs, Const.Event.DeltaProduce, null);
+                // fires DeltaProduced (notification) not DeltaProduce (trigger) to avoid triggering old producer
+                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, fsSqsDroppedRequests, sqsCs, Const.Event.DeltaProduced, null);
                 futs.add(this.deploySingleInstance(sqsLogProducer));
 
                 LOGGER.info("sqs log producer deployed, bucket={}, folder={}", 
@@ -340,7 +367,8 @@ public class Main {
             });
     }
 
-    private Future uploadLastDelta(OptOutCloudSync cs, OptOutLogProducer logProducer, String eventUpload, String eventRefresh) {
+
+    private Future uploadLastDelta(OptOutCloudSync cs, OptOutCloudSync uploadCs, OptOutLogProducer logProducer, String eventRefresh) {
         final String deltaLocalPath;
         try {
             deltaLocalPath = logProducer.getLastDelta();
@@ -359,7 +387,8 @@ public class Main {
         handler.set(cs.registerNewCloudPathsHandler(cloudPaths -> {
             try {
                 cs.unregisterNewCloudPathsHandler(handler.get());
-                final String deltaCloudPath = cs.toCloudPath(deltaLocalPath);
+                // use uploadCs for cloud path (may be different folder than cs)
+                final String deltaCloudPath = uploadCs.toCloudPath(deltaLocalPath);
                 if (cloudPaths.contains(deltaCloudPath)) {
                     // if delta is already uploaded, the work is already done
                     LOGGER.info("found no last delta that needs to be uploaded");
