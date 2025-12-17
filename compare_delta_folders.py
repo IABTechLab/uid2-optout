@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Compare opt-out records between regular and SQS delta folders in S3."""
 
 import argparse
 import struct
@@ -6,7 +7,7 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 try:
     import boto3
@@ -28,6 +29,8 @@ TIMESTAMP_MASK = 0x00FFFFFFFFFFFFFF  # Masks out the metadata byte
 
 
 class OptOutRecord:
+    """Represents a single opt-out record from a delta file."""
+
     ENTRY_SIZE = IDENTITY_HASH_SIZE + ADVERTISING_ID_SIZE + TIMESTAMP_AND_METADATA_SIZE
 
     def __init__(self, identity_hash: bytes, advertising_id: bytes, timestamp: int):
@@ -36,19 +39,20 @@ class OptOutRecord:
         self.timestamp = timestamp
 
     def is_sentinel(self) -> bool:
+        """Return True if this record is a sentinel (all zeros or all ones)."""
         return (self.identity_hash == b'\x00' * IDENTITY_HASH_SIZE or
                 self.identity_hash == b'\xff' * IDENTITY_HASH_SIZE)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.identity_hash, self.advertising_id))
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
         if not isinstance(other, OptOutRecord):
-            return False
+            return NotImplemented
         return (self.identity_hash == other.identity_hash and
                 self.advertising_id == other.advertising_id)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         hash_hex = self.identity_hash.hex()[:16]
         id_hex = self.advertising_id.hex()[:16]
         try:
@@ -60,6 +64,7 @@ class OptOutRecord:
 
 
 def parse_records_from_file(data: bytes) -> List[OptOutRecord]:
+    """Parse binary data into a list of OptOutRecords, filtering invalid entries."""
     records = []
     offset = 0
     entry_size = OptOutRecord.ENTRY_SIZE
@@ -88,6 +93,7 @@ def parse_records_from_file(data: bytes) -> List[OptOutRecord]:
 
 
 def get_cached_file(bucket: str, key: str) -> Optional[bytes]:
+    """Return cached file contents if available, otherwise None."""
     filename = key.split('/')[-1]
     cache_path = Path(CACHE_DIR) / bucket / filename
     if cache_path.exists():
@@ -96,6 +102,7 @@ def get_cached_file(bucket: str, key: str) -> Optional[bytes]:
 
 
 def save_to_cache(bucket: str, key: str, data: bytes) -> None:
+    """Save file data to local cache directory."""
     filename = key.split('/')[-1]
     cache_path = Path(CACHE_DIR) / bucket / filename
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -120,6 +127,7 @@ def download_from_s3(bucket: str, key: str) -> Tuple[bytes, bool]:
 
 
 def list_dat_files(bucket: str, prefix: str) -> List[str]:
+    """List all .dat files in the given S3 bucket and prefix."""
     try:
         s3 = boto3.client('s3')
         files = []
@@ -141,6 +149,7 @@ def list_dat_files(bucket: str, prefix: str) -> List[str]:
 def load_records_from_folder(
         bucket: str, prefix: str, date_folder: str, quiet: bool = False
 ) -> Tuple[Set[OptOutRecord], Dict[str, dict]]:
+    """Load all records from a single date folder, returning records and file stats."""
     full_prefix = f"{prefix}{date_folder}/"
     files = list_dat_files(bucket, full_prefix)
 
@@ -157,7 +166,8 @@ def load_records_from_folder(
         filename = file_key.split('/')[-1]
         if not quiet:
             cache_info = f" ({cached_count} cached)" if cached_count > 0 else ""
-            print(f"\r   {date_folder}: [{i}/{len(files)}] {total_records} records{cache_info}", end='', flush=True)
+            progress = f"\r   {date_folder}: [{i}/{len(files)}] {total_records} records{cache_info}"
+            print(progress, end='', flush=True)
 
         try:
             data, from_cache = download_from_s3(bucket, file_key)
@@ -180,7 +190,8 @@ def load_records_from_folder(
 
     if not quiet:
         cache_info = f" ({cached_count} cached)" if cached_count > 0 else ""
-        print(f"\r   {date_folder}: {len(files)} files, {total_records} records{cache_info}" + " " * 20)
+        summary = f"\r   {date_folder}: {len(files)} files, {total_records} records{cache_info}"
+        print(summary + " " * 20)
 
     return all_records, file_stats
 
@@ -188,6 +199,7 @@ def load_records_from_folder(
 def load_records_from_multiple_folders(
         bucket: str, prefix: str, date_folders: List[str], quiet: bool = False
 ) -> Tuple[Set[OptOutRecord], Dict[str, dict]]:
+    """Load and merge records from multiple date folders."""
     all_records = set()
     all_stats = {}
 
@@ -202,6 +214,11 @@ def load_records_from_multiple_folders(
 def analyze_differences(regular_records: Set[OptOutRecord],
                         sqs_records: Set[OptOutRecord],
                         show_samples: int = 10) -> bool:
+    """
+    Compare record sets and print differences.
+
+    Returns True if all regular records exist in SQS.
+    """
     print("\n\n📊 Analysis Results (unique records)")
     print(f"\n   Regular: {len(regular_records):,}")
     print(f"   SQS:     {len(sqs_records):,}")
@@ -237,6 +254,7 @@ def analyze_differences(regular_records: Set[OptOutRecord],
 
 
 def print_file_stats(regular_stats: Dict[str, dict], sqs_stats: Dict[str, dict]) -> None:
+    """Print summary statistics for regular and SQS delta files."""
     print("\n\n📈 File Statistics")
 
     print(f"\n   Regular Delta Files: {len(regular_stats)}")
@@ -257,6 +275,7 @@ def print_file_stats(regular_stats: Dict[str, dict], sqs_stats: Dict[str, dict])
 
 
 def main() -> None:
+    """Entry point: parse arguments and run the comparison."""
     parser = argparse.ArgumentParser(
         description='Compare opt-out records between regular and SQS delta folders'
     )
