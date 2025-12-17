@@ -5,6 +5,7 @@ import struct
 import sys
 import traceback
 from datetime import datetime
+from pathlib import Path
 from typing import List, Set, Tuple
 
 try:
@@ -13,6 +14,8 @@ try:
 except ImportError:
     print("Error: boto3 not installed. Run: pip install boto3")
     sys.exit(1)
+
+CACHE_DIR =  "./.cache/delta-cache/"
 
 
 class OptOutRecord:
@@ -79,11 +82,32 @@ def parse_records_from_file(data: bytes) -> List[OptOutRecord]:
     return records
 
 
-def download_from_s3(bucket: str, key: str) -> bytes:
+def get_cached_file(bucket: str, key: str) -> bytes | None:
+    filename = key.split('/')[-1]
+    cache_path = Path(CACHE_DIR) / bucket / filename
+    if cache_path.exists():
+        return cache_path.read_bytes()
+    return None
+
+
+def save_to_cache(bucket: str, key: str, data: bytes) -> None:
+    filename = key.split('/')[-1]
+    cache_path = Path(CACHE_DIR) / bucket / filename
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_bytes(data)
+
+
+def download_from_s3(bucket: str, key: str) -> tuple[bytes, bool]:
+    cached = get_cached_file(bucket, key)
+    if cached is not None:
+        return cached, True
+
     try:
         s3 = boto3.client('s3')
         response = s3.get_object(Bucket=bucket, Key=key)
-        return response['Body'].read()
+        data = response['Body'].read()
+        save_to_cache(bucket, key, data)
+        return data, False
     except ClientError as error:
         print(f"\nError downloading s3://{bucket}/{key}: {error}")
         raise
@@ -121,14 +145,18 @@ def load_records_from_folder(
     all_records = set()
     file_stats = {}
     total_records = 0
+    cached_count = 0
 
     for i, file_key in enumerate(files, 1):
         filename = file_key.split('/')[-1]
         if not quiet:
-            print(f"\r   {date_folder}: [{i}/{len(files)}] {total_records} records", end='', flush=True)
+            cache_info = f" ({cached_count} cached)" if cached_count > 0 else ""
+            print(f"\r   {date_folder}: [{i}/{len(files)}] {total_records} records{cache_info}", end='', flush=True)
 
         try:
-            data = download_from_s3(bucket, file_key)
+            data, from_cache = download_from_s3(bucket, file_key)
+            if from_cache:
+                cached_count += 1
             records = parse_records_from_file(data)
             total_records += len(records)
 
@@ -145,7 +173,8 @@ def load_records_from_folder(
             continue
 
     if not quiet:
-        print(f"\r   {date_folder}: {len(files)} files, {total_records} records" + " " * 20)
+        cache_info = f" ({cached_count} cached)" if cached_count > 0 else ""
+        print(f"\r   {date_folder}: {len(files)} files, {total_records} records{cache_info}" + " " * 20)
 
     return all_records, file_stats
 
