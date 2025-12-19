@@ -554,7 +554,7 @@ public class TrafficCalculator {
     
     /**
      * Determine traffic status based on current vs baseline traffic.
-     * Logs warnings at 50%, 75%, and 90% of the circuit breaker threshold.
+     * Logs warnings after 80% of the threshold is reached. 
      */
     TrafficStatus determineStatus(int recentTrafficTotal, int baselineTraffic) {
         if (baselineTraffic == 0 || thresholdMultiplier == 0) {
@@ -566,7 +566,7 @@ public class TrafficCalculator {
         double thresholdPercent = (double) recentTrafficTotal / threshold * 100;
         
         // log warning if we reach 50 percent of the threshold
-        if (thresholdPercent >= 50.0) {
+        if (thresholdPercent >= 75.0) {
             LOGGER.warn("high_message_volume: {}% of threshold reached, recentTrafficTotal={}, threshold={} ({}x{})", 
             String.format("%.1f", thresholdPercent), recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic);
         }
