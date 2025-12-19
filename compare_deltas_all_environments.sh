@@ -76,8 +76,8 @@ run_comparison() {
 run_comparison "UID2-TEST" "072245134533" "scrum-uid2-full-access" "uid2-optout-test-store" "optout-legacy/delta/" "optout/delta/"
 run_comparison "EUID-INTEG" "101244608629" "scrum-uid2-elevated" "euid-optout-integ-store" "optout-legacy/delta/" "optout/delta/"
 run_comparison "UID2-INTEG" "150073873184" "scrum-uid2-elevated" "uid2-optout-integ-store" "optout-legacy/delta/" "uid2-optout-integ/delta/"
-# run_comparison "EUID-PROD" "409985233527" "scrum-uid2-elevated" "euid-optout-prod-store" "optout/delta/" "sqs-delta/delta/"
-# run_comparison "UID2-PROD" "553165044900" "scrum-uid2-elevated" "uid2-optout-prod-store" "optout-v2/delta/" "sqs-delta/delta/"
+run_comparison "EUID-PROD" "409985233527" "scrum-uid2-elevated" "euid-optout-prod-store" "optout-legacy/delta/" "optout/delta/"
+run_comparison "UID2-PROD" "553165044900" "scrum-uid2-elevated" "uid2-optout-prod-store" "optout-legacy/delta/" "optout-v2/delta/"
 
 if [ $ENVS_RUN -eq 0 ]; then
     echo "❌ No matching environment found for: $ENV_FILTER"
