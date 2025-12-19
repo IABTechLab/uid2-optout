@@ -566,7 +566,7 @@ public class TrafficCalculator {
         double thresholdPercent = (double) recentTrafficTotal / threshold * 100;
         
         // log warning if we reach 50 percent of the threshold
-        if (thresholdPercent >= 75.0) {
+        if (thresholdPercent >= 80.0) {
             LOGGER.warn("high_message_volume: {}% of threshold reached, recentTrafficTotal={}, threshold={} ({}x{})", 
             String.format("%.1f", thresholdPercent), recentTrafficTotal, threshold, thresholdMultiplier, baselineTraffic);
         }
