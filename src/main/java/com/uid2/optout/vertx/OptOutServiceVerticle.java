@@ -231,6 +231,8 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         //// if enabled, this would add handler for exposing prometheus metrics
         // router.route("/metrics").handler(PrometheusScrapingHandler.create());
 
+        router.route().failureHandler(new GenericFailureHandler());
+
         return router;
     }
 
