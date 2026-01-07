@@ -11,10 +11,8 @@ import com.uid2.shared.attest.UidCoreClient;
 import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.auth.RotatingOperatorKeyProvider;
 import com.uid2.shared.cloud.*;
-import com.uid2.shared.health.HealthManager;
 import com.uid2.shared.jmx.AdminApi;
 import com.uid2.shared.optout.OptOutCloudSync;
-import com.uid2.shared.optout.OptOutUtils;
 import com.uid2.shared.store.CloudPath;
 import com.uid2.shared.store.scope.GlobalScope;
 import com.uid2.shared.vertx.CloudSyncVerticle;
@@ -43,16 +41,12 @@ import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 //
 // produces events:
 //   - cloudsync.optout.refresh (timer-based)
-//   - delta.produce            (timer-based)
 //
 public class Main {
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
@@ -65,7 +59,6 @@ public class Main {
     private final ICloudStorage fsPartnerConfig;
     private final RotatingOperatorKeyProvider operatorKeyProvider;
     private final boolean observeOnly;
-    private final boolean enqueueSqsEnabled;
     private final UidInstanceIdProvider uidInstanceIdProvider;
 
     public Main(Vertx vertx, JsonObject config) throws Exception {
@@ -75,7 +68,6 @@ public class Main {
         if (this.observeOnly) {
             LOGGER.warn("Running Observe ONLY mode: no producer, no sender");
         }
-        this.enqueueSqsEnabled = config.getBoolean(Const.Config.OptOutSqsEnabledProp, false);
         this.uidInstanceIdProvider = new UidInstanceIdProvider(config);
 
         boolean useStorageMock = config.getBoolean(Const.Config.StorageMockProp, false);
@@ -246,11 +238,6 @@ public class Main {
 
         List<Future> futs = new ArrayList<>();
 
-        // determine folder configuration for old producer vs readers
-        String legacyFolder = this.config.getString(Const.Config.OptOutLegacyProducerS3FolderProp);
-        String mainFolder = this.config.getString(Const.Config.OptOutS3FolderProp);
-        boolean useLegacyFolder = legacyFolder != null && !legacyFolder.equals(mainFolder);
-
         // main CloudSyncVerticle - downloads from optout_s3_folder (for readers: partition generator, log sender)
         OptOutCloudSync cs = new OptOutCloudSync(this.config, true);
         CloudSyncVerticle cloudSyncVerticle = new CloudSyncVerticle("optout", this.fsOptOut, this.fsLocal, cs, this.config);
@@ -265,70 +252,25 @@ public class Main {
             // enable partition producing (reads from main folder via cs)
             cs.enableDeltaMerging(vertx, Const.Event.PartitionProduce);
 
+            // deploy partition producer verticle
+            PartitionProducer partitionProducer = new PartitionProducer(this.config);
+            futs.add(this.deploySingleInstance(partitionProducer));
+
             // create partners config monitor
             futs.add(this.createPartnerConfigMonitor(cloudSyncVerticle.eventDownloaded()));
 
-            // create CloudSyncVerticle for old producer uploads
-            // if legacy folder is configured, create upload-only verticle; otherwise reuse main verticle
-            OptOutCloudSync uploadCs;
-            CloudSyncVerticle uploadVerticle;
-            if (useLegacyFolder) {
-                LOGGER.info("old producer uploads configured to use folder: {} (readers use: {})", legacyFolder, mainFolder);
-                JsonObject legacyConfig = new JsonObject().mergeIn(this.config)
-                    .put(Const.Config.OptOutS3FolderProp, legacyFolder);
-                uploadCs = new OptOutCloudSync(legacyConfig, true, true);
-                // upload-only verticle: won't download legacy files
-                uploadVerticle = new CloudSyncVerticle("optout-legacy", this.fsOptOut, this.fsLocal, uploadCs, this.config);
-                futs.add(this.deploySingleInstance(uploadVerticle));
-            } else {
-                // no legacy folder configured, old producer uploads to main folder
-                uploadCs = cs;
-                uploadVerticle = cloudSyncVerticle;
-            }
-
-            // create & deploy log producer verticle
-            // deltas go to uploadVerticle (legacy folder in legacy mode, main folder otherwise)
-            // partitions always go to main folder (cloudSyncVerticle) since they read from main folder
-            OptOutLogProducer logProducer = new OptOutLogProducer(this.config, uploadVerticle.eventUpload(), cloudSyncVerticle.eventUpload());
-            futs.add(this.deploySingleInstance(logProducer));
-
-            // upload last delta produced and potentially not uploaded yet
-            // always use main cs/cloudSyncVerticle for refresh mechanism (legacy verticle is upload-only)
-            // uploadCs is used only for determining the cloud path (legacy folder vs main folder)
-            futs.add((this.uploadLastDelta(cs, uploadCs, logProducer, cloudSyncVerticle.eventRefresh())));
-        }
-
-        // deploy sqs producer if enabled
-        if (this.enqueueSqsEnabled) {
-            LOGGER.info("sqs enabled, deploying OptOutSqsLogProducer");
+            // deploy sqs log producer
             try {
-                // sqs delta production uses a separate s3 folder (default: "sqs-delta")
-                // OptOutCloudSync reads from optout_s3_folder, so we override it with optout_sqs_s3_folder
-                String sqsFolder = this.config.getString(Const.Config.OptOutSqsS3FolderProp, "sqs-delta");
-                JsonObject sqsCloudSyncConfig = new JsonObject().mergeIn(this.config)
-                    .put(Const.Config.OptOutS3FolderProp, sqsFolder);
-                OptOutCloudSync sqsCs = new OptOutCloudSync(sqsCloudSyncConfig, true);
-
-                // create cloud storage instances
-                ICloudStorage fsSqs;
-                boolean useStorageMock = this.config.getBoolean(Const.Config.StorageMockProp, false);
-                if (useStorageMock) {
-                    fsSqs = this.fsOptOut;
-                } else {
-                    String optoutBucket = this.config.getString(Const.Config.OptOutS3BucketProp);
-                    fsSqs = CloudUtils.createStorage(optoutBucket, this.config);
-                }
-
                 String optoutBucketDroppedRequests = this.config.getString(Const.Config.OptOutS3BucketDroppedRequestsProp);
                 ICloudStorage fsSqsDroppedRequests = CloudUtils.createStorage(optoutBucketDroppedRequests, this.config);
 
                 // deploy sqs log producer
-                // fires DeltaProduced (notification) not DeltaProduce (trigger) to avoid triggering old producer
-                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, fsSqs, fsSqsDroppedRequests, sqsCs, Const.Event.DeltaProduced, null);
+                OptOutSqsLogProducer sqsLogProducer = new OptOutSqsLogProducer(this.config, this.fsOptOut, fsSqsDroppedRequests, cs, Const.Event.DeltaProduced, null);
                 futs.add(this.deploySingleInstance(sqsLogProducer));
 
                 LOGGER.info("sqs log producer deployed, bucket={}, folder={}", 
-                    this.config.getString(Const.Config.OptOutS3BucketProp), sqsFolder);
+                    this.config.getString(Const.Config.OptOutS3BucketProp), 
+                    this.config.getString(Const.Config.OptOutS3FolderProp));
             } catch (IOException e) {
                 LOGGER.error("circuit_breaker_config_error: failed to initialize sqs log producer, delta production will be disabled: {}", e.getMessage(), e);
             } catch (MalformedTrafficFilterConfigException e) {
@@ -339,7 +281,7 @@ public class Main {
         }
 
         Supplier<Verticle> svcSupplier = () -> {
-            OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config, this.uidInstanceIdProvider);
+            OptOutServiceVerticle svc = new OptOutServiceVerticle(vertx, this.operatorKeyProvider, this.fsOptOut, this.config);
             // configure where OptOutService receives the latest cloud paths
             cs.registerNewCloudPathsHandler(ps -> svc.setCloudPaths(ps));
             return svc;
@@ -365,69 +307,6 @@ public class Main {
                 vertx.close();
                 System.exit(1);
             });
-    }
-
-
-    private Future uploadLastDelta(OptOutCloudSync cs, OptOutCloudSync uploadCs, OptOutLogProducer logProducer, String eventRefresh) {
-        final String deltaLocalPath;
-        try {
-            deltaLocalPath = logProducer.getLastDelta();
-            // no need to upload if delta cannot be found
-            if (deltaLocalPath == null) {
-                LOGGER.info("found no last delta on disk");
-                return Future.succeededFuture();
-            }
-        } catch (Exception ex) {
-            LOGGER.error("uploadLastDelta error: " + ex.getMessage(), ex);
-            return Future.failedFuture(ex);
-        }
-
-        Promise<Void> promise = Promise.promise();
-        AtomicReference<Object> handler = new AtomicReference<>();
-        handler.set(cs.registerNewCloudPathsHandler(cloudPaths -> {
-            try {
-                cs.unregisterNewCloudPathsHandler(handler.get());
-                // use uploadCs for cloud path (may be different folder than cs)
-                final String deltaCloudPath = uploadCs.toCloudPath(deltaLocalPath);
-                if (cloudPaths.contains(deltaCloudPath)) {
-                    // if delta is already uploaded, the work is already done
-                    LOGGER.info("found no last delta that needs to be uploaded");
-                } else {
-                    this.fsOptOut.upload(deltaLocalPath, deltaCloudPath);
-                    LOGGER.warn("found last delta that is not uploaded " + deltaLocalPath);
-                    LOGGER.warn("uploaded last delta to " + deltaCloudPath);
-                }
-                promise.complete();
-            } catch (Exception ex) {
-                final String msg = "unable handle last delta upload: " + ex.getMessage();
-                LOGGER.error(msg, ex);
-                promise.fail(new Exception(msg, ex));
-            }
-        }));
-
-        // refresh now to mitigate a race-condition (cloud refreshed before cloudPaths handler is registered)
-        vertx.eventBus().send(eventRefresh, 0);
-
-        AtomicInteger counter = new AtomicInteger(0);
-        vertx.setPeriodic(60*1000, id -> {
-            if (HealthManager.instance.isHealthy()) {
-                vertx.cancelTimer(id);
-                return;
-            }
-
-            int count = counter.incrementAndGet();
-            if (count >= 10) {
-                LOGGER.error("Unable to refresh from cloud storage and upload last delta...");
-                vertx.close();
-                System.exit(1);
-                return;
-            }
-
-            LOGGER.warn("Waiting for cloud refresh to complete. Sending " + count + " " + eventRefresh + "...");
-            vertx.eventBus().send(eventRefresh, 0);
-        });
-
-        return promise.future();
     }
 
     private Future<String> createOperatorKeyRotator() {
@@ -502,38 +381,12 @@ public class Main {
         // refresh now to ready optout service verticles
         vertx.eventBus().send(eventCloudRefresh, 0);
 
-        int rotateInterval = config.getInteger(Const.Config.OptOutDeltaRotateIntervalProp);
         int cloudRefreshInterval = config.getInteger(Const.Config.CloudRefreshIntervalProp);
 
-        // if we plan to consolidate logs from multiple replicas, we need to make sure they are produced at roughly
-        // the same time, e.g. if the logs are produced every 5 mins, ideally we'd like to send log.produce event
-        // at 00, 05, 10, 15 mins etc, of each hour.
-        //
-        // first calculate seconds to sleep to get to the above exact intervals
-        final int secondsToSleep = OptOutUtils.getSecondsBeforeNextSlot(Instant.now(), rotateInterval);
-        final int msToSleep = secondsToSleep > 0 ? secondsToSleep * 1000 : 1;
-        LOGGER.info("sleep for " + secondsToSleep + "s before scheduling the first log rotate event");
-        vertx.setTimer(msToSleep, v -> {
-            // at the right starting time, start periodically emitting log.produce event
-            vertx.setPeriodic(1000 * rotateInterval, id -> {
-                LOGGER.trace("sending " + Const.Event.DeltaProduce);
-                vertx.eventBus().send(Const.Event.DeltaProduce, id);
-            });
-        });
-
-        // add 15s offset to do s3 refresh also synchronized
-        final int secondsToSleep2 = (secondsToSleep + 15) % cloudRefreshInterval;
-        final int msToSleep2 = secondsToSleep2 > 0 ? secondsToSleep2 * 1000 : 1;
-        LOGGER.info("sleep for " + secondsToSleep2 + "s before scheduling the first s3 refresh event");
-        vertx.setTimer(msToSleep2, v -> {
-            LOGGER.info("sending the 1st " + eventCloudRefresh);
-            vertx.eventBus().send(eventCloudRefresh, -1);
-
-            // periodically emit s3.refresh event
-            vertx.setPeriodic(1000 * cloudRefreshInterval, id -> {
-                LOGGER.trace("sending " + eventCloudRefresh);
-                vertx.eventBus().send(eventCloudRefresh, id);
-            });
+        // periodically emit s3.refresh event
+        vertx.setPeriodic(1000 * cloudRefreshInterval, id -> {
+            LOGGER.trace("sending " + eventCloudRefresh);
+            vertx.eventBus().send(eventCloudRefresh, id);
         });
 
         return Future.succeededFuture();
