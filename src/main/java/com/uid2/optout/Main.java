@@ -253,7 +253,7 @@ public class Main {
             cs.enableDeltaMerging(vertx, Const.Event.PartitionProduce);
 
             // deploy partition producer verticle
-            PartitionProducer partitionProducer = new PartitionProducer(this.config);
+            OptOutLogProducer partitionProducer = new OptOutLogProducer(this.config);
             futs.add(this.deploySingleInstance(partitionProducer));
 
             // create partners config monitor
