@@ -30,9 +30,13 @@ import io.vertx.ext.web.RoutingContext;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.SqsClientBuilder;
 
 import static com.uid2.optout.util.HttpResponseHelper.*;
+
+import java.net.URI;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -110,7 +114,20 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         if (queueUrl == null || queueUrl.isEmpty()) {
             throw new IOException("sqs queue url not configured");
         }
-        this.sqsClient = sqsClient != null ? sqsClient : SqsClient.builder().build();
+        if (sqsClient != null) {
+            this.sqsClient = sqsClient;
+        } else {
+            SqsClientBuilder builder = SqsClient.builder();
+            // Support custom endpoint for LocalStack (reuse aws_s3_endpoint since LocalStack uses same endpoint)
+            String awsEndpoint = jsonConfig.getString(Const.Config.AwsSqsEndpointProp);
+            if (awsEndpoint != null && !awsEndpoint.isEmpty()) {
+                builder.endpointOverride(URI.create(awsEndpoint));
+                String region = jsonConfig.getString(Const.Config.AwsRegionProp);
+                builder.region(Region.of(region));
+                LOGGER.info("SQS client using custom endpoint: {}, region: {}", awsEndpoint, region);
+            }
+            this.sqsClient = builder.build();
+        }
         LOGGER.info("sqs client initialized for queue: {}", queueUrl);
 
         // http server configuration
