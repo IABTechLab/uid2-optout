@@ -61,9 +61,6 @@ public class GenericFailureHandler implements Handler<RoutingContext> {
             LOGGER.error("URL: [{}] - Error response code: [{}] - Error:", url, finalStatusCode, t);
         } else if (finalStatusCode >= 400 && finalStatusCode < 500) { // 4xx is user error, so just warn
             LOGGER.warn("URL: [{}] - Error response code: [{}] - Error:", url, finalStatusCode, t);
-        } else {
-            // Status code not in 4xx or 5xx range, log as error
-            LOGGER.error("URL: [{}] - Unexpected status code: [{}] - Error:", url, finalStatusCode, t);
         }
 
         if (!response.ended() && !response.closed()) {
