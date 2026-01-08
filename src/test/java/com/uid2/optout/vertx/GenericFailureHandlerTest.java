@@ -38,8 +38,8 @@ public class GenericFailureHandlerTest {
 
     @Test
     public void testMultipartMethodMismatch_returns400() {
-        IllegalStateException exception = new IllegalStateException(
-            "Request method must be one of POST, PUT, PATCH or DELETE to decode a multipart request");
+        String errorMsg = "Request method must be one of POST, PUT, PATCH or DELETE to decode a multipart request";
+        IllegalStateException exception = new IllegalStateException(errorMsg);
         
         when(routingContext.statusCode()).thenReturn(-1);
         when(routingContext.failure()).thenReturn(exception);
@@ -53,7 +53,7 @@ public class GenericFailureHandlerTest {
         verify(response).end(bodyCaptor.capture());
         
         assertEquals(400, statusCaptor.getValue());
-        assertEquals("Bad Request: multipart content not allowed with this HTTP method", bodyCaptor.getValue());
+        assertEquals(errorMsg, bodyCaptor.getValue());
     }
 
     @Test

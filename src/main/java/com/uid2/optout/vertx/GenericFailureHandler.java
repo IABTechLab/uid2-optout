@@ -43,8 +43,7 @@ public class GenericFailureHandler implements Handler<RoutingContext> {
             errorMsg.equalsIgnoreCase(
                 "Request method must be one of POST, PUT, PATCH or DELETE to decode a multipart request")) {
             if (!response.ended() && !response.closed()) {
-                response.setStatusCode(400)
-                        .end("Bad Request: multipart content not allowed with this HTTP method");
+                response.setStatusCode(400).end(errorMsg);
             }
             LOGGER.warn("URL: [{}] - Multipart method mismatch - Error:", url, t);
             return;
