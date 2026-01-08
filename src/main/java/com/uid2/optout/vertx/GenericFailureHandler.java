@@ -18,6 +18,22 @@ public class GenericFailureHandler implements Handler<RoutingContext> {
         String url = ctx.normalizedPath();
         Throwable t = ctx.failure();
 
+        // Handle case where failure() is null (e.g., when rc.fail(401) is called without exception)
+        // In this case, just use the status code that was set
+        if (t == null) {
+            int finalStatusCode = statusCode == -1 ? 500 : statusCode;
+            if (finalStatusCode >= 500 && finalStatusCode < 600) {
+                LOGGER.error("URL: [{}] - Error response code: [{}]", url, finalStatusCode);
+            } else if (finalStatusCode >= 400 && finalStatusCode < 500) {
+                LOGGER.warn("URL: [{}] - Error response code: [{}]", url, finalStatusCode);
+            }
+            if (!response.ended() && !response.closed()) {
+                response.setStatusCode(finalStatusCode)
+                        .end(EnglishReasonPhraseCatalog.INSTANCE.getReason(finalStatusCode, null));
+            }
+            return;
+        }
+
         String errorMsg = t.getMessage();
         String className = t.getClass().getName();
 
