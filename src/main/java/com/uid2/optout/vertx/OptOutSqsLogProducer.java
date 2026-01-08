@@ -122,7 +122,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
 
         // circuit breaker tools
         this.trafficFilter = new TrafficFilter(jsonConfig.getString(Const.Config.TrafficFilterConfigPathProp));
-        this.trafficCalculator = new TrafficCalculator(cloudStorage, jsonConfig.getString(Const.Config.OptOutSqsS3FolderProp), jsonConfig.getString(Const.Config.TrafficCalcConfigPathProp));
+        this.trafficCalculator = new TrafficCalculator(cloudStorage, jsonConfig.getString(Const.Config.OptOutS3FolderProp), jsonConfig.getString(Const.Config.TrafficCalcConfigPathProp));
 
         // configuration values for orchestrator setup
         int replicaId = OptOutUtils.getReplicaId(jsonConfig); 
