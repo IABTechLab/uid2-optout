@@ -131,7 +131,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 LOGGER.info("SQS queue URL configured: " + this.sqsQueueUrl);
             } catch (Exception e) {
                 LOGGER.error("Failed to initialize SQS client: " + e.getMessage(), e);
-                tempSqsClient = null;
+                throw new RuntimeException("SQS client initialization failed: " + e.getMessage(), e);
             }
         }
         this.sqsClient = tempSqsClient;
