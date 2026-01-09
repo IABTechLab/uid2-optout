@@ -105,11 +105,14 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             try {
                 SqsClientBuilder builder = SqsClient.builder();
                 
-                // Support custom endpoint for LocalStack (reuse aws_s3_endpoint since LocalStack uses same endpoint)
+                // Support custom endpoint for LocalStack
                 String awsEndpoint = jsonConfig.getString(Const.Config.AwsSqsEndpointProp);
                 if (awsEndpoint != null && !awsEndpoint.isEmpty()) {
                     builder.endpointOverride(URI.create(awsEndpoint));
                     String region = jsonConfig.getString(Const.Config.AwsRegionProp);
+                    if (region == null || region.isEmpty()) {
+                        throw new IllegalArgumentException("aws_region must be configured when using custom SQS endpoint");
+                    }
                     builder.region(Region.of(region));
                     LOGGER.info("SQS client using custom endpoint: {}, region: {}", awsEndpoint, region);
                 }
