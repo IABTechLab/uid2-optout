@@ -122,9 +122,12 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
             SqsClientBuilder builder = SqsClient.builder();
             // Support custom endpoint for LocalStack
             String awsEndpoint = jsonConfig.getString(Const.Config.AwsSqsEndpointProp);
+            LOGGER.info("SQS endpoint from config: {}", awsEndpoint);
             if (awsEndpoint != null && !awsEndpoint.isEmpty()) {
                 builder.endpointOverride(URI.create(awsEndpoint));
-                String region = jsonConfig.getString(Const.Config.AwsRegionProp);
+                // Use raw string "aws_region" to ensure correct config key
+                String region = jsonConfig.getString("aws_region");
+                LOGGER.info("AWS region from config: {}", region);
                 if (region == null || region.isEmpty()) {
                     throw new IllegalArgumentException("aws_region must be configured when using custom SQS endpoint");
                 }
