@@ -35,6 +35,8 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.SqsClientBuilder;
+import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
+import software.amazon.awssdk.services.sqs.model.GetQueueUrlResponse;
 
 import static com.uid2.optout.util.HttpResponseHelper.*;
 
@@ -112,18 +114,23 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         this.eventDeltaProduced = eventDeltaProduced;
         
         // initialize sqs client
-        String queueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
-        if (queueUrl == null || queueUrl.isEmpty()) {
+        String configuredQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
+        if (configuredQueueUrl == null || configuredQueueUrl.isEmpty()) {
             throw new IOException("sqs queue url not configured");
         }
+        
+        String queueUrl;
         if (sqsClient != null) {
             this.sqsClient = sqsClient;
+            queueUrl = configuredQueueUrl;
         } else {
             SqsClientBuilder builder = SqsClient.builder();
             // Support custom endpoint for LocalStack
             String awsEndpoint = jsonConfig.getString(Const.Config.AwsSqsEndpointProp);
             LOGGER.info("SQS endpoint from config: {}", awsEndpoint);
-            if (awsEndpoint != null && !awsEndpoint.isEmpty()) {
+            boolean usingCustomEndpoint = awsEndpoint != null && !awsEndpoint.isEmpty();
+            
+            if (usingCustomEndpoint) {
                 builder.endpointOverride(URI.create(awsEndpoint));
                 // Use raw string "aws_region" to ensure correct config key
                 String region = jsonConfig.getString("aws_region");
@@ -138,6 +145,22 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                 LOGGER.info("SQS client using custom endpoint: {}, region: {}", awsEndpoint, region);
             }
             this.sqsClient = builder.build();
+            
+            // When using custom endpoint (LocalStack), discover the actual queue URL
+            // This handles hostname mismatches between init script and service container
+            if (usingCustomEndpoint) {
+                String queueName = configuredQueueUrl.substring(configuredQueueUrl.lastIndexOf('/') + 1);
+                LOGGER.info("Discovering queue URL for queue name: {}", queueName);
+                
+                GetQueueUrlRequest getUrlRequest = GetQueueUrlRequest.builder()
+                        .queueName(queueName)
+                        .build();
+                GetQueueUrlResponse getUrlResponse = this.sqsClient.getQueueUrl(getUrlRequest);
+                queueUrl = getUrlResponse.queueUrl();
+                LOGGER.info("Discovered queue URL from LocalStack: {}", queueUrl);
+            } else {
+                queueUrl = configuredQueueUrl;
+            }
         }
         LOGGER.info("sqs client initialized for queue: {}", queueUrl);
 

@@ -34,6 +34,8 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.SqsClientBuilder;
+import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
+import software.amazon.awssdk.services.sqs.model.GetQueueUrlResponse;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 import java.net.URI;
@@ -97,11 +99,13 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
         this.enableOptOutPartnerMock = jsonConfig.getBoolean(Const.Config.OptOutPartnerEndpointMockProp);
 
-        this.sqsQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
+        String configuredQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
         this.sqsMaxQueueSize = jsonConfig.getInteger(Const.Config.OptOutSqsMaxQueueSizeProp, 0); // 0 = no limit
 
         SqsClient tempSqsClient = null;
-        if (this.sqsQueueUrl == null || this.sqsQueueUrl.isEmpty()) {
+        String resolvedQueueUrl = null;
+        
+        if (configuredQueueUrl == null || configuredQueueUrl.isEmpty()) {
             LOGGER.error("sqs_error: queue url not configured");
         } else {
             try {
@@ -110,7 +114,9 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 // Support custom endpoint for LocalStack
                 String awsEndpoint = jsonConfig.getString(Const.Config.AwsSqsEndpointProp);
                 LOGGER.info("SQS endpoint from config: {}", awsEndpoint);
-                if (awsEndpoint != null && !awsEndpoint.isEmpty()) {
+                boolean usingCustomEndpoint = awsEndpoint != null && !awsEndpoint.isEmpty();
+                
+                if (usingCustomEndpoint) {
                     builder.endpointOverride(URI.create(awsEndpoint));
                     // Use raw string "aws_region" to ensure correct config key
                     String region = jsonConfig.getString("aws_region");
@@ -128,13 +134,31 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 tempSqsClient = builder.build();
                 LOGGER.info("SQS client initialized successfully");
                 LOGGER.info("SQS client region: " + tempSqsClient.serviceClientConfiguration().region());
-                LOGGER.info("SQS queue URL configured: " + this.sqsQueueUrl);
+                
+                // When using custom endpoint (LocalStack), discover the actual queue URL
+                // This handles hostname mismatches between init script and service container
+                if (usingCustomEndpoint) {
+                    // Extract queue name from configured URL (last path segment)
+                    String queueName = configuredQueueUrl.substring(configuredQueueUrl.lastIndexOf('/') + 1);
+                    LOGGER.info("Discovering queue URL for queue name: {}", queueName);
+                    
+                    GetQueueUrlRequest getUrlRequest = GetQueueUrlRequest.builder()
+                            .queueName(queueName)
+                            .build();
+                    GetQueueUrlResponse getUrlResponse = tempSqsClient.getQueueUrl(getUrlRequest);
+                    resolvedQueueUrl = getUrlResponse.queueUrl();
+                    LOGGER.info("Discovered queue URL from LocalStack: {}", resolvedQueueUrl);
+                } else {
+                    resolvedQueueUrl = configuredQueueUrl;
+                    LOGGER.info("Using configured queue URL: {}", resolvedQueueUrl);
+                }
             } catch (Exception e) {
                 LOGGER.error("Failed to initialize SQS client: " + e.getMessage(), e);
                 tempSqsClient = null;
             }
         }
         this.sqsClient = tempSqsClient;
+        this.sqsQueueUrl = resolvedQueueUrl;
     }
 
     public static void sendStatus(int statusCode, HttpServerResponse response) {
