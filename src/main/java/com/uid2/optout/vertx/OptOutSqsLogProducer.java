@@ -30,6 +30,8 @@ import io.vertx.ext.web.RoutingContext;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.SqsClientBuilder;
@@ -127,6 +129,9 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                     throw new IllegalArgumentException("aws_region must be configured when using custom SQS endpoint");
                 }
                 builder.region(Region.of(region));
+                // LocalStack requires credentials (any value works)
+                builder.credentialsProvider(StaticCredentialsProvider.create(
+                        AwsBasicCredentials.create("test", "test")));
                 LOGGER.info("SQS client using custom endpoint: {}, region: {}", awsEndpoint, region);
             }
             this.sqsClient = builder.build();
