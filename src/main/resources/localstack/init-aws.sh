@@ -18,6 +18,19 @@ echo "Creating SQS queue..."
 aws sqs --endpoint-url http://localhost:5001 create-queue --queue-name optout-queue
 
 echo "Verifying SQS queue..."
-aws sqs --endpoint-url http://localhost:5001 get-queue-url --queue-name optout-queue
+QUEUE_URL=$(aws sqs --endpoint-url http://localhost:5001 get-queue-url --queue-name optout-queue --query 'QueueUrl' --output text)
+echo "SQS queue URL returned by LocalStack: $QUEUE_URL"
+
+echo "Listing all SQS queues..."
+aws sqs --endpoint-url http://localhost:5001 list-queues
+
+echo "Testing SQS send message..."
+aws sqs --endpoint-url http://localhost:5001 send-message --queue-url "$QUEUE_URL" --message-body "test-init-message" || echo "WARNING: Test send message failed"
+
+echo "Testing with path-style URL (localhost)..."
+aws sqs --endpoint-url http://localhost:5001 send-message --queue-url "http://localhost:5001/000000000000/optout-queue" --message-body "test-path-style" || echo "WARNING: Path-style test (localhost) failed"
+
+# Note: From inside other containers, they use 'localstack' hostname. The queue URL in config uses localstack:5001
+# This test runs inside LocalStack container where 'localstack' might not resolve, so we test with localhost only
 
 echo "Optout LocalStack initialization complete."
