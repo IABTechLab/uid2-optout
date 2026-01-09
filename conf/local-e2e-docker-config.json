@@ -7,7 +7,7 @@
   "optout_s3_bucket": "test-optout-bucket",
   "optout_sqs_queue_url": "http://localstack:5001/000000000000/optout-queue",
   "pre_signed_url_expiry": 1800,
-  "aws_region": "us-east-2",
+  "aws_region": "us-east-1",
   "aws_access_key_id": "no access key needed for test",
   "aws_secret_access_key": "no secret key needed for test",
   "att_token_enc_key": "<key-for-attestation-token>",

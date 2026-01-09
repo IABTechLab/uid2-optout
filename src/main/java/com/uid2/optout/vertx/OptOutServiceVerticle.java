@@ -34,8 +34,6 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.SqsClientBuilder;
-import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
-import software.amazon.awssdk.services.sqs.model.GetQueueUrlResponse;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 import java.net.URI;
@@ -99,13 +97,11 @@ public class OptOutServiceVerticle extends AbstractVerticle {
 
         this.enableOptOutPartnerMock = jsonConfig.getBoolean(Const.Config.OptOutPartnerEndpointMockProp);
 
-        String configuredQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
+        this.sqsQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
         this.sqsMaxQueueSize = jsonConfig.getInteger(Const.Config.OptOutSqsMaxQueueSizeProp, 0); // 0 = no limit
 
         SqsClient tempSqsClient = null;
-        String resolvedQueueUrl = null;
-        
-        if (configuredQueueUrl == null || configuredQueueUrl.isEmpty()) {
+        if (this.sqsQueueUrl == null || this.sqsQueueUrl.isEmpty()) {
             LOGGER.error("sqs_error: queue url not configured");
         } else {
             try {
@@ -114,51 +110,27 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 // Support custom endpoint for LocalStack
                 String awsEndpoint = jsonConfig.getString(Const.Config.AwsSqsEndpointProp);
                 LOGGER.info("SQS endpoint from config: {}", awsEndpoint);
-                boolean usingCustomEndpoint = awsEndpoint != null && !awsEndpoint.isEmpty();
-                
-                if (usingCustomEndpoint) {
+                if (awsEndpoint != null && !awsEndpoint.isEmpty()) {
                     builder.endpointOverride(URI.create(awsEndpoint));
-                    // Use raw string "aws_region" to ensure correct config key
                     String region = jsonConfig.getString("aws_region");
                     LOGGER.info("AWS region from config: {}", region);
                     if (region == null || region.isEmpty()) {
                         throw new IllegalArgumentException("aws_region must be configured when using custom SQS endpoint");
                     }
                     builder.region(Region.of(region));
-                    // LocalStack requires credentials (any value works)
                     builder.credentialsProvider(StaticCredentialsProvider.create(
                             AwsBasicCredentials.create("test", "test")));
                     LOGGER.info("SQS client using custom endpoint: {}, region: {}", awsEndpoint, region);
                 }
                 
                 tempSqsClient = builder.build();
-                LOGGER.info("SQS client initialized successfully");
-                LOGGER.info("SQS client region: " + tempSqsClient.serviceClientConfiguration().region());
-                
-                // When using custom endpoint (LocalStack), discover the actual queue URL
-                // This handles hostname mismatches between init script and service container
-                if (usingCustomEndpoint) {
-                    // Extract queue name from configured URL (last path segment)
-                    String queueName = configuredQueueUrl.substring(configuredQueueUrl.lastIndexOf('/') + 1);
-                    LOGGER.info("Discovering queue URL for queue name: {}", queueName);
-                    
-                    GetQueueUrlRequest getUrlRequest = GetQueueUrlRequest.builder()
-                            .queueName(queueName)
-                            .build();
-                    GetQueueUrlResponse getUrlResponse = tempSqsClient.getQueueUrl(getUrlRequest);
-                    resolvedQueueUrl = getUrlResponse.queueUrl();
-                    LOGGER.info("Discovered queue URL from LocalStack: {}", resolvedQueueUrl);
-                } else {
-                    resolvedQueueUrl = configuredQueueUrl;
-                    LOGGER.info("Using configured queue URL: {}", resolvedQueueUrl);
-                }
+                LOGGER.info("SQS client initialized successfully for queue: {}", this.sqsQueueUrl);
             } catch (Exception e) {
                 LOGGER.error("Failed to initialize SQS client: " + e.getMessage(), e);
                 tempSqsClient = null;
             }
         }
         this.sqsClient = tempSqsClient;
-        this.sqsQueueUrl = resolvedQueueUrl;
     }
 
     public static void sendStatus(int statusCode, HttpServerResponse response) {
