@@ -131,7 +131,7 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 LOGGER.info("SQS queue URL configured: " + this.sqsQueueUrl);
             } catch (Exception e) {
                 LOGGER.error("Failed to initialize SQS client: " + e.getMessage(), e);
-                throw new RuntimeException("SQS client initialization failed: " + e.getMessage(), e);
+                tempSqsClient = null;
             }
         }
         this.sqsClient = tempSqsClient;
@@ -339,7 +339,11 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         }
 
         if (this.sqsClient == null) {
-            this.sendInternalServerError(resp, "SQS client not initialized");
+            // Always include error details for debugging
+            resp.setStatusCode(500);
+            resp.setChunked(true);
+            resp.write("sqs_client_null: SQS client not initialized");
+            resp.end();
             return;
         }
 
@@ -382,11 +386,19 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 resp.end();
             }).onFailure(cause -> {
                 LOGGER.error("failed to queue message, cause={}", cause.getMessage());
-                this.sendInternalServerError(resp, cause.getMessage());
+                // Always include error details for debugging
+                resp.setStatusCode(500);
+                resp.setChunked(true);
+                resp.write("sqs_send_error: " + cause.getMessage());
+                resp.end();
             });
         } catch (Exception ex) {
             LOGGER.error("Error processing replicate request: " + ex.getMessage(), ex);
-            this.sendInternalServerError(resp, ex.getMessage());
+            // Always include error details for debugging
+            resp.setStatusCode(500);
+            resp.setChunked(true);
+            resp.write("replicate_error: " + ex.getMessage());
+            resp.end();
         }
     }
 
