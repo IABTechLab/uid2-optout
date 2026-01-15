@@ -39,6 +39,7 @@ import io.vertx.micrometer.backends.BackendRegistries;
 import javax.management.*;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
@@ -261,6 +262,9 @@ public class Main {
 
             // deploy sqs log producer
             try {
+                // Create default config files for local/e2e testing if needed
+                createDefaultConfigFilesIfNeeded();
+
                 String optoutBucketDroppedRequests = this.config.getString(Const.Config.OptOutS3BucketDroppedRequestsProp);
                 ICloudStorage fsSqsDroppedRequests = CloudUtils.createStorage(optoutBucketDroppedRequests, this.config);
 
@@ -390,5 +394,46 @@ public class Main {
         });
 
         return Future.succeededFuture();
+    }
+
+    /**
+     * Creates default traffic filter and traffic calc config files for local/e2e testing.
+     * Only creates files if running in non-production mode and config paths are not set.
+     */
+    private void createDefaultConfigFilesIfNeeded() {
+        if (Utils.isProductionEnvironment()) {
+            return;
+        }
+
+        try {
+            Path tempDir = Files.createTempDirectory("optout-config");
+            
+            // Create traffic filter config if not set
+            String filterPath = config.getString(Const.Config.TrafficFilterConfigPathProp);
+            if (filterPath == null || filterPath.isEmpty()) {
+                Path filterConfigPath = tempDir.resolve("traffic-filter-config.json");
+                String filterConfig = "{\n  \"denylist_requests\": []\n}";
+                Files.writeString(filterConfigPath, filterConfig);
+                config.put(Const.Config.TrafficFilterConfigPathProp, filterConfigPath.toString());
+                LOGGER.info("Created default traffic filter config at: {}", filterConfigPath);
+            }
+
+            // Create traffic calc config if not set
+            String calcPath = config.getString(Const.Config.TrafficCalcConfigPathProp);
+            if (calcPath == null || calcPath.isEmpty()) {
+                Path calcConfigPath = tempDir.resolve("traffic-calc-config.json");
+                String calcConfig = "{\n" +
+                    "  \"traffic_calc_evaluation_window_seconds\": 86400,\n" +
+                    "  \"traffic_calc_baseline_traffic\": 1000000,\n" +
+                    "  \"traffic_calc_threshold_multiplier\": 10,\n" +
+                    "  \"traffic_calc_allowlist_ranges\": []\n" +
+                    "}";
+                Files.writeString(calcConfigPath, calcConfig);
+                config.put(Const.Config.TrafficCalcConfigPathProp, calcConfigPath.toString());
+                LOGGER.info("Created default traffic calc config at: {}", calcConfigPath);
+            }
+        } catch (IOException e) {
+            LOGGER.warn("Failed to create default config files: {}", e.getMessage());
+        }
     }
 }
