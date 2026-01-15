@@ -30,6 +30,7 @@ import io.vertx.ext.web.RoutingContext;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -131,8 +132,8 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                     throw new IllegalArgumentException("aws_region must be configured when using custom SQS endpoint");
                 }
                 builder.region(Region.of(region));
-                builder.credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create("test", "test")));
+                // Use anonymous credentials for LocalStack compatibility
+                builder.credentialsProvider(AnonymousCredentialsProvider.create());
                 LOGGER.info("SQS client using custom endpoint: {}, region: {}", awsEndpoint, region);
             }
             this.sqsClient = builder.build();
