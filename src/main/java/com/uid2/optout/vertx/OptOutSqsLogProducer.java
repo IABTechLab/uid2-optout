@@ -132,8 +132,9 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
                     throw new IllegalArgumentException("aws_region must be configured when using custom SQS endpoint");
                 }
                 builder.region(Region.of(region));
-                // Use anonymous credentials for LocalStack compatibility
-                builder.credentialsProvider(AnonymousCredentialsProvider.create());
+                // Use static credentials for LocalStack
+                builder.credentialsProvider(StaticCredentialsProvider.create(
+                        AwsBasicCredentials.create("test", "test")));
                 LOGGER.info("SQS client using custom endpoint: {}, region: {}", awsEndpoint, region);
             }
             this.sqsClient = builder.build();
