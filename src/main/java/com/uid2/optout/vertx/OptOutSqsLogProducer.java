@@ -238,6 +238,11 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
     private Router createRouter() {
         Router router = Router.router(vertx);
         
+        // Healthcheck endpoint
+        router.get("/ops/healthcheck").handler(rc -> {
+            rc.response().setStatusCode(200).end("OK");
+        });
+        
         // POST endpoint to start delta production job (async, returns immediately)
         router.post(Endpoints.OPTOUT_DELTA_PRODUCE.toString())
                 .handler(internalAuth.handleWithAudit(this::handleDeltaProduceStart));
