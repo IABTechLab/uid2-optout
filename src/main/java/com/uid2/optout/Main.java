@@ -146,6 +146,12 @@ public class Main {
     }
 
     public static void main(String[] args) {
+        // Disable SQS MD5 checksum validation for LocalStack compatibility
+        // LocalStack returns null checksums which causes SDK validation to fail
+        if (!Utils.isProductionEnvironment()) {
+            System.setProperty("software.amazon.awssdk.sqs.checksumValidationEnabled", "false");
+        }
+
         final String vertxConfigPath = System.getProperty(Const.Config.VERTX_CONFIG_PATH_PROP);
         if (vertxConfigPath != null) {
             LOGGER.info("Running CUSTOM CONFIG mode, config: {}", vertxConfigPath);
