@@ -336,15 +336,6 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             return;
         }
 
-        if (this.sqsClient == null) {
-            // Always include error details for debugging
-            resp.setStatusCode(500);
-            resp.setChunked(true);
-            resp.write("sqs_client_null: SQS client not initialized");
-            resp.end();
-            return;
-        }
-
         try {
             JsonObject messageBody = new JsonObject()
                     .put(IDENTITY_HASH, identityHash)
@@ -384,19 +375,11 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 resp.end();
             }).onFailure(cause -> {
                 LOGGER.error("failed to queue message, cause={}", cause.getMessage());
-                // Always include error details for debugging
-                resp.setStatusCode(500);
-                resp.setChunked(true);
-                resp.write("sqs_send_error: " + cause.getMessage());
-                resp.end();
+                resp.setStatusCode(500).end();
             });
         } catch (Exception ex) {
             LOGGER.error("Error processing replicate request: " + ex.getMessage(), ex);
-            // Always include error details for debugging
-            resp.setStatusCode(500);
-            resp.setChunked(true);
-            resp.write("replicate_error: " + ex.getMessage());
-            resp.end();
+            resp.setStatusCode(500).end();
         }
     }
 
