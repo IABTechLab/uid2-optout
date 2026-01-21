@@ -7,7 +7,6 @@ import com.uid2.shared.optout.*;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Metrics;
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.WorkerExecutor;
 import io.vertx.core.eventbus.EventBus;
@@ -18,77 +17,45 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Optional;
 
 //
 // consumes event:
-//   - entry.add (string identityHash,advertisingId)
-//   - delta.produce (json logPaths)
 //   - partition.produce (json logPaths)
 //
 // produces events:
-//   - delta.produced (String filePath)
 //   - partition.produced (String filePath)
 //
-// there are 2 types of optout log file: delta and partition
-// delta is raw optout log file produced at a regular cadence (e.g. 5 mins)
 // partition is merge-sorted logs for a given larger time window (e.g. every 24hr)
 //
 public class OptOutLogProducer extends AbstractVerticle {
     private static final Logger LOGGER = LoggerFactory.getLogger(OptOutLogProducer.class);
-    private final HealthComponent healthComponent = HealthManager.instance.registerComponent("log-producer");
-    private final String deltaProducerDir;
+    private final HealthComponent healthComponent = HealthManager.instance.registerComponent("partition-producer");
     private final String partitionProducerDir;
     private final int replicaId;
-    private final ArrayList<Message<String>> bufferedMessages;
-    private final String eventDeltaProduced;
-    private final String eventPartitionProduced;
+    private final String eventUpload;
     private final FileUtils fileUtils;
-    private Counter counterDeltaProduced = Counter
-        .builder("uid2_optout_delta_produced_total")
-        .description("counter for how many optout delta files are produced")
-        .register(Metrics.globalRegistry);
     private Counter counterPartitionProduced = Counter
         .builder("uid2_optout_partition_produced_total")
         .description("counter for how many optout partition files are produced")
         .register(Metrics.globalRegistry);
-    private ByteBuffer buffer;
-    private String currentDeltaFileName = null;
-    private boolean writeInProgress = false;
-    private boolean shutdownInProgress = false;
-    private FileChannel fileChannel = null;
     private WorkerExecutor partitionProducerExecutor = null;
-    private int writeErrorsSinceDeltaOpen = 0;
 
-    public OptOutLogProducer(JsonObject jsonConfig) throws IOException {
-        this(jsonConfig, Const.Event.DeltaProduced, Const.Event.PartitionProduced);
+    public OptOutLogProducer(JsonObject jsonConfig) {
+        this(jsonConfig, null);
     }
 
-    public OptOutLogProducer(JsonObject jsonConfig, String eventDeltaProduced, String eventPartitionProduced) throws IOException {
+    public OptOutLogProducer(JsonObject jsonConfig, String eventUpload) {
         this.healthComponent.setHealthStatus(false, "not started");
 
-        this.deltaProducerDir = this.getDeltaProducerDir(jsonConfig);
         this.partitionProducerDir = this.getPartitionProducerDir(jsonConfig);
         this.replicaId = OptOutUtils.getReplicaId(jsonConfig);
         LOGGER.info("replica id is set to " + this.replicaId);
 
-        int bufferSize = jsonConfig.getInteger(Const.Config.OptOutProducerBufferSizeProp);
-        this.buffer = ByteBuffer.allocate(bufferSize).order(ByteOrder.LITTLE_ENDIAN);
-        this.bufferedMessages = new ArrayList<Message<String>>();
-
-        this.eventDeltaProduced = eventDeltaProduced;
-        this.eventPartitionProduced = eventPartitionProduced;
+        this.eventUpload = eventUpload;
 
         this.fileUtils = new FileUtils(jsonConfig);
         
@@ -103,17 +70,14 @@ public class OptOutLogProducer extends AbstractVerticle {
         this.healthComponent.setHealthStatus(false, "still starting");
 
         try {
-            // create a special worker pool for partition producer, so that it doesn't block log producer
+            // create a special worker pool for partition producer
             this.partitionProducerExecutor = vertx.createSharedWorkerExecutor("partition-worker-pool");
 
             EventBus eb = vertx.eventBus();
-            eb.<String>consumer(Const.Event.EntryAdd, msg -> this.handleEntryAdd(msg));
-            eb.consumer(Const.Event.DeltaProduce, msg -> this.handleDeltaProduce(msg));
             eb.<String>consumer(Const.Event.PartitionProduce, msg -> this.handlePartitionProduce(msg));
 
-            // start delta rotating
-            this.deltaRotate(false).onComplete(
-                ar -> startPromise.handle(ar));
+            this.mkdirsBlocking();
+            startPromise.complete();
         } catch (Exception ex) {
             LOGGER.error(ex.getMessage(), ex);
             startPromise.fail(new Throwable(ex));
@@ -133,298 +97,42 @@ public class OptOutLogProducer extends AbstractVerticle {
     @Override
     public void stop(Promise<Void> stopPromise) throws Exception {
         LOGGER.info("shutting down OptOutLogProducer.");
-        this.deltaRotate(true).onComplete(
-            ar -> stopPromise.handle(ar));
-        stopPromise.future()
-            .onSuccess(v -> LOGGER.info("stopped OptOutLogProducer"))
-            .onFailure(e -> LOGGER.error("failed stopping OptOutLogProducer", e));
+        if (this.partitionProducerExecutor != null) {
+            this.partitionProducerExecutor.close();
+        }
+        stopPromise.complete();
+        LOGGER.info("stopped OptOutLogProducer");
     }
 
-    public String getLastDelta() {
-        String[] deltaList = (new File(this.deltaProducerDir)).list();
-        if (deltaList == null) return null;
-        Optional<String> last = Arrays.stream(deltaList)
-            .sorted(OptOutUtils.DeltaFilenameComparatorDescending)
-            .findFirst();
-        if (last.isPresent()) return Paths.get(this.deltaProducerDir, last.get()).toString();
-        return null;
-    }
-
-    private Future<Void> deltaRotate(boolean shuttingDown) {
-        Promise<Void> promise = Promise.promise();
-        vertx.<Void>executeBlocking(
-            blockingPromise -> {
-                try {
-                    String newDelta = this.deltaRotateBlocking(shuttingDown);
-                    if (newDelta != null) this.publishDeltaProducedEvent(newDelta);
-                    ;
-                    blockingPromise.complete();
-                } catch (Exception ex) {
-                    LOGGER.error(ex.getMessage(), ex);
-                    blockingPromise.fail(new Throwable(ex));
-                }
-            },
-            res -> promise.handle(res)
-        );
-        return promise.future();
-    }
-
-    private void publishDeltaProducedEvent(String newDelta) {
-        assert newDelta != null;
-        this.counterDeltaProduced.increment();
-        vertx.eventBus().publish(this.eventDeltaProduced, newDelta);
-    }
-
-    private void publishPartitionProducedEvent(String newPartition) {
+    private void uploadPartition(String newPartition) {
         assert newPartition != null;
         this.counterPartitionProduced.increment();
-        vertx.eventBus().publish(this.eventPartitionProduced, newPartition);
-    }
-
-    private void handleEntryAdd(Message<String> entryMsg) {
-        if (this.shutdownInProgress) {
-            // if this event is received after shutdownInProgress is set, there is no file to write to at this point
-            entryMsg.reply(false);
-            return;
+        if (this.eventUpload != null) {
+            LOGGER.info("Partition produced, sending for upload: {}", newPartition);
+            vertx.eventBus().send(this.eventUpload, newPartition);
+        } else {
+            LOGGER.warn("Partition produced but no upload event configured: {}", newPartition);
         }
-
-        String body = entryMsg.body();
-        if (!body.contains(",")) {
-            LOGGER.error("unexpected optout entry format: " + body);
-            // fast fail if the message doesn't contain a comma (identity_hash,advertising_id)
-            entryMsg.reply(false);
-            return;
-        }
-
-        String[] parts = body.split(",");
-        if (parts.length != 3) {
-            LOGGER.error("unexpected optout entry format: " + body);
-            // fast fail if the message doesn't contain a comma (identity_hash,advertising_id)
-            entryMsg.reply(false);
-            return;
-        }
-
-        byte[] identityHash = OptOutUtils.base64StringTobyteArray(parts[0]);
-        if (identityHash == null) {
-            LOGGER.error("unexpected optout identity_hash: " + parts[0]);
-            // fast fail if the message doesn't contain a valid identity_hash
-            entryMsg.reply(false);
-            return;
-        }
-
-        byte[] advertisingId = OptOutUtils.base64StringTobyteArray(parts[1]);
-        if (advertisingId == null) {
-            LOGGER.error("unexpected optout identity_hash: " + parts[1]);
-            // fast fail if the message doesn't contain a valid advertising_id
-            entryMsg.reply(false);
-            return;
-        }
-
-        long timestampEpoch = -1;
-        try {
-            timestampEpoch = Long.valueOf(parts[2]);
-        } catch (NumberFormatException e) {
-            LOGGER.error("unexpected optout timestamp: " + parts[2]);
-            // fast fail if the message doesn't contain a valid unix epoch timestamp for optout entry
-            entryMsg.reply(false);
-            return;
-        }
-
-        // add current msg to buffer
-        bufferedMessages.add(entryMsg);
-
-        // if there are no blocking write in progress, start one
-        if (!this.writeInProgress) {
-            this.writeInProgress = true;
-            this.kickoffWrite();
-        }
-    }
-
-    private void kickoffWrite() {
-        // current msg will be written as a batch
-        ArrayList<Message> batch = new ArrayList<Message>(bufferedMessages);
-        bufferedMessages.clear();
-
-        vertx.executeBlocking(
-            promise -> {
-                this.writeLogBlocking(batch);
-                promise.complete();
-            },
-            res -> kickoffWriteCallback()
-        );
-    }
-
-    private void kickoffWriteCallback() {
-        if (bufferedMessages.size() > 0)
-            kickoffWrite();
-        else
-            this.writeInProgress = false;
-    }
-
-    private void handleDeltaProduce(Message m) {
-        vertx.<String>executeBlocking(
-            promise -> promise.complete(this.deltaRotateBlocking(false)),
-            res -> this.publishDeltaProducedEvent(res.result())
-        );
     }
 
     private void handlePartitionProduce(Message<String> msg) {
         // convert input string into array of delta files to combine into new partition
         String[] files = OptOutUtils.jsonArrayToStringArray(msg.body());
+        LOGGER.info("handlePartitionProduce received event with {} files: {}", files.length, msg.body());
 
         // execute blocking operation using special worker-pool
         // when completed, publish partition.produced event
         this.partitionProducerExecutor.<String>executeBlocking(
             promise -> promise.complete(this.producePartitionBlocking(files)),
-            res -> this.publishPartitionProducedEvent(res.result())
+            res -> {
+                if (res.succeeded()) {
+                    LOGGER.info("partition produced successfully: {}", res.result());
+                    this.uploadPartition(res.result());
+                } else {
+                    LOGGER.error("Failed to produce partition: " + res.cause().getMessage(), res.cause());
+                }
+            }
         );
-    }
-
-    // this function is no-throw
-    private void writeLogBlocking(ArrayList<Message> batch) {
-        if (this.shutdownInProgress) {
-            // if flag is set, file is already closed and we can't write any more due to verticle being shutdown
-            assert this.fileChannel == null;
-            for (Message<String> m : batch) {
-                m.reply(false);
-            }
-            return;
-        }
-
-        try {
-            assert this.fileChannel != null;
-
-            // make sure buffer size is large enough
-            this.checkBufferSize(batch.size() * OptOutConst.EntrySize);
-
-            // write optout entries
-            for (Message<String> m : batch) {
-                String body = m.body();
-                String[] parts = body.split(",");
-                assert parts.length == 3;
-                byte[] identityHash = OptOutUtils.base64StringTobyteArray(parts[0]);
-                byte[] advertisingId = OptOutUtils.base64StringTobyteArray(parts[1]);
-                long timestamp = Long.valueOf(parts[2]);
-                assert identityHash != null && advertisingId != null;
-
-                OptOutEntry.writeTo(buffer, identityHash, advertisingId, timestamp);
-            }
-            buffer.flip();
-            this.fileChannel.write(buffer);
-        } catch (Exception ex) {
-            LOGGER.error("write delta failed: " + ex.getMessage(), ex);
-            // report unhealthy status
-            ++this.writeErrorsSinceDeltaOpen;
-
-            // if file write failed, reply false with original messages for entry.add
-            for (Message<String> m : batch) {
-                m.reply(false);
-            }
-            return;
-        } finally {
-            // clearing the buffer
-            buffer.clear();
-        }
-
-        // on success, reply true with original messages
-        for (Message<String> m : batch) {
-            m.reply(true);
-        }
-    }
-
-    private void checkBufferSize(int dataSize) {
-        ByteBuffer b = this.buffer;
-        if (b.capacity() < dataSize) {
-            int newCapacity = Integer.highestOneBit(dataSize) << 1;
-            LOGGER.warn("Expanding buffer size: current " + b.capacity() + ", need " + dataSize + ", new " + newCapacity);
-            this.buffer = ByteBuffer.allocate(newCapacity).order(ByteOrder.LITTLE_ENDIAN);
-        }
-    }
-
-    // this function is no-throw
-    private String deltaRotateBlocking(boolean shuttingDown) {
-        this.mkdirsBlocking();
-        String logProduced = null;
-
-        // close current delta file if needed
-        if (this.fileChannel != null) {
-            logProduced = this.currentDeltaFileName;
-            assert logProduced != null;
-
-            // add a special last entry with ffff hash and the current timestamp
-            buffer.put(OptOutUtils.onesHashBytes);
-            buffer.put(OptOutUtils.onesHashBytes);
-            buffer.putLong(OptOutUtils.nowEpochSeconds());
-            try {
-                buffer.flip();
-                this.fileChannel.write(buffer);
-            } catch (Exception ex) {
-                // report unhealthy status
-                ++this.writeErrorsSinceDeltaOpen;
-                LOGGER.error("write last entry to delta failed: " + ex.getMessage(), ex);
-                assert false;
-            } finally {
-                buffer.clear();
-            }
-
-            // save old delta file
-            try {
-                this.fileChannel.close();
-                this.fileChannel = null;
-            } catch (Exception ex) {
-                // report unhealthy status
-                ++this.writeErrorsSinceDeltaOpen;
-                LOGGER.error("close delta file failed: " + ex.getMessage(), ex);
-                assert false;
-            }
-        }
-
-        // create a new file if not shutting down
-        if (!shuttingDown) {
-            // create new delta file
-            Path logPath = Paths.get(this.newDeltaFileName());
-            try {
-                this.fileChannel = FileChannel.open(logPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW, StandardOpenOption.SYNC);
-                this.currentDeltaFileName = logPath.toString();
-            } catch (Exception ex) {
-                // report unhealthy status
-                ++this.writeErrorsSinceDeltaOpen;
-                LOGGER.error("open delta file failed" + ex.getMessage(), ex);
-                assert false;
-            }
-
-            // asserting buffer is clear
-            assert this.buffer.position() == 0;
-
-            // add a special first entry with null hash and the current timestamp
-            buffer.put(OptOutUtils.nullHashBytes);
-            buffer.put(OptOutUtils.nullHashBytes);
-            buffer.putLong(OptOutUtils.nowEpochSeconds());
-            try {
-                buffer.flip();
-                this.fileChannel.write(buffer);
-            } catch (Exception ex) {
-                // report unhealthy status
-                ++this.writeErrorsSinceDeltaOpen;
-                LOGGER.error("write first entry to delta failed: " + ex.getMessage(), ex);
-                assert false;
-            } finally {
-                buffer.clear();
-            }
-
-            // reset isHealthy status when a new file is open
-            this.writeErrorsSinceDeltaOpen = 0;
-        }
-
-        if (shuttingDown) {
-            // there is a race condition, between:
-            // a) the delta being rotated for shutting down
-            // b) the verticle being shutdown
-            // and set the flag here to fail those entry.add requests that are received in between
-            this.shutdownInProgress = true;
-        }
-
-        return logProduced;
     }
 
     // this function is no throw
@@ -461,44 +169,36 @@ public class OptOutLogProducer extends AbstractVerticle {
 
     private void mkdirsBlocking() {
         FileSystem fs = vertx.fileSystem();
-        if (!fs.existsBlocking(this.deltaProducerDir)) {
-            fs.mkdirsBlocking(this.deltaProducerDir);
-        }
         if (!fs.existsBlocking(this.partitionProducerDir)) {
             fs.mkdirsBlocking(this.partitionProducerDir);
         }
     }
 
-
-    private void deleteExpiredLogsLocally() throws IOException {
-        deleteExpiredLogsLocally(this.deltaProducerDir);
+    private void deleteExpiredLogsLocally() {
         deleteExpiredLogsLocally(this.partitionProducerDir);
     }
 
-    private void deleteExpiredLogsLocally(String dirName) throws IOException {
+    private void deleteExpiredLogsLocally(String dirName) {
         if (!Files.exists(Paths.get(dirName))) return;
 
         Instant now = Instant.now();
         File dir = new File(dirName);
         File[] files = dir.listFiles();
+        if (files == null) return;
         for (File f : files) {
             if (fileUtils.isDeltaOrPartitionExpired(now, f.getName())) {
-                Files.delete(f.toPath());
-                LOGGER.warn("deleted expired log: " + f.getName());
+                try {
+                    Files.delete(f.toPath());
+                    LOGGER.warn("deleted expired log: " + f.getName());
+                } catch (Exception e) {
+                    LOGGER.error("Error deleting expired log: " + f.getName(), e);
+                }
             }
         }
     }
 
-    private String newDeltaFileName() {
-        return Paths.get(this.deltaProducerDir, OptOutUtils.newDeltaFileName(this.replicaId)).toString();
-    }
-
     private String newPartitionFileName() {
         return Paths.get(this.partitionProducerDir, OptOutUtils.newPartitionFileName(this.replicaId)).toString();
-    }
-
-    public static String getDeltaProducerDir(JsonObject config) {
-        return String.format("%s/producer/delta", config.getString(Const.Config.OptOutDataDirProp));
     }
 
     public static String getPartitionProducerDir(JsonObject config) {
