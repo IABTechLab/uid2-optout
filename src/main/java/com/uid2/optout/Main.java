@@ -254,8 +254,8 @@ public class Main {
             // enable partition producing (reads from main folder via cs)
             cs.enableDeltaMerging(vertx, Const.Event.PartitionProduce);
 
-            // deploy partition producer verticle
-            OptOutLogProducer partitionProducer = new OptOutLogProducer(this.config);
+            // deploy partition producer verticle - uploads to S3 via CloudSyncVerticle
+            OptOutLogProducer partitionProducer = new OptOutLogProducer(this.config, cloudSyncVerticle.eventUpload());
             futs.add(this.deploySingleInstance(partitionProducer));
 
             // create partners config monitor

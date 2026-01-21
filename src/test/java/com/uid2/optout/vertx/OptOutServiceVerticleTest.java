@@ -39,7 +39,7 @@ public class OptOutServiceVerticleTest {
 
     private static Future<String> deployService(TestContext context, JsonObject config) throws Exception {
         Promise<String> promise = Promise.promise();
-        
+
         config
                 .put(Const.Config.OptOutDataDirProp, OptOutUtils.tmpDir)
                 .put(Const.Config.OptOutInternalApiTokenProp, INTERNAL_TEST_KEY);
@@ -92,11 +92,11 @@ public class OptOutServiceVerticleTest {
                         req.putHeader("Authorization", "Bearer " + token);
                     }
                     return req.send()
-                            .compose(resp -> {
-                                context.assertEquals(status, resp.statusCode());
-                                async.complete();
-                                promise.complete();
-                                return resp.body();
+                        .compose(resp -> {
+                            context.assertEquals(status, resp.statusCode());
+                            async.complete();
+                            promise.complete();
+                            return resp.body();
                             });
                 });
         return promise.future();

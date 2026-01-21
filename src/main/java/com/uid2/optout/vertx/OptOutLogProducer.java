@@ -36,7 +36,7 @@ public class OptOutLogProducer extends AbstractVerticle {
     private final HealthComponent healthComponent = HealthManager.instance.registerComponent("partition-producer");
     private final String partitionProducerDir;
     private final int replicaId;
-    private final String eventPartitionProduced;
+    private final String eventUpload;
     private final FileUtils fileUtils;
     private Counter counterPartitionProduced = Counter
         .builder("uid2_optout_partition_produced_total")
@@ -45,17 +45,17 @@ public class OptOutLogProducer extends AbstractVerticle {
     private WorkerExecutor partitionProducerExecutor = null;
 
     public OptOutLogProducer(JsonObject jsonConfig) {
-        this(jsonConfig, Const.Event.PartitionProduced);
+        this(jsonConfig, null);
     }
 
-    public OptOutLogProducer(JsonObject jsonConfig, String eventPartitionProduced) {
+    public OptOutLogProducer(JsonObject jsonConfig, String eventUpload) {
         this.healthComponent.setHealthStatus(false, "not started");
 
         this.partitionProducerDir = this.getPartitionProducerDir(jsonConfig);
         this.replicaId = OptOutUtils.getReplicaId(jsonConfig);
         LOGGER.info("replica id is set to " + this.replicaId);
 
-        this.eventPartitionProduced = eventPartitionProduced;
+        this.eventUpload = eventUpload;
 
         this.fileUtils = new FileUtils(jsonConfig);
         
@@ -104,15 +104,21 @@ public class OptOutLogProducer extends AbstractVerticle {
         LOGGER.info("stopped OptOutLogProducer");
     }
 
-    private void publishPartitionProducedEvent(String newPartition) {
+    private void uploadPartition(String newPartition) {
         assert newPartition != null;
         this.counterPartitionProduced.increment();
-        vertx.eventBus().publish(this.eventPartitionProduced, newPartition);
+        if (this.eventUpload != null) {
+            LOGGER.info("Partition produced, sending for upload: {}", newPartition);
+            vertx.eventBus().send(this.eventUpload, newPartition);
+        } else {
+            LOGGER.warn("Partition produced but no upload event configured: {}", newPartition);
+        }
     }
 
     private void handlePartitionProduce(Message<String> msg) {
         // convert input string into array of delta files to combine into new partition
         String[] files = OptOutUtils.jsonArrayToStringArray(msg.body());
+        LOGGER.info("handlePartitionProduce received event with {} files: {}", files.length, msg.body());
 
         // execute blocking operation using special worker-pool
         // when completed, publish partition.produced event
@@ -120,7 +126,8 @@ public class OptOutLogProducer extends AbstractVerticle {
             promise -> promise.complete(this.producePartitionBlocking(files)),
             res -> {
                 if (res.succeeded()) {
-                    this.publishPartitionProducedEvent(res.result());
+                    LOGGER.info("partition produced successfully: {}", res.result());
+                    this.uploadPartition(res.result());
                 } else {
                     LOGGER.error("Failed to produce partition: " + res.cause().getMessage(), res.cause());
                 }

@@ -22,6 +22,7 @@ import java.util.Set;
 
 @RunWith(VertxUnitRunner.class)
 public class OptOutLogProducerTest {
+    private static final String TEST_UPLOAD_EVENT = "test.partition.upload";
     private Vertx vertx;
 
     public OptOutLogProducerTest() throws IOException {
@@ -33,7 +34,7 @@ public class OptOutLogProducerTest {
         JsonObject config = VertxUtils.getJsonConfig(vertx);
         // set data_dir option to use tmpDir during test
         config.put(Const.Config.OptOutDataDirProp, OptOutUtils.tmpDir);
-        OptOutLogProducer producer = new OptOutLogProducer(config);
+        OptOutLogProducer producer = new OptOutLogProducer(config, TEST_UPLOAD_EVENT);
         vertx.deployVerticle(producer, context.asyncAssertSuccess());
     }
 
@@ -68,7 +69,7 @@ public class OptOutLogProducerTest {
         Promise<String> promise = Promise.promise();
         Async async = ctx.async();
 
-        MessageConsumer<String> c = vertx.eventBus().consumer(Const.Event.PartitionProduced);
+        MessageConsumer<String> c = vertx.eventBus().consumer(TEST_UPLOAD_EVENT);
         c.handler(m -> {
             String newSnap = m.body();
             ctx.assertTrue(newSnap != null);
