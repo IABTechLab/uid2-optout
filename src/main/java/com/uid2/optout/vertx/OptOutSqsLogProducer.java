@@ -30,9 +30,16 @@ import io.vertx.ext.web.RoutingContext;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.SqsClientBuilder;
 
 import static com.uid2.optout.util.HttpResponseHelper.*;
+
+import java.net.URI;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -110,7 +117,28 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
         if (queueUrl == null || queueUrl.isEmpty()) {
             throw new IOException("sqs queue url not configured");
         }
-        this.sqsClient = sqsClient != null ? sqsClient : SqsClient.builder().build();
+        if (sqsClient != null) {
+            this.sqsClient = sqsClient;
+        } else {
+            SqsClientBuilder builder = SqsClient.builder();
+            // Support custom endpoint for LocalStack
+            String awsEndpoint = jsonConfig.getString(Const.Config.AwsSqsEndpointProp);
+            LOGGER.info("SQS endpoint from config: {}", awsEndpoint);
+            if (awsEndpoint != null && !awsEndpoint.isEmpty()) {
+                builder.endpointOverride(URI.create(awsEndpoint));
+                String region = jsonConfig.getString("aws_region");
+                LOGGER.info("AWS region from config: {}", region);
+                if (region == null || region.isEmpty()) {
+                    throw new IllegalArgumentException("aws_region must be configured when using custom SQS endpoint");
+                }
+                builder.region(Region.of(region));
+                // Use static credentials for LocalStack
+                builder.credentialsProvider(StaticCredentialsProvider.create(
+                        AwsBasicCredentials.create("test", "test")));
+                LOGGER.info("SQS client using custom endpoint: {}, region: {}", awsEndpoint, region);
+            }
+            this.sqsClient = builder.build();
+        }
         LOGGER.info("sqs client initialized for queue: {}", queueUrl);
 
         // http server configuration
@@ -122,7 +150,7 @@ public class OptOutSqsLogProducer extends AbstractVerticle {
 
         // circuit breaker tools
         this.trafficFilter = new TrafficFilter(jsonConfig.getString(Const.Config.TrafficFilterConfigPathProp));
-        this.trafficCalculator = new TrafficCalculator(cloudStorage, jsonConfig.getString(Const.Config.OptOutSqsS3FolderProp), jsonConfig.getString(Const.Config.TrafficCalcConfigPathProp));
+        this.trafficCalculator = new TrafficCalculator(cloudStorage, jsonConfig.getString(Const.Config.OptOutS3FolderProp), jsonConfig.getString(Const.Config.TrafficCalcConfigPathProp));
 
         // configuration values for orchestrator setup
         int replicaId = OptOutUtils.getReplicaId(jsonConfig); 

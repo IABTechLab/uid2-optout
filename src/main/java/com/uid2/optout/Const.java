@@ -11,16 +11,12 @@ public class Const extends com.uid2.shared.Const {
         public static final String OptOutPartnerEndpointMockProp = "optout_partner_endpoint_mock";
         public static final String OptOutObserveOnlyProp = "optout_observe_only";
         public static final String OptOutS3PathCompatProp = "optout_s3_path_compat";
-        public static final String OptOutAddEntryTimeoutMsProp = "optout_add_entry_timeout_ms";
         public static final String OptOutProducerBufferSizeProp = "optout_producer_buffer_size";
         public static final String OptOutSenderReplicaIdProp = "optout_sender_replica_id";
         public static final String OptOutDeleteExpiredProp = "optout_delete_expired";
         public static final String PartnersConfigPathProp = "partners_config_path";
         public static final String PartnersMetadataPathProp = "partners_metadata_path";
         public static final String OptOutSqsQueueUrlProp = "optout_sqs_queue_url";
-        public static final String OptOutSqsEnabledProp = "optout_enqueue_sqs_enabled";
-        public static final String OptOutSqsS3FolderProp = "optout_sqs_s3_folder"; // sqs delta producer writes to this folder
-        public static final String OptOutLegacyProducerS3FolderProp = "optout_legacy_producer_s3_folder"; // legacy producer writes to this folder
         public static final String OptOutSqsMaxMessagesPerPollProp = "optout_sqs_max_messages_per_poll";
         public static final String OptOutSqsVisibilityTimeoutProp = "optout_sqs_visibility_timeout";
         public static final String OptOutDeltaJobTimeoutSecondsProp = "optout_delta_job_timeout_seconds";
@@ -35,14 +31,13 @@ public class Const extends com.uid2.shared.Const {
         public static final String OptOutTrafficCalcAllowlistRangesProp = "traffic_calc_allowlist_ranges";
         public static final String OptOutSqsDeltaWindowSecondsProp = "optout_sqs_delta_window_seconds";
         public static final String OptOutSqsMaxQueueSizeProp = "optout_sqs_max_queue_size";
+        public static final String AwsSqsEndpointProp = "aws_sqs_endpoint";
     }
 
     public static class Event {
-        public static final String DeltaProduce = "delta.produce";
         public static final String DeltaProduced = "delta.produced";
         public static final String DeltaSentRemote = "delta.sent_remote";
         public static final String PartitionProduce = "partition.produce";
         public static final String PartitionProduced = "partition.produced";
-        public static final String EntryAdd = "entry.add";
     }
 }

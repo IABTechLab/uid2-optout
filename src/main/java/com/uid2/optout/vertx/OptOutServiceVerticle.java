@@ -1,15 +1,12 @@
 package com.uid2.optout.vertx;
 
 import com.uid2.optout.Const;
-import com.uid2.optout.auth.InternalAuthMiddleware;
 import com.uid2.optout.sqs.SqsMessageOperations;
-import com.uid2.optout.web.QuorumWebClient;
 import com.uid2.shared.Utils;
 import com.uid2.shared.attest.AttestationTokenService;
 import com.uid2.shared.attest.IAttestationTokenService;
 import com.uid2.shared.attest.JwtService;
 import com.uid2.shared.audit.Audit;
-import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.auth.IAuthorizableProvider;
 import com.uid2.shared.auth.OperatorKey;
 import com.uid2.shared.auth.Role;
@@ -24,8 +21,6 @@ import com.uid2.shared.optout.OptOutMetadata;
 import com.uid2.shared.optout.OptOutUtils;
 import com.uid2.shared.vertx.RequestCapturingHandler;
 import io.vertx.core.*;
-import io.vertx.core.eventbus.DeliveryOptions;
-import io.vertx.core.eventbus.Message;
 import io.vertx.core.http.*;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -34,10 +29,15 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
+import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.SqsClientBuilder;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
-import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
 
+import java.net.URI;
 import java.net.URL;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -62,24 +62,17 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     private final boolean isVerbose;
     private final int listenPort;
     private final int deltaRotateInterval;
-    private final QuorumWebClient replicaWriteClient;
-    private final DeliveryOptions defaultDeliveryOptions;
     private final AtomicReference<Collection<String>> cloudPaths = new AtomicReference<>();
     private final ICloudStorage cloudStorage;
     private final boolean enableOptOutPartnerMock;
-    private final String internalApiKey;
-    private final InternalAuthMiddleware internalAuth;
     private final SqsClient sqsClient;
     private final String sqsQueueUrl;
-    private final boolean sqsEnabled;
     private final int sqsMaxQueueSize;
-    private final String podName;
 
     public OptOutServiceVerticle(Vertx vertx,
                                  IAuthorizableProvider clientKeyProvider,
                                  ICloudStorage cloudStorage,
-                                 JsonObject jsonConfig,
-                                 UidInstanceIdProvider uidInstanceIdProvider) {
+                                 JsonObject jsonConfig) {
         this.healthComponent.setHealthStatus(false, "not started");
 
         this.cloudStorage = cloudStorage;
@@ -103,45 +96,41 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         this.deltaRotateInterval = jsonConfig.getInteger(Const.Config.OptOutDeltaRotateIntervalProp);
         this.isVerbose = jsonConfig.getBoolean(Const.Config.ServiceVerboseProp, false);
 
-        String replicaUrisConfig = jsonConfig.getString(Const.Config.OptOutReplicaUris);
-        if (replicaUrisConfig == null) {
-            LOGGER.warn(Const.Config.OptOutReplicaUris + " not configured, not instantiating multi-replica write client");
-            this.replicaWriteClient = null;
-        } else {
-            String[] replicaUris = replicaUrisConfig.split(",");
-            this.replicaWriteClient = new QuorumWebClient(vertx, replicaUris, uidInstanceIdProvider);
-        }
-
-        this.defaultDeliveryOptions = new DeliveryOptions();
-        int addEntryTimeoutMs = jsonConfig.getInteger(Const.Config.OptOutAddEntryTimeoutMsProp);
-        this.defaultDeliveryOptions.setSendTimeout(addEntryTimeoutMs);
-
-        this.internalApiKey = jsonConfig.getString(Const.Config.OptOutInternalApiTokenProp);
-        this.internalAuth = new InternalAuthMiddleware(this.internalApiKey, "optout");
         this.enableOptOutPartnerMock = jsonConfig.getBoolean(Const.Config.OptOutPartnerEndpointMockProp);
 
-        this.sqsEnabled = jsonConfig.getBoolean(Const.Config.OptOutSqsEnabledProp, false);
         this.sqsQueueUrl = jsonConfig.getString(Const.Config.OptOutSqsQueueUrlProp);
         this.sqsMaxQueueSize = jsonConfig.getInteger(Const.Config.OptOutSqsMaxQueueSizeProp, 0); // 0 = no limit
-        this.podName = jsonConfig.getString("POD_NAME");
 
         SqsClient tempSqsClient = null;
-        if (this.sqsEnabled) {
-            if (this.sqsQueueUrl == null || this.sqsQueueUrl.isEmpty()) {
-                LOGGER.warn("SQS enabled but queue URL not configured");
-            } else {
-                try {
-                    tempSqsClient = SqsClient.builder().build();
-                    LOGGER.info("SQS client initialized successfully");
-                    LOGGER.info("SQS client region: " + tempSqsClient.serviceClientConfiguration().region());
-                    LOGGER.info("SQS queue URL configured: " + this.sqsQueueUrl);
-                } catch (Exception e) {
-                    LOGGER.error("Failed to initialize SQS client: " + e.getMessage(), e);
-                    tempSqsClient = null;
-                }
-            }
+        if (this.sqsQueueUrl == null || this.sqsQueueUrl.isEmpty()) {
+            LOGGER.error("sqs_error: queue url not configured");
         } else {
-            LOGGER.info("SQS integration disabled");
+            try {
+                SqsClientBuilder builder = SqsClient.builder();
+                
+                // Support custom endpoint for LocalStack
+                String awsEndpoint = jsonConfig.getString(Const.Config.AwsSqsEndpointProp);
+                LOGGER.info("SQS endpoint from config: {}", awsEndpoint);
+                if (awsEndpoint != null && !awsEndpoint.isEmpty()) {
+                    builder.endpointOverride(URI.create(awsEndpoint));
+                    String region = jsonConfig.getString("aws_region");
+                    LOGGER.info("AWS region from config: {}", region);
+                    if (region == null || region.isEmpty()) {
+                        throw new IllegalArgumentException("aws_region must be configured when using custom SQS endpoint");
+                    }
+                    builder.region(Region.of(region));
+                    // Use static credentials for LocalStack
+                    builder.credentialsProvider(StaticCredentialsProvider.create(
+                            AwsBasicCredentials.create("test", "test")));
+                    LOGGER.info("SQS client using custom endpoint: {}, region: {}", awsEndpoint, region);
+                }
+                
+                tempSqsClient = builder.build();
+                LOGGER.info("SQS client initialized successfully for queue: {}", this.sqsQueueUrl);
+            } catch (Exception e) {
+                LOGGER.error("Failed to initialize SQS client: " + e.getMessage(), e);
+                tempSqsClient = null;
+            }
         }
         this.sqsClient = tempSqsClient;
     }
@@ -214,8 +203,6 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                 .allowedHeader("Access-Control-Allow-Headers")
                 .allowedHeader("Content-Type"));
 
-        router.route(Endpoints.OPTOUT_WRITE.toString())
-                .handler(internalAuth.handleWithAudit(this::handleWrite));
         router.route(Endpoints.OPTOUT_REPLICATE.toString())
                 .handler(auth.handleWithAudit(this::handleReplicate, Arrays.asList(Role.OPTOUT)));
         router.route(Endpoints.OPTOUT_REFRESH.toString())
@@ -294,81 +281,18 @@ public class OptOutServiceVerticle extends AbstractVerticle {
     }
 
     private void handleReplicate(RoutingContext routingContext) {
-        
-        if(this.sqsEnabled && this.sqsClient != null){
-            this.handleQueue(routingContext);
-        }
-
         HttpServerRequest req = routingContext.request();
-
-        MultiMap params = req.params();
-        String identityHash = req.getParam(IDENTITY_HASH);
-        String advertisingId = req.getParam(ADVERTISING_ID);
-        JsonObject body = routingContext.body().asJsonObject();
-
         HttpServerResponse resp = routingContext.response();
-        if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
-            this.sendBadRequestError(resp);
-            return;
-        }
-        if (advertisingId == null || params.getAll(ADVERTISING_ID).size() != 1) {
-            this.sendBadRequestError(resp);
-            return;
-        }
-
-        if (!this.isGetOrPost(req)) {
-            this.sendBadRequestError(resp);
-        } else if (this.replicaWriteClient == null) {
-            this.sendInternalServerError(resp, "optout replicas not configured");
-        }
-        else {
-            try {
-                this.replicaWriteClient.get(r -> {
-                    r.setQueryParam(IDENTITY_HASH, identityHash);
-                    r.setQueryParam(ADVERTISING_ID, advertisingId);
-                    r.headers().set("Authorization", "Bearer " + internalApiKey);
-                    r.headers().set(Audit.UID_INSTANCE_ID_HEADER, this.replicaWriteClient.getInstanceId());
-                    return r;
-                }).onComplete(ar -> {
-                    final String maskedId1 = Utils.maskPii(identityHash);
-                    final String maskedId2 = Utils.maskPii(advertisingId);
-                    if (ar.failed()) {
-                        LOGGER.error("failed sending optout/write to remote endpoints - identity_hash: " + maskedId1 + ", advertising_id: " + maskedId2);
-                        LOGGER.error(ar.cause().getMessage(), new Exception(ar.cause()));
-                        this.sendInternalServerError(resp, ar.cause().toString());
-                    } else {
-                        String timestamp = null;
-                        for (io.vertx.ext.web.client.HttpResponse<io.vertx.core.buffer.Buffer> replicaResp : ar.result()) {
-                            if (replicaResp != null && replicaResp.statusCode() == 200) {
-                                timestamp = replicaResp.bodyAsString();
-                            }
-                        }
-
-                        if (timestamp == null) {
-                            sendInternalServerError(resp, "Unexpected result calling internal write api");
-                        } else {
-                            LOGGER.info("sent optout/write to remote endpoints - identity_hash: " + maskedId1 + ", advertising_id: " + maskedId1);
-                            resp.setStatusCode(200)
-                                    .setChunked(true)
-                                    .write(timestamp);
-                            resp.end();
-                        }
-                    }
-                });
-            } catch (Exception ex) {
-                LOGGER.error("error creating requests for remote optout/write call:", ex);
-                this.sendInternalServerError(resp, ex.getMessage());
-            }
-        }
-    }
-    
-    private void handleQueue(RoutingContext routingContext) {
-        HttpServerRequest req = routingContext.request();
 
         // skip sqs queueing for validator operators (reference-operator, candidate-operator)
         // this avoids triple processing of the same request
         String instanceId = req.getHeader(Audit.UID_INSTANCE_ID_HEADER);
         if (isValidatorOperatorRequest(instanceId)) {
+            long optoutEpoch = OptOutUtils.nowEpochSeconds();
+            resp.setStatusCode(200)
+                    .setChunked(true)
+                    .write(String.valueOf(optoutEpoch));
+            resp.end();
             return;
         }
 
@@ -381,22 +305,36 @@ public class OptOutServiceVerticle extends AbstractVerticle {
         String email = body != null ? body.getString(EMAIL) : null;
         String phone = body != null ? body.getString(PHONE) : null;
 
-        HttpServerResponse resp = routingContext.response();
-
-        // while old delta production is enabled, response is handled by replicate logic
-
-        // validate parameters - same as replicate
+        // validate parameters
         if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
-            // this.sendBadRequestError(resp);
+            this.sendBadRequestError(resp);
             return;
         }
         if (advertisingId == null || params.getAll(ADVERTISING_ID).size() != 1) {
-            // this.sendBadRequestError(resp);
+            this.sendBadRequestError(resp);
+            return;
+        }
+
+        // validate base64 decoding
+        byte[] hashBytes = OptOutUtils.base64StringTobyteArray(identityHash);
+        byte[] idBytes = OptOutUtils.base64StringTobyteArray(advertisingId);
+        if (hashBytes == null) {
+            this.sendBadRequestError(resp);
+            return;
+        }
+        if (idBytes == null) {
+            this.sendBadRequestError(resp);
+            return;
+        }
+
+        // optout null/ones is not allowed
+        if (OptOutEntry.isSpecialHash(hashBytes)) {
+            this.sendBadRequestError(resp);
             return;
         }
 
         if (!this.isGetOrPost(req)) {
-            // this.sendBadRequestError(resp);
+            this.sendBadRequestError(resp);
             return;
         }
 
@@ -431,64 +369,19 @@ public class OptOutServiceVerticle extends AbstractVerticle {
                         .build();
 
                 this.sqsClient.sendMessage(sendMsgRequest);
-                return null;
+                return OptOutUtils.nowEpochSeconds();
+            }).onSuccess(optoutEpoch -> {
+                resp.setStatusCode(200)
+                        .setChunked(true)
+                        .write(String.valueOf(optoutEpoch));
+                resp.end();
             }).onFailure(cause -> {
                 LOGGER.error("failed to queue message, cause={}", cause.getMessage());
+                resp.setStatusCode(500).end();
             });
         } catch (Exception ex) {
-            // this.sendInternalServerError(resp, ex.getMessage());
-            LOGGER.error("Error processing queue request: " + ex.getMessage(), ex);
-        }
-    }
-
-    private void handleWrite(RoutingContext routingContext) {
-        HttpServerRequest req = routingContext.request();
-        MultiMap params = req.params();
-        String identityHash = req.getParam(IDENTITY_HASH);
-        String advertisingId = req.getParam(ADVERTISING_ID);
-        JsonObject body = routingContext.body().asJsonObject();
-
-        HttpServerResponse resp = routingContext.response();
-        if (identityHash == null || params.getAll(IDENTITY_HASH).size() != 1) {
-            this.sendBadRequestError(resp);
-            return;
-        }
-        if (advertisingId == null || params.getAll(ADVERTISING_ID).size() != 1) {
-            this.sendBadRequestError(resp);
-            return;
-        }
-
-        byte[] hashBytes = OptOutUtils.base64StringTobyteArray(identityHash);
-        byte[] idBytes = OptOutUtils.base64StringTobyteArray(advertisingId);
-        if (hashBytes == null) {
-            this.sendBadRequestError(resp);
-        } else if (idBytes == null) {
-            this.sendBadRequestError(resp);
-        } else if (!this.isGetOrPost(req)) {
-            this.sendBadRequestError(resp);
-        } else if (body != null) {
-            this.sendBadRequestError(resp);
-        } else if (OptOutEntry.isSpecialHash(hashBytes)) {
-            // optout null/ones is not allowed
-            this.sendBadRequestError(resp);
-        } else {
-            long optoutEpoch = OptOutUtils.nowEpochSeconds();
-            String msg = identityHash + "," + advertisingId + "," + String.valueOf(optoutEpoch);
-            vertx.eventBus().request(Const.Event.EntryAdd, msg, this.defaultDeliveryOptions,
-                    ar -> this.handleEntryAdded(ar, resp, optoutEpoch));
-        }
-    }
-
-    private void handleEntryAdded(AsyncResult<Message<Object>> res, HttpServerResponse resp, long optoutEpoch) {
-        if (res.failed()) {
-            this.sendInternalServerError(resp, res.cause().toString());
-        } else if (!res.result().body().equals(true)) {
-            this.sendInternalServerError(resp, "Unexpected msg reply: " + res.result().body());
-        } else {
-            resp.setStatusCode(200)
-                    .setChunked(true)
-                    .write(String.valueOf(optoutEpoch));
-            resp.end();
+            LOGGER.error("Error processing replicate request: " + ex.getMessage(), ex);
+            resp.setStatusCode(500).end();
         }
     }
 
@@ -516,17 +409,6 @@ public class OptOutServiceVerticle extends AbstractVerticle {
             resp.end();
         } else {
             sendStatus(500, resp);
-        }
-    }
-
-    private void sendServiceUnavailableError(HttpServerResponse resp, String why) {
-        if (this.isVerbose && why != null) {
-            resp.setStatusCode(503);
-            resp.setChunked(true);
-            resp.write(why);
-            resp.end();
-        } else {
-            sendStatus(503, resp);
         }
     }
 

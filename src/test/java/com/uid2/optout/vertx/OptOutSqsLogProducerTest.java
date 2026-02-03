@@ -81,7 +81,7 @@ public class OptOutSqsLogProducerTest {
               .put(Const.Config.TrafficCalcConfigPathProp, TRAFFIC_CALC_CONFIG_PATH)
               .put(Const.Config.ManualOverrideS3PathProp, MANUAL_OVERRIDE_S3_PATH)
               .put(Const.Config.OptOutS3BucketDroppedRequestsProp, TEST_BUCKET_DROPPED_REQUESTS)
-              .put(Const.Config.OptOutSqsS3FolderProp, S3_DELTA_PREFIX)
+              .put(Const.Config.OptOutS3FolderProp, S3_DELTA_PREFIX)
               .put(Const.Config.OptOutMaxMessagesPerFileProp, 100);
         
         // mock cloud sync to return proper s3 paths
@@ -133,7 +133,7 @@ public class OptOutSqsLogProducerTest {
         }
         
         // create producer with mocks
-        producer = new OptOutSqsLogProducer(config, cloudStorage, cloudStorageDroppedRequests, cloudSync, Const.Event.DeltaProduce, sqsClient);
+        producer = new OptOutSqsLogProducer(config, cloudStorage, cloudStorageDroppedRequests, cloudSync, Const.Event.DeltaProduced, sqsClient);
         
         // deploy verticle
         vertx.deployVerticle(producer, testContext.succeeding(id -> testContext.completeNow()));

@@ -67,4 +67,3 @@ jobs:
       admin_branch: ${{ inputs.admin_branch }}
       operator_branch: ${{ inputs.operator_branch }}
     secrets: inherit
-  

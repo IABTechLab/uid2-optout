@@ -7,7 +7,6 @@ import java.util.stream.Stream;
 public enum Endpoints {
     OPS_HEALTHCHECK("/ops/healthcheck"),
     OPTOUT_REFRESH("/optout/refresh"),
-    OPTOUT_WRITE("/optout/write"),
     OPTOUT_REPLICATE("/optout/replicate"),
     OPTOUT_DELTA_PRODUCE("/optout/deltaproduce"),
     OPTOUT_PARTNER_MOCK("/optout/partner_mock");

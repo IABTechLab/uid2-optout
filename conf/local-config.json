@@ -7,7 +7,6 @@
   "optout_partner_endpoint_mock": true,
   "optout_internal_api_token": "test-optout-internal-key",
   "optout_producer_max_replicas": 1,
-  "optout_replica_uris": "http://127.0.0.1:8081/optout/write,http://127.0.0.1:8081/optout/write,http://127.0.0.1:8081/optout/write",
   "partners_config_path": "/com.uid2.core/test/partners/config.json",
   "partners_metadata_path": "/com.uid2.core/test/partners/metadata.json",
   "clients_metadata_path": "/com.uid2.core/test/clients/metadata.json",
