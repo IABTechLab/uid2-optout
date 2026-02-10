@@ -45,7 +45,7 @@ public class GenericFailureHandler implements Handler<RoutingContext> {
             if (!response.ended() && !response.closed()) {
                 response.setStatusCode(400).end(errorMsg);
             }
-            LOGGER.warn("URL: [{}] - Multipart method mismatch - Error:", url, t);
+            LOGGER.warn("URL: [{}] - Error response code: [400] - Multipart method mismatch - Error:", url, t);
             return;
         }
 
@@ -55,7 +55,7 @@ public class GenericFailureHandler implements Handler<RoutingContext> {
                 response.setStatusCode(400)
                         .end("Bad Request: Too many form fields");
             }
-            LOGGER.warn("URL: [{}] - Too many form fields - Error:", url, t);
+            LOGGER.warn("URL: [{}] - Error response code: [400] - Too many form fields - Error:", url, t);
             return;
         }
 
