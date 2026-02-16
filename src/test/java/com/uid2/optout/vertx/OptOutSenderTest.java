@@ -49,8 +49,8 @@ public class OptOutSenderTest {
 
     private SimpleMeterRegistry registry;
 
-    private static final String S3_TIMESTAMP_KEY = "optout/sender-state/testPartner_timestamp.txt";
-    private static final String S3_PROCESSED_KEY = "optout/sender-state/testPartner_processed.txt";
+    private static final String CLOUD_TIMESTAMP_KEY = "optout/sender-state/testPartner_timestamp.txt";
+    private static final String CLOUD_PROCESSED_KEY = "optout/sender-state/testPartner_processed.txt";
 
     @BeforeEach
     public void setup() {
@@ -110,7 +110,7 @@ public class OptOutSenderTest {
         return Paths.get(filePath, "consumer/delta", "optout-delta-" + TestUtils.newSuffix());
     }
 
-    private String readS3String(String key) throws Exception {
+    private String readCloudString(String key) throws Exception {
         try (InputStream is = cloudStorage.download(key)) {
             return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         }
@@ -154,32 +154,32 @@ public class OptOutSenderTest {
     }
 
     @Test
-    void testStatePersistedToS3AfterProcessing(Vertx vertx, VertxTestContext testContext) throws Exception {
+    void testStatePersistedToCloudAfterProcessing(Vertx vertx, VertxTestContext testContext) throws Exception {
         deployAndAwait(vertx);
         Path newFile = getDeltaPath();
         TestUtils.newDeltaFile(newFile, 1, 2, 3);
 
         publishAndAwaitSent(vertx, newFile);
 
-        // Allow time for the async S3 persist to complete
+        // Allow time for the async cloud persist to complete
         Thread.sleep(2000);
 
-        String timestampContent = readS3String(S3_TIMESTAMP_KEY);
-        assertNotNull(timestampContent, "Timestamp should be persisted to S3");
-        assertFalse(timestampContent.isBlank(), "Timestamp in S3 should not be blank");
+        String timestampContent = readCloudString(CLOUD_TIMESTAMP_KEY);
+        assertNotNull(timestampContent, "Timestamp should be persisted to cloud storage");
+        assertFalse(timestampContent.isBlank(), "Timestamp in cloud storage should not be blank");
         long timestamp = Long.parseLong(timestampContent.trim());
         assertTrue(timestamp > 0, "Timestamp should be a positive epoch second");
 
-        String processedContent = readS3String(S3_PROCESSED_KEY);
-        assertNotNull(processedContent, "Processed deltas should be persisted to S3");
+        String processedContent = readCloudString(CLOUD_PROCESSED_KEY);
+        assertNotNull(processedContent, "Processed deltas should be persisted to cloud storage");
         assertTrue(processedContent.contains(newFile.toString()),
-                "S3 processed deltas should contain the delta file that was sent");
+                "Cloud processed deltas should contain the delta file that was sent");
 
         testContext.completeNow();
     }
 
     @Test
-    void testStateRecoveredFromS3OnRestart(Vertx vertx, VertxTestContext testContext) throws Exception {
+    void testStateRecoveredFromCloudOnRestart(Vertx vertx, VertxTestContext testContext) throws Exception {
         InMemoryStorageMock sharedStorage = new InMemoryStorageMock();
         deployAndAwait(vertx, sharedStorage);
 
@@ -188,16 +188,16 @@ public class OptOutSenderTest {
 
         publishAndAwaitSent(vertx, newFile);
 
-        // Allow time for the async S3 persist to complete
+        // Allow time for the async cloud persist to complete
         Thread.sleep(2000);
 
-        // Verify state was persisted to S3
-        String timestampBefore = readS3String(S3_TIMESTAMP_KEY);
+        // Verify state was persisted to cloud storage
+        String timestampBefore = readCloudString(CLOUD_TIMESTAMP_KEY);
         assertNotNull(timestampBefore);
         long savedTimestamp = Long.parseLong(timestampBefore.trim());
         assertTrue(savedTimestamp > 0);
 
-        String processedBefore = readS3String(S3_PROCESSED_KEY);
+        String processedBefore = readCloudString(CLOUD_PROCESSED_KEY);
         assertTrue(processedBefore.contains(newFile.toString()));
 
         // Undeploy (simulating pod termination)
@@ -208,7 +208,7 @@ public class OptOutSenderTest {
         });
         undeployFuture.get(10, TimeUnit.SECONDS);
 
-        // Redeploy with the same S3 storage (simulating fresh pod with no persistent volume)
+        // Redeploy with the same cloud storage (simulating fresh pod with no persistent volume)
         when(optOutPartnerEndpoint.send(any())).thenReturn(Future.succeededFuture());
 
         this.optoutSender = new OptOutSender(config, optOutPartnerEndpoint, eventBusName, sharedStorage);
@@ -219,14 +219,14 @@ public class OptOutSenderTest {
         });
         redeployFuture.get(10, TimeUnit.SECONDS);
 
-        // Verify the S3 state survives — the same keys should still have the same content
-        String timestampAfter = readS3String(S3_TIMESTAMP_KEY);
+        // Verify the cloud state survives — the same keys should still have the same content
+        String timestampAfter = readCloudString(CLOUD_TIMESTAMP_KEY);
         assertEquals(timestampBefore.trim(), timestampAfter.trim(),
-                "Timestamp in S3 should survive across pod restarts");
+                "Timestamp in cloud storage should survive across pod restarts");
 
-        String processedAfter = readS3String(S3_PROCESSED_KEY);
+        String processedAfter = readCloudString(CLOUD_PROCESSED_KEY);
         assertTrue(processedAfter.contains(newFile.toString()),
-                "Processed deltas in S3 should survive across pod restarts");
+                "Processed deltas in cloud storage should survive across pod restarts");
 
         testContext.completeNow();
     }
