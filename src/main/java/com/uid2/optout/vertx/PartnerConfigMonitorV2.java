@@ -4,6 +4,7 @@ import com.uid2.optout.Const;
 import com.uid2.optout.partner.EndpointConfig;
 import com.uid2.shared.Utils;
 import com.uid2.shared.cloud.DownloadCloudStorage;
+import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.store.reader.IMetadataVersionedStore;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
@@ -29,17 +30,20 @@ public class PartnerConfigMonitorV2 implements IMetadataVersionedStore {
     private final JsonObject globalConfig;
     private final DownloadCloudStorage metadataStorage;
     private final DownloadCloudStorage contentStorage;
+    private final ICloudStorage optoutCloudStorage;
     private final String partnersMetadataPath;
     private final String eventCloudDownloaded;
     private final AtomicReference<Map<String, String>> senderDeploymentIds = new AtomicReference<>();
 
     public PartnerConfigMonitorV2(Vertx vertx, JsonObject globalConfig, DownloadCloudStorage metadataStorage,
-                                  DownloadCloudStorage contentStorage, String eventCloudDownloaded) {
+                                  DownloadCloudStorage contentStorage, String eventCloudDownloaded,
+                                  ICloudStorage optoutCloudStorage) {
         this.vertx = vertx;
         this.globalConfig = globalConfig;
         this.metadataStorage = metadataStorage;
         this.contentStorage = contentStorage;
-        this.partnersMetadataPath = globalConfig.getString(Const.Config.PartnersMetadataPathProp);;
+        this.optoutCloudStorage = optoutCloudStorage;
+        this.partnersMetadataPath = globalConfig.getString(Const.Config.PartnersMetadataPathProp);
         this.eventCloudDownloaded = eventCloudDownloaded;
     }
 
@@ -104,7 +108,7 @@ public class PartnerConfigMonitorV2 implements IMetadataVersionedStore {
 
             for (EndpointConfig ef : remoteEndpoints) {
                 LOGGER.info("Deploying OptOutSender: " + ef.name() + ", url: " + ef.url());
-                OptOutSender sender = new OptOutSender(globalConfig, vertx, ef, this.eventCloudDownloaded);
+                OptOutSender sender = new OptOutSender(globalConfig, vertx, ef, this.eventCloudDownloaded, this.optoutCloudStorage);
                 vertx.deployVerticle(sender, dr -> {
                     if (dr.succeeded()) {
                         newDeployIdMap.put(ef.name(), dr.result());

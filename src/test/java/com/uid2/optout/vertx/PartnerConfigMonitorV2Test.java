@@ -2,6 +2,7 @@ package com.uid2.optout.vertx;
 
 import com.uid2.optout.Const;
 import com.uid2.shared.cloud.DownloadCloudStorage;
+import com.uid2.shared.cloud.InMemoryStorageMock;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import io.vertx.junit5.VertxExtension;
@@ -38,7 +39,7 @@ public class PartnerConfigMonitorV2Test {
 
         setupConfig();
 
-        partnerConfigMonitorV2 = new PartnerConfigMonitorV2(vertx, config, metadataStorage, contentStorage, eventBusName);
+        partnerConfigMonitorV2 = new PartnerConfigMonitorV2(vertx, config, metadataStorage, contentStorage, eventBusName, new InMemoryStorageMock());
         testContext.completeNow();
     }
 

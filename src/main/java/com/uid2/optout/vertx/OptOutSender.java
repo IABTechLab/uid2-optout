@@ -7,6 +7,7 @@ import com.uid2.optout.partner.OptOutPartnerEndpoint;
 import com.uid2.optout.util.Tuple;
 import com.uid2.optout.web.TooManyRetriesException;
 import com.uid2.optout.web.UnexpectedStatusCodeException;
+import com.uid2.shared.cloud.ICloudStorage;
 import com.uid2.shared.health.HealthComponent;
 import com.uid2.shared.health.HealthManager;
 import com.uid2.shared.optout.*;
@@ -20,7 +21,8 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -28,7 +30,6 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -71,6 +72,8 @@ public class OptOutSender extends AbstractVerticle {
     private static final ConcurrentHashMap<String, AtomicLong> lastEntrySentMap = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, AtomicInteger> pendingFilesCountMap = new ConcurrentHashMap<>();
 
+    private static final String SENDER_STATE_PREFIX = "sender-state/";
+
     private final OptOutSenderLogger logger;
     private final HealthComponent healthComponent;
     private final String deltaConsumerDir;
@@ -80,29 +83,29 @@ public class OptOutSender extends AbstractVerticle {
     private final int totalReplicas;
     private final IOptOutPartnerEndpoint remotePartner;
     private final String eventCloudSyncDownloaded;
+    private final ICloudStorage cloudStorage;
+    private final String s3TimestampKey;
+    private final String s3ProcessedDeltasKey;
     private final Map<Tuple.Tuple2<String, String>, Counter> entryReplayStatusCounters = new HashMap<>();
     private final AtomicInteger pendingFilesCount;
     private final AtomicLong lastEntrySent;
     private LinkedList<String> pendingFiles = new LinkedList<>();
     private AtomicBoolean isReplaying = new AtomicBoolean(false);
-    private CompletableFuture pendingAsyncOp = null;
-    // name of the file that stores timestamp
-    private Path timestampFile = null;
-    // name of the file that stores processed deltas
-    private Path processedDeltasFile = null;
-    // timestamp when the last delta is processed
+    // in-memory state (loaded from / persisted to S3)
     private Instant lastProcessedTimestamp = null;
+    private final Set<String> processedDeltas = new HashSet<>();
 
-    public OptOutSender(JsonObject jsonConfig, Vertx vertx, EndpointConfig partnerConfig, String eventCloudDownloaded) {
-        this(jsonConfig, new OptOutPartnerEndpoint(vertx, partnerConfig), eventCloudDownloaded);
+    public OptOutSender(JsonObject jsonConfig, Vertx vertx, EndpointConfig partnerConfig, String eventCloudDownloaded, ICloudStorage cloudStorage) {
+        this(jsonConfig, new OptOutPartnerEndpoint(vertx, partnerConfig), eventCloudDownloaded, cloudStorage);
     }
 
-    public OptOutSender(JsonObject jsonConfig, IOptOutPartnerEndpoint optOutPartner, String eventCloudSyncDownloaded) {
+    public OptOutSender(JsonObject jsonConfig, IOptOutPartnerEndpoint optOutPartner, String eventCloudSyncDownloaded, ICloudStorage cloudStorage) {
         this.logger = new OptOutSenderLogger(optOutPartner.name());
         this.healthComponent = HealthManager.instance.registerComponent("optout-sender-" + optOutPartner.name());
         this.healthComponent.setHealthStatus(false, "not started");
 
         this.eventCloudSyncDownloaded = eventCloudSyncDownloaded;
+        this.cloudStorage = cloudStorage;
         this.deltaConsumerDir = OptOutUtils.getDeltaConsumerDir(jsonConfig);
         this.replicaId = OptOutUtils.getReplicaId(jsonConfig);
         this.senderReplicaId = jsonConfig.getInteger(Const.Config.OptOutSenderReplicaIdProp);
@@ -113,8 +116,10 @@ public class OptOutSender extends AbstractVerticle {
         assert this.deltaRotateInterval > 0;
 
         this.remotePartner = optOutPartner;
-        this.timestampFile = Paths.get(jsonConfig.getString(Const.Config.OptOutDataDirProp), "remote_replicate", this.remotePartner.name() + "_timestamp.txt");
-        this.processedDeltasFile = Paths.get(jsonConfig.getString(Const.Config.OptOutDataDirProp), "remote_replicate", this.remotePartner.name() + "_processed.txt");
+
+        String s3Folder = jsonConfig.getString(Const.Config.OptOutS3FolderProp, "optout/");
+        this.s3TimestampKey = s3Folder + SENDER_STATE_PREFIX + this.remotePartner.name() + "_timestamp.txt";
+        this.s3ProcessedDeltasKey = s3Folder + SENDER_STATE_PREFIX + this.remotePartner.name() + "_processed.txt";
 
         this.pendingFilesCount = pendingFilesCountMap.computeIfAbsent(remotePartner.name(), s -> new AtomicInteger(0));
         this.lastEntrySent = lastEntrySentMap.computeIfAbsent(remotePartner.name(), s -> new AtomicLong(0));
@@ -143,7 +148,6 @@ public class OptOutSender extends AbstractVerticle {
                 this.logger.info("this is replica " + this.replicaId + ", and will be responsible for consolidating deltas before replaying to remote");
                 eb.<String>consumer(this.eventCloudSyncDownloaded, msg -> this.handleCloudDownloaded(msg));
 
-                // before mark startPromise complete, scan local delta files and find unprocessed deltas
                 this.scanLocalForUnprocessed().onComplete(ar -> startPromise.handle(ar));
             } else {
                 this.logger.info("this is not replica " + this.senderReplicaId + ", and will not be responsible for consolidating deltas before replaying to remote");
@@ -182,25 +186,18 @@ public class OptOutSender extends AbstractVerticle {
             .onFailure(e -> this.logger.error("failed stopping OptOutSender", e));
     }
 
-    // returning name of the file that stores timestamp
-    public Path getTimestampFile() {
-        return this.timestampFile;
+    String getS3TimestampKey() {
+        return this.s3TimestampKey;
     }
 
-    // returning name of the file that stores processed deltas
-    public Path getProcessedDeltasFile() {
-        return this.processedDeltasFile;
+    String getS3ProcessedDeltasKey() {
+        return this.s3ProcessedDeltasKey;
     }
 
     private Future<Void> scanLocalForUnprocessed() {
-        Future step1 = OptOutUtils.readLinesFromFile(vertx, processedDeltasFile);
-        Future step2 = OptOutUtils.readTimestampFromFile(vertx, timestampFile, 0);
-        return CompositeFuture.all(step1, step2).compose(cf -> {
-            HashSet<String> processedDeltas = new HashSet<>(Arrays.asList(cf.resultAt(0)));
-            this.lastProcessedTimestamp = Instant.ofEpochSecond(cf.resultAt(1));
-            this.lastEntrySent.set(this.lastProcessedTimestamp.getEpochSecond());
-
-            this.logger.info("found total " + processedDeltas.size() + " local deltas on disk");
+        // Load tracking state from S3 (source of truth) into memory, then scan local delta files
+        return loadStateFromS3().compose(v -> {
+            this.logger.info("found total " + this.processedDeltas.size() + " processed deltas (loaded from S3)");
 
             // checking our deltaConsumerDir
             File dirToList = new File(deltaConsumerDir);
@@ -230,7 +227,7 @@ public class OptOutSender extends AbstractVerticle {
                 Instant fileTimestamp = OptOutUtils.getFileTimestamp(fullName);
 
                 // regardless of timestamp, if a delta is unprocessed, adding it to the pending files
-                if (!processedDeltas.contains(fullName)) {
+                if (!this.processedDeltas.contains(fullName)) {
                     // log an error if an unprocessed delta is found before the timestamp
                     if (fileTimestamp.isBefore(this.lastProcessedTimestamp)) {
                         this.logger.error("unprocessed delta file: " + fullName + " found before the last processed timestamp: " + this.lastProcessedTimestamp);
@@ -244,6 +241,84 @@ public class OptOutSender extends AbstractVerticle {
 
             return Future.succeededFuture();
         });
+    }
+
+    /**
+     * Load sender tracking state from S3 (source of truth) directly into memory.
+     * Non-fatal: if S3 has no state, we start fresh (may resend some deltas).
+     */
+    private Future<Void> loadStateFromS3() {
+        Promise<Void> promise = Promise.promise();
+        vertx.<Void>executeBlocking(blockPromise -> {
+            try {
+                this.lastProcessedTimestamp = readTimestampFromS3();
+                this.lastEntrySent.set(this.lastProcessedTimestamp.getEpochSecond());
+
+                this.processedDeltas.clear();
+                this.processedDeltas.addAll(readProcessedDeltasFromS3());
+
+                this.logger.info("Loaded state from S3: timestamp=" + this.lastProcessedTimestamp
+                        + ", processedDeltas=" + this.processedDeltas.size());
+                blockPromise.complete();
+            } catch (Exception e) {
+                this.logger.error("Failed to load sender state from S3: " + e.getMessage(), e);
+                this.lastProcessedTimestamp = Instant.EPOCH;
+                this.lastEntrySent.set(0);
+                blockPromise.complete();
+            }
+        }, ar -> promise.handle(ar));
+        return promise.future();
+    }
+
+    private Instant readTimestampFromS3() {
+        try (InputStream is = cloudStorage.download(s3TimestampKey)) {
+            String content = new String(is.readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (content.isEmpty()) return Instant.EPOCH;
+            return Instant.ofEpochSecond(Long.parseLong(content));
+        } catch (Exception e) {
+            this.logger.info("No timestamp state in S3 for " + s3TimestampKey + " (starting fresh): " + e.getMessage());
+            return Instant.EPOCH;
+        }
+    }
+
+    private Set<String> readProcessedDeltasFromS3() {
+        try (InputStream is = cloudStorage.download(s3ProcessedDeltasKey)) {
+            String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            Set<String> result = new HashSet<>();
+            for (String line : content.split("\n")) {
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty()) {
+                    result.add(trimmed);
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            this.logger.info("No processed deltas state in S3 for " + s3ProcessedDeltasKey + " (starting fresh): " + e.getMessage());
+            return new HashSet<>();
+        }
+    }
+
+    /**
+     * Persist sender tracking state from memory directly to S3 (source of truth).
+     * Called within an executeBlocking context; throws on failure.
+     */
+    private void persistStateToS3() throws Exception {
+        // Write timestamp
+        byte[] timestampBytes = Long.toString(this.lastProcessedTimestamp.getEpochSecond())
+                .getBytes(StandardCharsets.UTF_8);
+        try (InputStream is = new ByteArrayInputStream(timestampBytes)) {
+            cloudStorage.upload(is, s3TimestampKey);
+        }
+
+        // Write processed deltas list
+        String processedContent = String.join("\n", this.processedDeltas);
+        byte[] processedBytes = processedContent.getBytes(StandardCharsets.UTF_8);
+        try (InputStream is = new ByteArrayInputStream(processedBytes)) {
+            cloudStorage.upload(is, s3ProcessedDeltasKey);
+        }
+
+        this.logger.info("Persisted sender state to S3 for " + this.remotePartner.name()
+                + ": timestamp=" + this.lastProcessedTimestamp + ", processedDeltas=" + this.processedDeltas.size());
     }
 
     private void handleCloudDownloaded(Message<String> msg) {
@@ -350,18 +425,26 @@ public class OptOutSender extends AbstractVerticle {
         }
 
         this.logger.info("updating processed delta timestamp to: " + nextTimestamp);
-        OptOutUtils.writeTimestampToFile(vertx, this.timestampFile, nextTimestamp.getEpochSecond()).compose(v -> {
-            this.logger.info("updated processed delta timestamp to: " + nextTimestamp);
 
-            // if no files in the list, skip appending process delta filenames to disk
-            if (deltasConsolidated.size() == 0) return Future.succeededFuture();
+        // Update in-memory state
+        this.lastProcessedTimestamp = nextTimestamp;
+        this.processedDeltas.addAll(deltasConsolidated);
 
-            // persist the list of files on disk
-            this.logger.info("appending " + deltasConsolidated.size() + " files to processed delta list");
-            return OptOutUtils.appendLinesToFile(vertx, this.processedDeltasFile, deltasConsolidated);
-        }).onFailure(v -> {
-            String filenames = String.join(",", deltasConsolidated);
-            this.logger.error("unable to persistent last delta timestamp and/or processed delta filenames: " + nextTimestamp + ": " + filenames);
+        // Persist to S3 (source of truth)
+        vertx.<Void>executeBlocking(blockPromise -> {
+            try {
+                persistStateToS3();
+                blockPromise.complete();
+            } catch (Exception e) {
+                blockPromise.fail(e);
+            }
+        }, ar -> {
+            if (ar.succeeded()) {
+                this.logger.info("persisted sender state to S3 for timestamp: " + nextTimestamp);
+            } else {
+                String filenames = String.join(",", deltasConsolidated);
+                this.logger.error("unable to persist sender state to S3: " + nextTimestamp + ": " + filenames, ar.cause());
+            }
         });
 
         for (String deltaFile : deltasConsolidated) {

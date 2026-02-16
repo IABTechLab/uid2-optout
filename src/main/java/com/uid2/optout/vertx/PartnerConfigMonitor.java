@@ -29,15 +29,17 @@ public class PartnerConfigMonitor implements IMetadataVersionedStore {
     private final Vertx vertx;
     private final JsonObject globalConfig;
     private final ICloudStorage cloudStorage;
+    private final ICloudStorage optoutCloudStorage;
     private final String partnersConfigPath;
     private final String eventCloudDownloaded;
     private final AtomicReference<Map<String, String>> senderDeploymentIds = new AtomicReference<>();
 
-    public PartnerConfigMonitor(Vertx vertx,JsonObject globalConfig, ICloudStorage cloudStorage, String eventCloudDownloaded) {
+    public PartnerConfigMonitor(Vertx vertx, JsonObject globalConfig, ICloudStorage cloudStorage, String eventCloudDownloaded, ICloudStorage optoutCloudStorage) {
         this.vertx = vertx;
         this.globalConfig = globalConfig;
         this.cloudStorage = cloudStorage;
-        this.partnersConfigPath = globalConfig.getString(Const.Config.PartnersConfigPathProp);;
+        this.optoutCloudStorage = optoutCloudStorage;
+        this.partnersConfigPath = globalConfig.getString(Const.Config.PartnersConfigPathProp);
         this.eventCloudDownloaded = eventCloudDownloaded;
     }
 
@@ -90,7 +92,7 @@ public class PartnerConfigMonitor implements IMetadataVersionedStore {
 
             for (EndpointConfig ef : config.remoteEndpoints()) {
                 LOGGER.info("Deploying OptOutSender: " + ef.name() + ", url: " + ef.url());
-                OptOutSender sender = new OptOutSender(globalConfig, vertx, ef, this.eventCloudDownloaded);
+                OptOutSender sender = new OptOutSender(globalConfig, vertx, ef, this.eventCloudDownloaded, this.optoutCloudStorage);
                 vertx.deployVerticle(sender, dr -> {
                     if (dr.succeeded()) {
                         newDeployIdMap.put(ef.name(), dr.result());
