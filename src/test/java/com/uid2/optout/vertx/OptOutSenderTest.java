@@ -37,66 +37,22 @@ import static org.mockito.Mockito.*;
 @ExtendWith(VertxExtension.class)
 public class OptOutSenderTest {
 
-    private AutoCloseable mocks;
     @Mock
     private IOptOutPartnerEndpoint optOutPartnerEndpoint;
     private final String partnerName = "testPartner";
     private final String filePath = "/tmp/uid2/optout";
     private final String eventBusName = "testEventBus";
-    private OptOutSender optoutSender;
     private final JsonObject config = new JsonObject();
+    private OptOutSender optoutSender;
     private InMemoryStorageMock cloudStorage;
-
-    private SimpleMeterRegistry registry;
 
     private static final String CLOUD_TIMESTAMP_KEY = "optout/sender-state/testPartner_timestamp.txt";
     private static final String CLOUD_PROCESSED_KEY = "optout/sender-state/testPartner_processed.txt";
+    private static final int TIMEOUT_SECONDS = 10;
 
     @BeforeEach
     public void setup() {
         new File(filePath + "/consumer/delta").mkdirs();
-    }
-
-    /**
-     * Deploy the verticle and block until deployment is complete.
-     * This ensures the event bus consumer is registered and state is loaded before the test continues.
-     */
-    private void deployAndAwait(Vertx vertx) throws Exception {
-        deployAndAwait(vertx, new InMemoryStorageMock());
-    }
-
-    private void deployAndAwait(Vertx vertx, InMemoryStorageMock storage) throws Exception {
-        mocks = MockitoAnnotations.openMocks(this);
-        setupConfig();
-        setupMocks(vertx);
-
-        this.cloudStorage = storage;
-        this.optoutSender = new OptOutSender(config, optOutPartnerEndpoint, eventBusName, this.cloudStorage);
-
-        CompletableFuture<String> deployFuture = new CompletableFuture<>();
-        vertx.deployVerticle(optoutSender, ar -> {
-            if (ar.succeeded()) deployFuture.complete(ar.result());
-            else deployFuture.completeExceptionally(ar.cause());
-        });
-        deployFuture.get(10, TimeUnit.SECONDS);
-
-        this.registry = new SimpleMeterRegistry();
-        Metrics.globalRegistry.add(registry);
-    }
-
-    private void setupMocks(Vertx vertx) {
-        when(optOutPartnerEndpoint.name()).thenReturn(partnerName);
-        when(optOutPartnerEndpoint.send(any())).thenReturn(Future.succeededFuture());
-    }
-
-    private void setupConfig() {
-        config.put(Const.Config.OptOutDataDirProp, filePath);
-        config.put(Const.Config.OptOutProducerReplicaIdProp, 1);
-
-        config.put(Const.Config.OptOutSenderReplicaIdProp, 1);
-        config.put(Const.Config.OptOutProducerMaxReplicasProp, 1);
-
-        config.put(Const.Config.OptOutDeltaRotateIntervalProp, 300);
     }
 
     @AfterEach
@@ -104,6 +60,35 @@ public class OptOutSenderTest {
         Files.walk(Paths.get(filePath))
                 .map(Path::toFile)
                 .forEach(File::delete);
+    }
+
+    private void deployAndAwait(Vertx vertx) throws Exception {
+        deployAndAwait(vertx, new InMemoryStorageMock());
+    }
+
+    private void deployAndAwait(Vertx vertx, InMemoryStorageMock storage) throws Exception {
+        MockitoAnnotations.openMocks(this);
+        setupConfig();
+        when(optOutPartnerEndpoint.name()).thenReturn(partnerName);
+        when(optOutPartnerEndpoint.send(any())).thenReturn(Future.succeededFuture());
+
+        this.cloudStorage = storage;
+        this.optoutSender = new OptOutSender(config, optOutPartnerEndpoint, eventBusName, this.cloudStorage);
+        awaitFuture(vertx.deployVerticle(optoutSender));
+
+        Metrics.globalRegistry.add(new SimpleMeterRegistry());
+    }
+
+    private void setupConfig() {
+        config.put(Const.Config.OptOutDataDirProp, filePath);
+        config.put(Const.Config.OptOutProducerReplicaIdProp, 1);
+        config.put(Const.Config.OptOutSenderReplicaIdProp, 1);
+        config.put(Const.Config.OptOutProducerMaxReplicasProp, 1);
+        config.put(Const.Config.OptOutDeltaRotateIntervalProp, 300);
+    }
+
+    private static <T> T awaitFuture(Future<T> future) throws Exception {
+        return future.toCompletionStage().toCompletableFuture().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     private Path getDeltaPath() {
@@ -116,15 +101,11 @@ public class OptOutSenderTest {
         }
     }
 
-    /**
-     * Publish a delta file to the event bus and wait for the DeltaSentRemote event,
-     * which signals that all entries have been sent to the remote partner.
-     */
     private void publishAndAwaitSent(Vertx vertx, Path deltaFile) throws Exception {
         CompletableFuture<Void> sentFuture = new CompletableFuture<>();
         vertx.eventBus().<String>consumer(Const.Event.DeltaSentRemote, msg -> sentFuture.complete(null));
         vertx.eventBus().publish(eventBusName, deltaFile.toString());
-        sentFuture.get(10, TimeUnit.SECONDS);
+        sentFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
 
@@ -191,41 +172,24 @@ public class OptOutSenderTest {
         // Allow time for the async cloud persist to complete
         Thread.sleep(2000);
 
-        // Verify state was persisted to cloud storage
         String timestampBefore = readCloudString(CLOUD_TIMESTAMP_KEY);
         assertNotNull(timestampBefore);
-        long savedTimestamp = Long.parseLong(timestampBefore.trim());
-        assertTrue(savedTimestamp > 0);
+        assertTrue(Long.parseLong(timestampBefore.trim()) > 0);
 
         String processedBefore = readCloudString(CLOUD_PROCESSED_KEY);
         assertTrue(processedBefore.contains(newFile.toString()));
 
-        // Undeploy (simulating pod termination)
-        CompletableFuture<Void> undeployFuture = new CompletableFuture<>();
-        vertx.undeploy(optoutSender.deploymentID(), ar -> {
-            if (ar.succeeded()) undeployFuture.complete(null);
-            else undeployFuture.completeExceptionally(ar.cause());
-        });
-        undeployFuture.get(10, TimeUnit.SECONDS);
+        // Undeploy and redeploy with the same cloud storage (simulating fresh pod)
+        awaitFuture(vertx.undeploy(optoutSender.deploymentID()));
 
-        // Redeploy with the same cloud storage (simulating fresh pod with no persistent volume)
         when(optOutPartnerEndpoint.send(any())).thenReturn(Future.succeededFuture());
-
         this.optoutSender = new OptOutSender(config, optOutPartnerEndpoint, eventBusName, sharedStorage);
-        CompletableFuture<String> redeployFuture = new CompletableFuture<>();
-        vertx.deployVerticle(optoutSender, ar -> {
-            if (ar.succeeded()) redeployFuture.complete(ar.result());
-            else redeployFuture.completeExceptionally(ar.cause());
-        });
-        redeployFuture.get(10, TimeUnit.SECONDS);
+        awaitFuture(vertx.deployVerticle(optoutSender));
 
-        // Verify the cloud state survives — the same keys should still have the same content
-        String timestampAfter = readCloudString(CLOUD_TIMESTAMP_KEY);
-        assertEquals(timestampBefore.trim(), timestampAfter.trim(),
+        // Verify the cloud state survives across pod restarts
+        assertEquals(timestampBefore.trim(), readCloudString(CLOUD_TIMESTAMP_KEY).trim(),
                 "Timestamp in cloud storage should survive across pod restarts");
-
-        String processedAfter = readCloudString(CLOUD_PROCESSED_KEY);
-        assertTrue(processedAfter.contains(newFile.toString()),
+        assertTrue(readCloudString(CLOUD_PROCESSED_KEY).contains(newFile.toString()),
                 "Processed deltas in cloud storage should survive across pod restarts");
 
         testContext.completeNow();
