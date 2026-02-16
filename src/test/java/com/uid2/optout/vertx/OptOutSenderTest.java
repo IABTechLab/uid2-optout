@@ -43,7 +43,6 @@ public class OptOutSenderTest {
     private final String partnerName = "testPartner";
     private final String filePath = "/tmp/uid2/optout";
     private final String eventBusName = "testEventBus";
-    private CompletableFuture<Void> test;
     private OptOutSender optoutSender;
     private final JsonObject config = new JsonObject();
     private InMemoryStorageMock cloudStorage;
@@ -87,11 +86,7 @@ public class OptOutSenderTest {
 
     private void setupMocks(Vertx vertx) {
         when(optOutPartnerEndpoint.name()).thenReturn(partnerName);
-        test = new CompletableFuture<>();
-        when(optOutPartnerEndpoint.send(any())).then((a) -> {
-            test.complete(null);
-            return Future.fromCompletionStage(test, vertx.getOrCreateContext());
-        });
+        when(optOutPartnerEndpoint.send(any())).thenReturn(Future.succeededFuture());
     }
 
     private void setupConfig() {
@@ -121,6 +116,17 @@ public class OptOutSenderTest {
         }
     }
 
+    /**
+     * Publish a delta file to the event bus and wait for the DeltaSentRemote event,
+     * which signals that all entries have been sent to the remote partner.
+     */
+    private void publishAndAwaitSent(Vertx vertx, Path deltaFile) throws Exception {
+        CompletableFuture<Void> sentFuture = new CompletableFuture<>();
+        vertx.eventBus().<String>consumer(Const.Event.DeltaSentRemote, msg -> sentFuture.complete(null));
+        vertx.eventBus().publish(eventBusName, deltaFile.toString());
+        sentFuture.get(10, TimeUnit.SECONDS);
+    }
+
 
     @Test
     void verticleDeployed(Vertx vertx, VertxTestContext testContext) throws Exception {
@@ -140,9 +146,9 @@ public class OptOutSenderTest {
         deployAndAwait(vertx);
         Path newFile = getDeltaPath();
         TestUtils.newDeltaFile(newFile, 1, 2, 3);
-        vertx.eventBus().publish(eventBusName, newFile.toString());
 
-        test.get(10, TimeUnit.SECONDS);
+        publishAndAwaitSent(vertx, newFile);
+
         verify(optOutPartnerEndpoint, times(3)).send(any());
         testContext.completeNow();
     }
@@ -152,9 +158,8 @@ public class OptOutSenderTest {
         deployAndAwait(vertx);
         Path newFile = getDeltaPath();
         TestUtils.newDeltaFile(newFile, 1, 2, 3);
-        vertx.eventBus().publish(eventBusName, newFile.toString());
 
-        test.get(10, TimeUnit.SECONDS);
+        publishAndAwaitSent(vertx, newFile);
 
         // Allow time for the async S3 persist to complete
         Thread.sleep(2000);
@@ -180,9 +185,8 @@ public class OptOutSenderTest {
 
         Path newFile = getDeltaPath();
         TestUtils.newDeltaFile(newFile, 1, 2, 3);
-        vertx.eventBus().publish(eventBusName, newFile.toString());
 
-        test.get(10, TimeUnit.SECONDS);
+        publishAndAwaitSent(vertx, newFile);
 
         // Allow time for the async S3 persist to complete
         Thread.sleep(2000);
@@ -205,11 +209,7 @@ public class OptOutSenderTest {
         undeployFuture.get(10, TimeUnit.SECONDS);
 
         // Redeploy with the same S3 storage (simulating fresh pod with no persistent volume)
-        test = new CompletableFuture<>();
-        when(optOutPartnerEndpoint.send(any())).then((a) -> {
-            test.complete(null);
-            return Future.fromCompletionStage(test, vertx.getOrCreateContext());
-        });
+        when(optOutPartnerEndpoint.send(any())).thenReturn(Future.succeededFuture());
 
         this.optoutSender = new OptOutSender(config, optOutPartnerEndpoint, eventBusName, sharedStorage);
         CompletableFuture<String> redeployFuture = new CompletableFuture<>();
