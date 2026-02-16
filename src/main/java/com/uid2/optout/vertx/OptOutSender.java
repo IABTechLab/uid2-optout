@@ -249,8 +249,7 @@ public class OptOutSender extends AbstractVerticle {
      * Non-fatal: if cloud storage has no state, we start fresh (may resend some deltas).
      */
     private Future<Void> loadStateFromCloud() {
-        Promise<Void> promise = Promise.promise();
-        vertx.<Void>executeBlocking(blockPromise -> {
+        return vertx.<Void>executeBlocking(() -> {
             try {
                 this.lastProcessedTimestamp = readTimestampFromCloud();
                 this.lastEntrySent.set(this.lastProcessedTimestamp.getEpochSecond());
@@ -260,15 +259,13 @@ public class OptOutSender extends AbstractVerticle {
 
                 this.logger.info("Loaded state from cloud storage: timestamp=" + this.lastProcessedTimestamp
                         + ", processedDeltas=" + this.processedDeltas.size());
-                blockPromise.complete();
             } catch (Exception e) {
                 this.logger.error("Failed to load sender state from cloud storage: " + e.getMessage(), e);
                 this.lastProcessedTimestamp = Instant.EPOCH;
                 this.lastEntrySent.set(0);
-                blockPromise.complete();
             }
-        }, ar -> promise.handle(ar));
-        return promise.future();
+            return null;
+        });
     }
 
     private Instant readTimestampFromCloud() {
@@ -432,14 +429,10 @@ public class OptOutSender extends AbstractVerticle {
         this.processedDeltas.addAll(deltasConsolidated);
 
         // Persist to cloud storage (source of truth)
-        vertx.<Void>executeBlocking(blockPromise -> {
-            try {
-                persistStateToCloud();
-                blockPromise.complete();
-            } catch (Exception e) {
-                blockPromise.fail(e);
-            }
-        }, ar -> {
+        vertx.<Void>executeBlocking(() -> {
+            persistStateToCloud();
+            return null;
+        }).onComplete(ar -> {
             if (ar.succeeded()) {
                 this.logger.info("persisted sender state to cloud storage for timestamp: " + nextTimestamp);
             } else {
