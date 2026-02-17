@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import com.uid2.shared.cloud.InMemoryStorageMock;
+import com.uid2.shared.health.HealthManager;
 import io.micrometer.core.instrument.Metrics;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.vertx.core.Future;
@@ -57,6 +58,7 @@ public class OptOutSenderTest {
 
     @AfterEach
     public void cleanup() throws IOException {
+        HealthManager.instance.reset();
         Files.walk(Paths.get(filePath))
                 .map(Path::toFile)
                 .forEach(File::delete);
