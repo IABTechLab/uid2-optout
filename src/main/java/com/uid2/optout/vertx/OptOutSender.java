@@ -183,7 +183,10 @@ public class OptOutSender extends AbstractVerticle {
         });
 
         stopPromise.future()
-            .onSuccess(v -> this.logger.info("stopped OptOutSender"))
+            .onSuccess(v -> {
+                this.healthComponent.setHealthStatus(true);
+                this.logger.info("stopped OptOutSender");
+            })
             .onFailure(e -> this.logger.error("failed stopping OptOutSender", e));
     }
 
