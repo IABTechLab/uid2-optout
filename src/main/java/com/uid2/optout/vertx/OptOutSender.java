@@ -187,14 +187,6 @@ public class OptOutSender extends AbstractVerticle {
             .onFailure(e -> this.logger.error("failed stopping OptOutSender", e));
     }
 
-    String getTimestampKey() {
-        return this.cloudTimestampKey;
-    }
-
-    String getProcessedDeltasKey() {
-        return this.cloudProcessedDeltasKey;
-    }
-
     private Future<Void> scanLocalForUnprocessed() {
         // Load tracking state from cloud storage (source of truth) into memory, then scan local delta files
         return loadStateFromCloud().compose(v -> {
