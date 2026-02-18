@@ -254,7 +254,6 @@ public class OptOutSender extends AbstractVerticle {
                 this.lastProcessedTimestamp = readTimestampFromCloud();
                 this.lastEntrySent.set(this.lastProcessedTimestamp.getEpochSecond());
 
-                this.processedDeltas.clear();
                 this.processedDeltas.addAll(readProcessedDeltasFromCloud());
 
                 this.logger.info("Loaded state from cloud storage: timestamp=" + this.lastProcessedTimestamp
