@@ -686,21 +686,20 @@ public class OptOutLogTool {
 
     private void runCronJob(boolean doPack) throws Exception {
         // An OptOut CronJob performs the following tasks sequentially:
-        // Step 1. gc    (delete expired delta/partition files from S3)
-        // Step 2. sync  (sync local disk to match S3)
+        // Step 1. gc    (delete expired delta files from S3)
         // -- the following 3 steps are optional unless -pack is specified
+        // Step 2. sync  (sync local disk to match S3)
         // Step 3. pack  (compact deltas into partition)
         // Step 4. push  (upload partition, delete source deltas from S3)
-        // Step 5. sync  (sync again after compact)
 
         // Step 1.
         runGc();
 
+        if (!doPack) return;
+
         // Step 2.
         String dataDir = config.getString(Const.Config.OptOutDataDirProp);
         runSync(dataDir);
-
-        if (!doPack) return;
 
         // Step 3.
         String outDir = Paths.get(dataDir, "workdir").toString();
@@ -709,9 +708,6 @@ public class OptOutLogTool {
 
         // Step 4.
         runPush(packedFile);
-
-        // Step 5.
-        runSync(dataDir);
     }
 
     private String newPartitionFileName(String outDir, Instant ts) {
