@@ -91,6 +91,7 @@ public class OptOutSender extends AbstractVerticle {
     private final AtomicLong lastEntrySent;
     private LinkedList<String> pendingFiles = new LinkedList<>();
     private AtomicBoolean isReplaying = new AtomicBoolean(false);
+    private final AtomicLong skippedOldDeltaCount = new AtomicLong(0);
     // in-memory state (loaded from / persisted to cloud storage)
     private Instant lastProcessedTimestamp = null;
     private final Set<String> processedDeltas = new HashSet<>();
@@ -318,12 +319,21 @@ public class OptOutSender extends AbstractVerticle {
                 return;
             }
 
+            // Skip deltas that have already been processed
+            // Download event is fired on pod start for all deltas now, including already sent ones
+            if (isAlreadyProcessed(filename)) {
+                long skipped = this.skippedOldDeltaCount.incrementAndGet();
+                if (skipped % 500 == 1) {
+                    this.logger.info("skipping already-processed delta (skipped {} so far)", skipped);
+                }
+                return;
+            }
+
             this.logger.info("received delta " + filename + " to consolidate and replicate to remote");
             OptOutUtils.addSorted(this.pendingFiles, filename, OptOutUtils.DeltaFilenameComparator);
 
-            // if it is still replaying the last one, return
-            if (this.isReplaying.get())  {
-                this.logger.info("still replaying the last delta, will not start replaying this one");
+            if (this.isReplaying.get()) {
+                this.logger.info("still replaying, added to pending (pending count={}); will process next batch when current replay completes", this.pendingFiles.size());
                 return;
             }
 
@@ -331,6 +341,19 @@ public class OptOutSender extends AbstractVerticle {
         } catch (Exception ex) {
             this.logger.error("handleLogReplay failed unexpectedly: " + ex.getMessage(), ex);
         }
+    }
+
+    private boolean isAlreadyProcessed(String filename) {
+        if (this.processedDeltas.contains(filename)) {
+            return true;
+        }
+        if (this.lastProcessedTimestamp != null && this.lastProcessedTimestamp != Instant.EPOCH) {
+            Instant fileTimestamp = OptOutUtils.getFileTimestamp(filename);
+            if (fileTimestamp != null && fileTimestamp.isBefore(this.lastProcessedTimestamp)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void processPendingFilesToConsolidate(Instant now) {

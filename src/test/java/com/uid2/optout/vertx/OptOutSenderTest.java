@@ -28,6 +28,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.nio.file.Files;
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -193,6 +194,40 @@ public class OptOutSenderTest {
                 "Timestamp in cloud storage should survive across pod restarts");
         assertTrue(readCloudString(CLOUD_PROCESSED_KEY).contains(newFile.toString()),
                 "Processed deltas in cloud storage should survive across pod restarts");
+
+        testContext.completeNow();
+    }
+
+    @Test
+    void testOldDeltasSkippedAfterEmptyDirRestart(Vertx vertx, VertxTestContext testContext) throws Exception {
+        // Simulate a sender that has already processed deltas up to a known timestamp.
+        // On a fresh emptyDir pod, cloud sync re-downloads ALL historical files from S3.
+        // The sender should skip deltas older than lastProcessedTimestamp.
+        InMemoryStorageMock storage = new InMemoryStorageMock();
+
+        // Seed cloud state: sender already processed up to "now" (recent timestamp)
+        long lastProcessedEpoch = Instant.now().getEpochSecond();
+        storage.upload(new java.io.ByteArrayInputStream(
+                Long.toString(lastProcessedEpoch).getBytes(StandardCharsets.UTF_8)), CLOUD_TIMESTAMP_KEY);
+        storage.upload(new java.io.ByteArrayInputStream(new byte[0]), CLOUD_PROCESSED_KEY);
+
+        deployAndAwait(vertx, storage);
+
+        // Publish several "old" deltas (timestamps well before lastProcessedTimestamp)
+        String[] oldDeltas = {
+            filePath + "/consumer/delta/optout-delta-001_2025-12-01T10.00.00Z_aabbccdd.dat",
+            filePath + "/consumer/delta/optout-delta-002_2025-12-15T14.30.00Z_11223344.dat",
+            filePath + "/consumer/delta/optout-delta-000_2026-01-10T08.00.00Z_deadbeef.dat",
+        };
+        for (String oldDelta : oldDeltas) {
+            vertx.eventBus().publish(eventBusName, oldDelta);
+        }
+
+        // Give the event loop time to process the published events
+        Thread.sleep(500);
+
+        // None of the old deltas should have triggered a send — they should all be skipped
+        verify(optOutPartnerEndpoint, never()).send(any());
 
         testContext.completeNow();
     }
