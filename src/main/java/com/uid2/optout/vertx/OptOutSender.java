@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -321,9 +322,9 @@ public class OptOutSender extends AbstractVerticle {
             this.logger.info("received delta " + filename + " to consolidate and replicate to remote");
             OptOutUtils.addSorted(this.pendingFiles, filename, OptOutUtils.DeltaFilenameComparator);
 
-            // if it is still replaying the last one, return
-            if (this.isReplaying.get())  {
-                this.logger.info("still replaying the last delta, will not start replaying this one");
+            // If a consolidation/replay is already in progress, we only add to pending; we do not start another.
+            if (this.isReplaying.get()) {
+                this.logger.info("still replaying, added to pending (pending count={}); will process next batch when current replay completes", this.pendingFiles.size());
                 return;
             }
 
@@ -396,11 +397,10 @@ public class OptOutSender extends AbstractVerticle {
                     this.logger.error("delta consolidation failed", new Exception(ar.cause()));
                 } else {
                     updateProcessedDeltas(nextTimestamp, deltasToConsolidate);
-                    // once complete, check if we could start the next round
                     this.lastProcessedTimestamp = nextTimestamp;
+                    this.logger.info("replay completed: consolidated {} delta(s), pending count now {}", deltasToConsolidate.size(), this.pendingFiles.size());
                 }
 
-                // call process again
                 this.isReplaying.set(false);
                 this.processPendingFilesToConsolidate(Instant.now());
             }
@@ -441,31 +441,40 @@ public class OptOutSender extends AbstractVerticle {
 
     private void deltaReplayWithConsolidation(Promise<Void> promise, List<String> deltasToConsolidate) {
         if (deltasToConsolidate.size() == 0) {
-            // if no files in the list, short-circuit and complete the promise
             promise.complete();
             return;
         }
 
         try {
             OptOutHeap heap = new OptOutHeap(1000);
+            int missing = 0;
             for (String deltaFile : deltasToConsolidate) {
-                this.logger.info("loading delta " + deltaFile);
                 Path fp = Paths.get(deltaFile);
+                if (!fp.isAbsolute()) {
+                    fp = Paths.get(this.deltaConsumerDir, deltaFile);
+                }
+                this.logger.info("loading delta " + fp);
 
                 try {
                     byte[] data = Files.readAllBytes(fp);
                     OptOutCollection store = new OptOutCollection(data);
                     heap.add(store);
                 } catch (NoSuchFileException ex) {
-                    this.logger.error("ignoring non-existing file: " + ex.getFile().toString());
+                    missing++;
+                    this.logger.info("delta file not found (will not consolidate this file): {}", fp);
                 }
             }
 
+            if (missing > 0) {
+                this.logger.info("{} of {} delta file(s) missing on disk (e.g. emptyDir not yet populated or path mismatch); consolidating the rest", missing, deltasToConsolidate.size());
+            }
+
             OptOutPartition consolidatedDelta = heap.toPartition(true);
+            int entryCount = consolidatedDelta.size();
+            this.logger.info("starting delta replay: {} files, {} entries to send to {}", deltasToConsolidate.size(), entryCount, this.remotePartner.name());
             deltaReplay(promise, consolidatedDelta, deltasToConsolidate);
         } catch (Exception ex) {
             this.logger.error("deltaReplay failed unexpectedly: " + ex.getMessage(), ex);
-            // this error is a code logic error and needs to be fixed
             promise.fail(new Throwable(ex));
         }
     }
@@ -508,12 +517,23 @@ public class OptOutSender extends AbstractVerticle {
                 });
             }
 
+            // Timeout so a stuck send (e.g. partner not responding) cannot block progress forever
+            long replayTimeoutMs = 30 * 60 * 1000L; // 30 minutes per batch
+            final AtomicBoolean completed = new AtomicBoolean(false);
+            long timerId = vertx.setTimer(replayTimeoutMs, id -> {
+                if (completed.compareAndSet(false, true)) {
+                    this.logger.error("deltaReplay timed out after {} ms; failing batch so next batch can run (pending files: {})", replayTimeoutMs, this.pendingFilesCount.get());
+                    promise.fail(new TimeoutException("replay batch timeout"));
+                }
+            });
             lastOp.onComplete(ar -> {
+                if (!completed.compareAndSet(false, true)) return; // already timed out
+                vertx.cancelTimer(timerId);
                 if (ar.failed()) {
                     this.logger.error("deltaReplay failed sending delta " + filenames + " to remote: " + this.remotePartner.name(), ar.cause());
                     this.logger.error("deltaReplay has " + this.pendingFilesCount.get() + " pending file");
-                    this.logger.error("deltaReplay will restart in 3600s");
-                    vertx.setTimer(1000 * 3600, i -> promise.fail(ar.cause()));
+                    this.logger.error("deltaReplay will retry next batch in 60s");
+                    vertx.setTimer(60_000, i -> promise.fail(ar.cause()));
                 } else {
                     this.logger.info("finished delta replay for file: " + filenames);
 
