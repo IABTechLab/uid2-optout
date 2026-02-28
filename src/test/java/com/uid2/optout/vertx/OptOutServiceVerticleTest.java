@@ -2,6 +2,7 @@ package com.uid2.optout.vertx;
 
 import com.uid2.optout.Const;
 import com.uid2.optout.TestUtils;
+import com.uid2.shared.health.HealthManager;
 import com.uid2.shared.optout.OptOutUtils;
 import com.uid2.shared.vertx.VertxUtils;
 import io.vertx.core.Future;
@@ -26,6 +27,7 @@ public class OptOutServiceVerticleTest {
 
     @BeforeClass
     public static void suiteSetup(TestContext context) throws Exception {
+        HealthManager.instance.reset();
         vertx = Vertx.vertx();
         JsonObject config = VertxUtils.getJsonConfig(vertx);
         deployService(context, config)
