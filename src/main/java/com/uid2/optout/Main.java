@@ -11,6 +11,8 @@ import com.uid2.shared.attest.UidCoreClient;
 import com.uid2.shared.audit.UidInstanceIdProvider;
 import com.uid2.shared.auth.RotatingOperatorKeyProvider;
 import com.uid2.shared.cloud.*;
+import com.uid2.shared.health.HealthManager;
+import com.uid2.shared.health.PodTerminationMonitor;
 import com.uid2.shared.jmx.AdminApi;
 import com.uid2.shared.optout.OptOutCloudSync;
 import com.uid2.shared.store.CloudPath;
@@ -65,6 +67,8 @@ public class Main {
     public Main(Vertx vertx, JsonObject config) throws Exception {
         this.vertx = vertx;
         this.config = config;
+        HealthManager.instance.registerGenericComponent(new PodTerminationMonitor(
+                config.getInteger(Const.Config.PodTerminationCheckInterval, 3000)));
         this.observeOnly = config.getBoolean(Const.Config.OptOutObserveOnlyProp);
         if (this.observeOnly) {
             LOGGER.warn("Running Observe ONLY mode: no producer, no sender");
