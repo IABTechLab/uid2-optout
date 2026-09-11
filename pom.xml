@@ -17,7 +17,7 @@
         <micrometer.version>1.1.0</micrometer.version>
         <uid2-shared.version>11.6.0</uid2-shared.version>
         <image.version>${project.version}</image.version>
-        <netty.version>4.1.136.Final</netty.version>
+        <netty.version>4.1.137.Final</netty.version>
         <jackson.version>2.21.4</jackson.version>
         <junit-jupiter.version>5.10.1</junit-jupiter.version>
         <junit-vintage.version>5.10.1</junit-vintage.version>
