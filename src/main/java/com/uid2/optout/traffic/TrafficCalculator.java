@@ -362,7 +362,7 @@ public class TrafficCalculator {
                 
         } catch (Exception e) {
             LOGGER.error("s3_error: failed to list delta files at prefix={}", s3DeltaPrefix, e);
-            throw new RuntimeException("failed to list delta files at prefix=" + s3DeltaPrefix, e);
+            return Collections.emptyList();
         }
     }
     

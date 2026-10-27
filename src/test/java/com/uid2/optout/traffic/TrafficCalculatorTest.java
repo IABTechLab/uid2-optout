@@ -1340,10 +1340,9 @@ public class TrafficCalculatorTest {
         TrafficCalculator calculator = new TrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act & Assert - a failed listing must fail the job, not read as zero traffic
-        RuntimeException e = assertThrows(RuntimeException.class,
-            () -> calculator.calculateStatus(Collections.emptyList(), null, 0));
-        assertInstanceOf(CloudStorageException.class, e.getCause().getCause());
+        // Act & Assert - a failed listing is logged as s3_error and does not fail the job
+        assertEquals(TrafficCalculator.TrafficStatus.DEFAULT,
+            calculator.calculateStatus(Collections.emptyList(), null, 0));
     }
 
     @Test
