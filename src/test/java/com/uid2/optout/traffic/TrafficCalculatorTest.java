@@ -1105,8 +1105,9 @@ public class TrafficCalculatorTest {
         TrafficCalculator calculator = new TrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act & Assert - should throw exception when no delta files
-        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0));
+        // Act & Assert - empty prefix counts as zero delta traffic
+        assertEquals(TrafficCalculator.TrafficStatus.DEFAULT,
+            calculator.calculateStatus(Collections.emptyList(), null, 0));
     }
 
     @Test
