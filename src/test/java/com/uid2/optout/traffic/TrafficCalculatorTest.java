@@ -1335,13 +1335,15 @@ public class TrafficCalculatorTest {
     @Test
     void testCalculateStatus_s3Exception() throws Exception {
         // Setup - S3 list error
-        when(cloudStorage.list(S3_DELTA_PREFIX)).thenThrow(new RuntimeException("S3 error"));
+        when(cloudStorage.list(S3_DELTA_PREFIX)).thenThrow(new CloudStorageException("s3 list error"));
 
         TrafficCalculator calculator = new TrafficCalculator(
             cloudStorage, S3_DELTA_PREFIX, TRAFFIC_CONFIG_PATH);
 
-        // Act & Assert - should throw exception on S3 error
-        assertThrows(RuntimeException.class, () -> calculator.calculateStatus(Collections.emptyList(), null, 0));
+        // Act & Assert - a failed listing must fail the job, not read as zero traffic
+        RuntimeException e = assertThrows(RuntimeException.class,
+            () -> calculator.calculateStatus(Collections.emptyList(), null, 0));
+        assertInstanceOf(CloudStorageException.class, e.getCause().getCause());
     }
 
     @Test
