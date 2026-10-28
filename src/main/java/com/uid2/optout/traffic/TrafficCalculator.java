@@ -223,8 +223,7 @@ public class TrafficCalculator {
             List<String> deltaS3Paths = listDeltaFiles();
             
             if (deltaS3Paths.isEmpty()) {
-                LOGGER.error("s3_error: no delta files found in s3 at prefix={}", s3DeltaPrefix);
-                throw new RuntimeException("no delta files found in s3 at prefix=" + s3DeltaPrefix);
+                LOGGER.warn("no delta files found in s3 at prefix={}, counting queue traffic only", s3DeltaPrefix);
             }
             
             // find newest delta file timestamp for delta traffic window
