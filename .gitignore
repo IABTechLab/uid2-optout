@@ -7,3 +7,5 @@ out/
 generated/
 uid2-optout.iml
 .DS_Store
+optout-data/
+.cache/
